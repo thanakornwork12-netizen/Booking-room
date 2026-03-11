@@ -151,3 +151,6 @@ if os.environ.get('DATABASE_URL'):
     )
 
 ALLOWED_HOSTS = ['*']
+CORS_ALLOWED_ORIGINS += [
+    'https://room-booking-1-7u7e.onrender.com',
+]
