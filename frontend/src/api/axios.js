@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'https://room-booking-v774.onrender.com/api',
+  baseURL: 'https://room-booking-v774-tk2i.onrender.com/api',
 })
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('access_token')
