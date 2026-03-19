@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, Clock, Users, LogOut, Search, Bell, X, ChevronRight, LayoutDashboard } from 'lucide-react'
+import { CalendarDays, Clock, Users, LogOut, Search, Bell, X, LayoutDashboard, MapPin, Building2, ChevronRight, Info } from 'lucide-react'
 import api from '../api/axios'
 
 export default function HomePage() {
@@ -10,6 +10,7 @@ export default function HomePage() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNoti, setShowNoti] = useState(false)
+  const [selectedBooking, setSelectedBooking] = useState(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,11 +33,11 @@ export default function HomePage() {
   }, [])
 
   const handleLogout = () => {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
-  localStorage.removeItem('user')
-  navigate('/login')
-}
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    localStorage.removeItem('user')
+    navigate('/login')
+  }
 
   const handleDismissNoti = async (id) => {
     try {
@@ -50,6 +51,9 @@ export default function HomePage() {
     try {
       await api.post(`/bookings/${id}/cancel/`)
       setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b))
+      if (selectedBooking?.id === id) {
+        setSelectedBooking(prev => ({ ...prev, status: 'cancelled' }))
+      }
     } catch {
       alert('เกิดข้อผิดพลาด')
     }
@@ -57,6 +61,7 @@ export default function HomePage() {
 
   const formatDate = (dt) => new Date(dt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
   const formatTime = (dt) => new Date(dt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+  const formatDateFull = (dt) => new Date(dt).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const unreadNotis = notifications.filter(n => !n.is_read)
   const activeBookings = bookings.filter(b => b.status === 'approved')
@@ -82,14 +87,12 @@ export default function HomePage() {
             <p className="text-xs text-gray-400">{user?.faculty || 'ระบบจองห้องประชุม'}</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* ปุ่ม Admin */}
             {user?.role && ['admin', 'staff'].includes(user.role) && (
               <button onClick={() => navigate('/admin')}
                 className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
                 <LayoutDashboard size={20} />
               </button>
             )}
-            {/* ปุ่มแจ้งเตือน */}
             <div className="relative">
               <button onClick={() => setShowNoti(!showNoti)}
                 className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors relative">
@@ -98,8 +101,6 @@ export default function HomePage() {
                   <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
                 )}
               </button>
-
-              {/* Dropdown แจ้งเตือน */}
               {showNoti && (
                 <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-20 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
@@ -119,8 +120,7 @@ export default function HomePage() {
                             <p className="text-sm font-medium text-gray-700">{n.title}</p>
                             <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{n.message}</p>
                           </div>
-                          <button onClick={() => handleDismissNoti(n.id)}
-                            className="text-gray-300 hover:text-gray-500 shrink-0">
+                          <button onClick={() => handleDismissNoti(n.id)} className="text-gray-300 hover:text-gray-500 shrink-0">
                             <X size={14} />
                           </button>
                         </div>
@@ -155,9 +155,9 @@ export default function HomePage() {
         {/* สถิติ */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: 'จองทั้งหมด', value: bookings.length, color: 'text-gray-800' },
-            { label: 'กำลังจอง',   value: activeBookings.length, color: 'text-green-600' },
-            { label: 'ยกเลิกแล้ว', value: cancelledBookings.length, color: 'text-red-500' },
+            { label: 'จองทั้งหมด', value: bookings.length,           color: 'text-gray-800' },
+            { label: 'กำลังจอง',   value: activeBookings.length,     color: 'text-green-600' },
+            { label: 'ยกเลิกแล้ว', value: cancelledBookings.length,  color: 'text-red-500' },
           ].map((s, i) => (
             <div key={i} className="bg-white rounded-2xl p-4 shadow-sm text-center">
               <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -184,14 +184,15 @@ export default function HomePage() {
             </div>
           ) : (
             <div>
-              {bookings.slice(0, 10).map((b, i) => {
+              {bookings.slice(0, 20).map((b) => {
                 const isActive = b.status === 'approved'
                 const isCancelled = b.status === 'cancelled'
                 return (
                   <div key={b.id}
-                    className={`px-5 py-4 flex items-center gap-3 border-b border-gray-50 last:border-0
-                      ${isCancelled ? 'opacity-50' : ''}`}>
-                    {/* สี dot */}
+                    className={`px-5 py-4 flex items-center gap-3 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors
+                      ${isCancelled ? 'opacity-50' : ''}`}
+                    onClick={() => setSelectedBooking(b)}>
+
                     <div className={`w-2 h-2 rounded-full shrink-0
                       ${isActive ? 'bg-green-500' : isCancelled ? 'bg-gray-300' : 'bg-yellow-400'}`} />
 
@@ -213,23 +214,88 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {isActive && (
-                      <button onClick={() => handleCancel(b.id)}
-                        className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors shrink-0">
-                        ยกเลิก
-                      </button>
-                    )}
-                    {isCancelled && (
-                      <span className="text-xs text-gray-400 shrink-0">ยกเลิกแล้ว</span>
-                    )}
+                    <ChevronRight size={14} className="text-gray-300 shrink-0" />
                   </div>
                 )
               })}
             </div>
           )}
         </div>
-
       </div>
+
+      {/* ===== Modal รายละเอียดการจอง ===== */}
+      {selectedBooking && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center sm:items-center px-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setSelectedBooking(null) }}>
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
+
+            {/* Header */}
+            <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
+              <div className="flex items-center gap-2">
+                <div className={`w-2.5 h-2.5 rounded-full
+                  ${selectedBooking.status === 'approved' ? 'bg-green-500' : 'bg-gray-300'}`} />
+                <p className="font-bold text-gray-800">รายละเอียดการจอง</p>
+              </div>
+              <button onClick={() => setSelectedBooking(null)}
+                className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+
+              {/* ห้อง */}
+              <div className="flex items-center gap-3 bg-blue-50 rounded-2xl p-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                  <Building2 size={22} className="text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-800 text-lg">{selectedBooking.room_name || `ห้อง #${selectedBooking.room}`}</p>
+                  <p className="text-xs text-blue-500 mt-0.5">
+                    {selectedBooking.status === 'approved' ? '✅ กำลังจอง' : '❌ ยกเลิกแล้ว'}
+                  </p>
+                </div>
+              </div>
+
+              {/* รายละเอียด */}
+              <div className="space-y-0 border border-gray-100 rounded-2xl overflow-hidden">
+                {[
+                  { icon: '📋', label: 'หัวข้อ',     value: selectedBooking.title },
+                  { icon: '📅', label: 'วันที่',      value: formatDateFull(selectedBooking.start_time) },
+                  { icon: '⏰', label: 'เวลาเริ่ม',   value: formatTime(selectedBooking.start_time) + ' น.' },
+                  { icon: '⏱️', label: 'เวลาสิ้นสุด', value: formatTime(selectedBooking.end_time) + ' น.' },
+                  { icon: '👥', label: 'จำนวนคน',    value: `${selectedBooking.attendees} คน` },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0 bg-white">
+                    <span className="text-base w-6 shrink-0">{row.icon}</span>
+                    <span className="text-xs text-gray-400 w-20 shrink-0">{row.label}</span>
+                    <span className="text-sm font-medium text-gray-700 flex-1">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* booking id */}
+              <p className="text-xs text-gray-300 text-center">ID: #{selectedBooking.id}</p>
+
+              {/* ปุ่มยกเลิก */}
+              {selectedBooking.status === 'approved' && (
+                <button
+                  onClick={() => handleCancel(selectedBooking.id)}
+                  className="w-full border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-semibold text-sm transition-colors">
+                  ยกเลิกการจองนี้
+                </button>
+              )}
+
+              {selectedBooking.status === 'cancelled' && (
+                <div className="bg-gray-50 rounded-2xl px-4 py-3 text-center">
+                  <p className="text-sm text-gray-400">การจองนี้ถูกยกเลิกแล้ว</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
