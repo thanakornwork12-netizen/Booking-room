@@ -2,7 +2,7 @@ services:
   - type: web
     name: room-booking
     runtime: python
-    buildCommand: pip install -r requirements.txt && python manage.py migrate && python seed.py
+    buildCommand: pip install -r requirements.txt && python manage.py migrate
     startCommand: daphne -p $PORT -b 0.0.0.0 room_booking.asgi:application
     envVars:
       - key: DATABASE_URL
