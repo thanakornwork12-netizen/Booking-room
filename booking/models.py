@@ -219,21 +219,16 @@ class DemandForecast(models.Model):
         )
 
     def save(self, *args, **kwargs):
-        """
-        Auto-map predicted_demand → demand_level → availability
-        ทุกครั้งที่ LSTM เขียนค่าลงมา ระบบจะคำนวณ level และ availability ให้อัตโนมัติ
-        """
-        if self.predicted_demand < 0.40:
+        if self.predicted_demand < 0.35:
             self.demand_level = 'low'
             self.availability = 'likely_available'
-        elif self.predicted_demand < 0.70:
+        elif self.predicted_demand < 0.65:
             self.demand_level = 'medium'
             self.availability = 'likely_busy'
         else:
             self.demand_level = 'high'
             self.availability = 'likely_full'
         super().save(*args, **kwargs)
-
 
 # ============================================================
 # 8. NOTIFICATION — การแจ้งเตือน

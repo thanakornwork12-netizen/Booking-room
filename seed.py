@@ -1,301 +1,192 @@
-import os
-import sys
-import django
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
-from tensorflow.keras.callbacks import EarlyStopping
-import joblib
+"""
+seed.py — สร้างข้อมูลจำลองสมจริง ~50,000+ records
+วางไว้ที่: /Users/macthanakorn/room_booking/ml/seed.py
+รัน: python ml/seed.py
+"""
 
-# ----------------------------
-# Setup Django
-# ----------------------------
+import os, sys, random
+import numpy as np
+from datetime import datetime, timedelta, date
+
 sys.path.append('/Users/macthanakorn/room_booking')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'room_booking.settings')
+
+import django
 django.setup()
 
-from booking.models import Booking, Room, DemandForecast
 from django.utils import timezone
-from datetime import timedelta
+from booking.models import User, Building, Room, Booking
 
-LOOKBACK = 24
-EPOCHS   = 100
-MIN_ROWS = 5   # เทรนทุกห้อง ห้ามข้าม ต่ำสุด 5 rows
+random.seed(42)
+np.random.seed(42)
 
-def create_sequences(data, lookback):
-    X, y = [], []
-    for i in range(len(data) - lookback):
-        X.append(data[i:i+lookback])
-        y.append(data[i+lookback])
-    return np.array(X), np.array(y)
+print("🌱 เริ่ม seed ข้อมูล...")
 
-def build_model(lookback):
-    model = Sequential([
-        Input(shape=(lookback, 1)),
-        LSTM(64, return_sequences=True),
-        Dropout(0.2),
-        LSTM(32),
-        Dropout(0.2),
-        Dense(1)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    return model
+# ── Reset ──────────────────────────────────────────────
+Booking.objects.all().delete()
+Room.objects.all().delete()
+Building.objects.all().delete()
+print("  🗑  ล้างข้อมูลเก่าแล้ว")
 
-def build_simple_model(lookback):
-    """โมเดลเล็กสำหรับห้องที่ข้อมูลน้อย"""
-    model = Sequential([
-        Input(shape=(lookback, 1)),
-        LSTM(16),
-        Dense(1)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    return model
+# ── Buildings + Rooms ──────────────────────────────────
+building_configs = {
+    'Library':     {'code': 'LIB',  'count': 12},
+    'Science':     {'code': 'SC',   'count': 10},
+    'Engineering': {'code': 'EN',   'count': 10},
+    'Main':        {'code': 'MAIN', 'count':  8},
+}
 
-def map_demand(ratio):
-    ratio = min(ratio, 1.0)
-    if ratio < 0.35:
-        return 'low',    'low',    round((1 - ratio) * 100, 1)
-    elif ratio < 0.65:
-        return 'medium', 'medium', 70.0
-    else:
-        return 'high',   'high',   round(ratio * 100, 1)
+all_rooms = []
+for bname, cfg in building_configs.items():
+    b = Building.objects.create(name=bname, code=cfg['code'])
+    for i in range(cfg['count']):
+        r = Room.objects.create(
+            name=f"{cfg['code']}-{i+1:02d}",
+            building=b,
+            capacity=random.choice([4, 6, 8, 10, 15, 20, 30, 50, 60]),
+            floor=random.randint(1, 5),
+            room_type=random.choice(['meeting', 'lecture', 'meeting', 'meeting']),
+            status='available',
+        )
+        all_rooms.append(r)
+print(f"  🏢 สร้าง {len(all_rooms)} ห้อง")
 
-def accuracy_pct(mae, max_val):
-    """คำนวณ accuracy % จาก MAE"""
-    if max_val == 0:
-        return 100.0
-    return round(max(0, (1 - mae / max_val) * 100), 2)
+# ── Users ──────────────────────────────────────────────
+if User.objects.filter(username__startswith='seed_').count() < 100:
+    roles = ['student'] * 70 + ['lecturer'] * 20 + ['staff'] * 10
+    for i in range(300):
+        role = roles[i % len(roles)]
+        User.objects.get_or_create(
+            username=f'seed_{i:03d}',
+            defaults={
+                'first_name': f'User{i}',
+                'last_name': 'Test',
+                'email': f'seed{i}@ubu.ac.th',
+                'role': role,
+            },
+        )
+users = list(User.objects.all())
+print(f"  👤 users {len(users)} คน")
 
-# ----------------------------
-# โหลดข้อมูล
-# ----------------------------
-print("📦 โหลดข้อมูลจาก DB...")
+# ── Hour weights (เฉพาะ 08-17 เท่านั้น) ──────────────
+HOUR_W = {
+    8:  0.50,   # เริ่มเช้า
+    9:  1.10,
+    10: 1.80,   # peak เช้า
+    11: 1.60,
+    12: 0.20,   # พักเที่ยง
+    13: 1.70,   # peak บ่าย
+    14: 1.50,
+    15: 1.10,
+    16: 0.70,
+    17: 0.35,   # ใกล้เลิก
+}
 
-bookings = Booking.objects.exclude(status='cancelled').values('start_time', 'room_id')
-df = pd.DataFrame(list(bookings))
+# วันในสัปดาห์
+DAY_W = {
+    0: 1.30,  # จันทร์ — เยอะที่สุด
+    1: 1.20,
+    2: 1.10,
+    3: 1.00,
+    4: 0.80,  # ศุกร์
+    5: 0.12,  # เสาร์
+    6: 0.04,  # อาทิตย์
+}
 
-if df.empty:
-    print("❌ ไม่มีข้อมูลการจอง")
-    sys.exit(1)
+# popularity รายห้อง (บางห้องดังกว่าห้องอื่น)
+room_pop = {r.id: np.random.beta(5, 2) for r in all_rooms}
 
-print(f"✅ พบข้อมูล {len(df)} รายการ")
+hours  = list(HOUR_W.keys())
+hprobs = np.array([HOUR_W[h] for h in hours], dtype=float)
+hprobs /= hprobs.sum()
 
-df['start_time'] = pd.to_datetime(df['start_time'], utc=True)
-df['date'] = df['start_time'].dt.date
-df['hour'] = df['start_time'].dt.hour
+# ── Semester pattern ───────────────────────────────────
+def semester_factor(d: date) -> float:
+    m = d.month
+    # เทอม 1: มิ.ย.–ต.ค., เทอม 2: พ.ย.–มี.ค.
+    if m in (6, 7, 8, 9):    return 1.50   # ต้นเทอม 1
+    if m in (10,):            return 1.80   # ปลายเทอม 1 / exam
+    if m in (11, 12, 1, 2):   return 1.40   # เทอม 2
+    if m in (3,):             return 1.70   # exam เทอม 2
+    return 0.50                             # ปิดเทอม เม.ย.–พ.ค.
 
-rooms = list(Room.objects.filter(status='available'))
-print(f"🏢 ห้องทั้งหมด {len(rooms)} ห้อง\n")
+# holiday (วันหยุดนักขัตฤกษ์ไทย คร่าวๆ)
+HOLIDAYS = {
+    (1, 1), (4, 6), (4, 13), (4, 14), (4, 15),
+    (5, 1), (5, 4), (6, 3), (7, 28), (8, 12),
+    (10, 13), (10, 23), (12, 5), (12, 10), (12, 31),
+}
 
-today = timezone.now().date()
-os.makedirs('ml/saved', exist_ok=True)
+def daily_base(d: date) -> int:
+    if (d.month, d.day) in HOLIDAYS:
+        return 5
+    return int(250 * DAY_W[d.weekday()] * semester_factor(d))
 
-DemandForecast.objects.filter(forecast_date__gte=today).delete()
-print("🗑️  ลบ forecast เก่าเรียบร้อย\n")
+# ── Generate ───────────────────────────────────────────
+START = date.today() - timedelta(days=730)  # 2 ปีย้อนหลัง
+END   = date.today()
 
-forecast_objects = []
-all_mae, all_rmse, all_r2, all_acc = [], [], [], []
-trained_rooms = []
-default_rooms = []
+total, bulk = 0, []
+cur = START
 
-# ----------------------------
-# เทรน + พยากรณ์ แยกรายห้อง
-# ----------------------------
-for idx, room in enumerate(rooms):
-    print(f"[{idx+1}/{len(rooms)}] 🏠 {room.name}")
+while cur <= END:
+    base = daily_base(cur)
+    # เพิ่ม noise รายวัน ±20%
+    n_today = max(0, int(np.random.normal(base, base * 0.2)))
+    dist    = np.random.multinomial(n_today, hprobs)
 
-    room_df = df[df['room_id'] == room.id].copy()
-    hourly  = room_df.groupby(['date','hour']).size().reset_index(name='booking_count')
-    hourly  = hourly.sort_values(['date','hour']).reset_index(drop=True)
+    for i, hr in enumerate(hours):
+        for _ in range(dist[i]):
+            room = random.choices(
+                all_rooms,
+                weights=[room_pop[r.id] for r in all_rooms],
+                k=1
+            )[0]
 
-    total_bookings = len(room_df)
-    print(f"   📋 {total_bookings} ครั้ง | hourly rows = {len(hourly)}")
+            # เพิ่ม noise ในนาที 0/15/30/45
+            minute = random.choice([0, 15, 30])
+            start_dt = timezone.make_aware(
+                datetime(cur.year, cur.month, cur.day, hr, minute)
+            )
 
-    MAX_BOOKING = max(float(hourly['booking_count'].max()) if len(hourly) > 0 else 1.0, 1.0)
+            duration = random.choices(
+                [60, 90, 120, 150, 180],
+                weights=[0.35, 0.25, 0.25, 0.08, 0.07],
+            )[0]
 
-    # ถ้าข้อมูลน้อยมากๆ ใช้ค่า default
-    if len(hourly) < MIN_ROWS:
-        print(f"   ⚠️  ข้อมูลน้อยมาก ({len(hourly)} rows) → ใช้ค่า default low")
-        default_rooms.append(room.name)
-        for day_offset in range(7):
-            forecast_date = today + timedelta(days=day_offset)
-            for hour in range(8, 21):
-                forecast_objects.append(DemandForecast(
-                    room=room, forecast_date=forecast_date, hour=hour,
-                    predicted_demand=0.0, demand_level='low',
-                    availability='low', confidence=90.0
-                ))
-        print()
-        continue
+            attendees = max(1, int(np.random.beta(2, 4) * room.capacity) + 1)
+            attendees = min(attendees, room.capacity)
 
-    print(f"   📊 MAX_BOOKING = {MAX_BOOKING}")
+            title = random.choices(
+                ["ประชุมกลุ่ม", "ติวหนังสือ", "ประชุมโครงการ",
+                 "อบรม", "สอบ", "เรียนพิเศษ", "สัมมนา"],
+                weights=[25, 20, 20, 10, 10, 10, 5],
+            )[0]
 
-    # กำหนด lookback ตามข้อมูลที่มี
-    effective_lookback = min(LOOKBACK, max(2, len(hourly) - 2))
-
-    scaler = MinMaxScaler()
-    hourly['scaled'] = scaler.fit_transform(hourly[['booking_count']])
-    values = hourly['scaled'].values
-
-    X, y = create_sequences(values, effective_lookback)
-
-    # ถ้าสร้าง sequence ไม่ได้เลย ใช้ข้อมูลโดยตรง
-    if len(X) == 0:
-        print(f"   ⚠️  sequence = 0 → ใช้ค่า default")
-        default_rooms.append(room.name)
-        avg_ratio = float(hourly['booking_count'].mean()) / MAX_BOOKING
-        demand_level, availability, confidence = map_demand(avg_ratio)
-        for day_offset in range(7):
-            forecast_date = today + timedelta(days=day_offset)
-            for hour in range(8, 21):
-                forecast_objects.append(DemandForecast(
-                    room=room, forecast_date=forecast_date, hour=hour,
-                    predicted_demand=round(float(hourly['booking_count'].mean()), 4),
-                    demand_level=demand_level, availability=availability,
-                    confidence=confidence
-                ))
-        print()
-        continue
-
-    X = X.reshape((X.shape[0], X.shape[1], 1))
-
-    split   = max(1, int(len(X) * 0.8))
-    X_train = X[:split]; X_test = X[split:]
-    y_train = y[:split]; y_test = y[split:]
-
-    print(f"   🧠 lookback={effective_lookback} train={len(X_train)} test={len(X_test)}")
-
-    # เลือก model ตามขนาดข้อมูล
-    if len(X_train) < 20:
-        model = build_simple_model(effective_lookback)
-        epochs = 50
-    else:
-        model = build_model(effective_lookback)
-        epochs = EPOCHS
-
-    early_stop = EarlyStopping(patience=5, restore_best_weights=True, verbose=0)
-
-    model.fit(
-        X_train, y_train,
-        epochs=epochs,
-        batch_size=min(16, len(X_train)),
-        validation_split=0.2 if len(X_train) >= 5 else 0.0,
-        callbacks=[early_stop],
-        verbose=0
-    )
-
-    # Evaluate
-    if len(X_test) > 0:
-        y_pred     = model.predict(X_test, verbose=0)
-        y_pred_inv = scaler.inverse_transform(y_pred)
-        y_test_inv = scaler.inverse_transform(y_test.reshape(-1, 1))
-
-        mae  = mean_absolute_error(y_test_inv, y_pred_inv)
-        rmse = np.sqrt(mean_squared_error(y_test_inv, y_pred_inv))
-        acc  = accuracy_pct(mae, MAX_BOOKING)
-
-        # R2 score
-        try:
-            r2 = r2_score(y_test_inv, y_pred_inv)
-        except:
-            r2 = 0.0
-
-        all_mae.append(mae)
-        all_rmse.append(rmse)
-        all_r2.append(r2)
-        all_acc.append(acc)
-        trained_rooms.append({
-            'name': room.name, 'mae': mae, 'rmse': rmse,
-            'r2': r2, 'acc': acc, 'bookings': total_bookings,
-            'max_booking': MAX_BOOKING
-        })
-        print(f"   📈 MAE={mae:.4f}  RMSE={rmse:.4f}  R²={r2:.4f}  Acc={acc:.1f}%")
-
-    # บันทึกโมเดล
-    room_dir = f'ml/saved/room_{room.id}'
-    os.makedirs(room_dir, exist_ok=True)
-    model.save(f'{room_dir}/model.keras')
-    joblib.dump(scaler, f'{room_dir}/scaler.pkl')
-    joblib.dump(MAX_BOOKING, f'{room_dir}/max_booking.pkl')
-
-    # พยากรณ์ 7 วัน
-    last_seq = values[-effective_lookback:].reshape(1, effective_lookback, 1)
-    day_forecasts = {'low': 0, 'medium': 0, 'high': 0}
-
-    for day_offset in range(7):
-        forecast_date = today + timedelta(days=day_offset)
-        for hour in range(8, 21):
-            pred_scaled = model.predict(last_seq, verbose=0)[0][0]
-            pred_value  = max(0.0, float(scaler.inverse_transform([[pred_scaled]])[0][0]))
-            ratio       = pred_value / MAX_BOOKING if MAX_BOOKING > 0 else 0
-            demand_level, availability, confidence = map_demand(ratio)
-            day_forecasts[demand_level] += 1
-
-            forecast_objects.append(DemandForecast(
-                room=room, forecast_date=forecast_date, hour=hour,
-                predicted_demand=round(pred_value, 4),
-                demand_level=demand_level, availability=availability,
-                confidence=confidence
+            bulk.append(Booking(
+                user=random.choice(users),
+                room=room,
+                title=title,
+                attendees=attendees,
+                start_time=start_dt,
+                end_time=start_dt + timedelta(minutes=duration),
+                status='completed',
             ))
-            last_seq = np.append(last_seq[:, 1:, :], [[[pred_scaled]]], axis=1)
+            total += 1
 
-    print(f"   🔮 low={day_forecasts['low']} medium={day_forecasts['medium']} high={day_forecasts['high']}")
-    print()
+    if len(bulk) >= 5000:
+        Booking.objects.bulk_create(bulk, ignore_conflicts=True)
+        print(f"  💾 {total:,} records  [{cur}]")
+        bulk = []
 
-# ----------------------------
-# Bulk insert
-# ----------------------------
-DemandForecast.objects.bulk_create(forecast_objects, batch_size=500)
-print(f"✅ เขียน Forecast {len(forecast_objects)} records\n")
+    cur += timedelta(days=1)
 
-# ----------------------------
-# สรุปผล
-# ----------------------------
-print("=" * 62)
-print("📊 สรุปผลการเทรนรายห้อง")
-print("=" * 62)
-print(f"  {'ห้อง':<20} {'MAE':>7} {'RMSE':>7} {'R²':>7} {'Acc%':>7} {'จอง':>6}")
-print("-" * 62)
+if bulk:
+    Booking.objects.bulk_create(bulk, ignore_conflicts=True)
 
-if trained_rooms:
-    for r in sorted(trained_rooms, key=lambda x: x['acc'], reverse=True):
-        bar = '●' if r['acc'] >= 95 else '○'
-        print(f"  {bar} {r['name'][:18]:<18} {r['mae']:>7.4f} {r['rmse']:>7.4f} {r['r2']:>7.4f} {r['acc']:>6.1f}% {r['bookings']:>5}")
-
-    print("=" * 62)
-    print(f"\n  📌 ผลรวมทุกห้องที่เทรนสำเร็จ ({len(trained_rooms)} ห้อง)")
-    print(f"  ├─ MAE  เฉลี่ย  = {np.mean(all_mae):.4f}")
-    print(f"  ├─ RMSE เฉลี่ย  = {np.mean(all_rmse):.4f}")
-    print(f"  ├─ R²   เฉลี่ย  = {np.mean(all_r2):.4f}")
-    print(f"  └─ Acc  เฉลี่ย  = {np.mean(all_acc):.2f}%")
-
-    # แบ่งกลุ่ม accuracy
-    high_acc   = [r for r in trained_rooms if r['acc'] >= 95]
-    medium_acc = [r for r in trained_rooms if 80 <= r['acc'] < 95]
-    low_acc    = [r for r in trained_rooms if r['acc'] < 80]
-
-    print(f"\n  🟢 Acc ≥ 95% : {len(high_acc)} ห้อง")
-    print(f"  🟡 Acc 80-95%: {len(medium_acc)} ห้อง")
-    print(f"  🔴 Acc < 80% : {len(low_acc)} ห้อง")
-
-    # forecast distribution
-    all_forecasts = DemandForecast.objects.filter(forecast_date__gte=today)
-    low_c    = all_forecasts.filter(demand_level='low').count()
-    medium_c = all_forecasts.filter(demand_level='medium').count()
-    high_c   = all_forecasts.filter(demand_level='high').count()
-
-    print(f"\n  🔮 Forecast Distribution (7 วัน)")
-    print(f"  ├─ 🟢 low    = {low_c} slots ({low_c/(low_c+medium_c+high_c)*100:.1f}%)")
-    print(f"  ├─ 🟡 medium = {medium_c} slots ({medium_c/(low_c+medium_c+high_c)*100:.1f}%)")
-    print(f"  └─ 🔴 high   = {high_c} slots ({high_c/(low_c+medium_c+high_c)*100:.1f}%)")
-
-if default_rooms:
-    print(f"\n  ⚠️  ใช้ค่า default ({len(default_rooms)} ห้อง): {', '.join(default_rooms)}")
-
-print(f"\n  เทรนสำเร็จ  = {len(trained_rooms)}/{len(rooms)} ห้อง")
-print("=" * 62)
-print("\n🎉 เสร็จสมบูรณ์!")
+days_covered = (END - START).days
+print(f"\n✅ Seed เสร็จ")
+print(f"   Records   : {total:,}")
+print(f"   ช่วงเวลา  : {START} → {END}  ({days_covered} วัน)")
+print(f"   ห้อง      : {len(all_rooms)} ห้อง")
+print(f"   เฉลี่ย    : {total // days_covered:,} records/วัน")

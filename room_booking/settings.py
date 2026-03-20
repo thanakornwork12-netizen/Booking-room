@@ -1,15 +1,19 @@
+import os
+import dj_database_url
 from pathlib import Path
 from datetime import timedelta
 
 # ---------------- BASE ----------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-@top1u7dv$mxn%oyw!03)+xq*5nms@isl&bkfvi9lt=o141)sd'
+# ความปลอดภัย: ใน Production ควรดึงจาก Environment Variable
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-@top1u7dv$mxn%oyw!03)+xq*5nms@isl&bkfvi9lt=o141)sd')
 
-DEBUG = True
+# จะ True เมื่อรันในเครื่อง (localhost) และเป็น False เมื่อรันบน Server (Render)
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
-
+# ระบุ Domain ที่อนุญาตให้เข้าถึง
+ALLOWED_HOSTS = ['room-booking-1-7u7e.onrender.com', 'localhost', '127.0.0.1', '*']
 
 # ---------------- INSTALLED APPS ----------------
 INSTALLED_APPS = [
@@ -25,10 +29,12 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
-'django_apscheduler',
+    'django_apscheduler',
+    
     # local apps
     'booking',
 ]
+
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 APSCHEDULER_RUN_NOW_TIMEOUT = 25
 
@@ -36,6 +42,7 @@ APSCHEDULER_RUN_NOW_TIMEOUT = 25
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # ต้องอยู่บนสุด
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', # เพิ่มจัดการไฟล์ static บน server
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -44,8 +51,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-
-# ---------------- URL / TEMPLATE ----------------
 ROOT_URLCONF = 'room_booking.urls'
 
 TEMPLATES = [
@@ -63,13 +68,12 @@ TEMPLATES = [
     },
 ]
 
-
 # ---------------- WSGI / ASGI ----------------
 WSGI_APPLICATION = 'room_booking.wsgi.application'
 ASGI_APPLICATION = 'room_booking.asgi.application'
 
-
-# ---------------- DATABASE ----------------
+# ---------------- DATABASE (แก้ไขให้ถาวร) ----------------
+# ค่าเริ่มต้นสำหรับ localhost (ข้อมูลเก็บในไฟล์ db.sqlite3)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -77,12 +81,23 @@ DATABASES = {
     }
 }
 
+# หากรันบน Render หรือที่ที่มี DATABASE_URL (เช่น Postgres) ให้ใช้ค่านี้แทนอัตโนมัติ
+# ข้อมูลจะอยู่ถาวรบน PostgreSQL ไม่หายเวลา Restart
+if os.environ.get('DATABASE_URL'):
+    DATABASES['default'] = dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+
+# ---------------- CORS ----------------
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'https://room-booking-1-7u7e.onrender.com', # Frontend บน Render
 ]
-
 CORS_ALLOW_CREDENTIALS = True
+
 # ---------------- AUTH ----------------
 AUTH_USER_MODEL = 'booking.User'
 
@@ -93,7 +108,6 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
 # ---------------- CHANNELS ----------------
 CHANNEL_LAYERS = {
     'default': {
@@ -101,24 +115,21 @@ CHANNEL_LAYERS = {
     }
 }
 
-
 # ---------------- INTERNATIONALIZATION ----------------
 LANGUAGE_CODE = 'th'
 TIME_ZONE = 'Asia/Bangkok'
-
 USE_I18N = True
 USE_TZ = True
 
-
 # ---------------- STATIC & MEDIA ----------------
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles' # สำหรับ Production
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
 
 # ---------------- DJANGO REST FRAMEWORK ----------------
 REST_FRAMEWORK = {
@@ -132,25 +143,12 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-
-# ---------------- JWT ----------------
+# ---------------- JWT (ปรับให้ Token อายุยาวขึ้น ไม่หลุดบ่อย) ----------------
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),   # ใช้งานได้ต่อเนื่อง 1 วัน
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30), # อยู่ได้ยาว 30 วัน
     'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
 }
-
-
-import os
-import dj_database_url
-
-if os.environ.get('DATABASE_URL'):
-    DATABASES['default'] = dj_database_url.config(
-        default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600
-    )
-
-ALLOWED_HOSTS = ['*']
-CORS_ALLOWED_ORIGINS += [
-    'https://room-booking-1-7u7e.onrender.com',
-]
