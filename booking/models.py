@@ -144,44 +144,44 @@ class BookingLog(models.Model):
 
 
 # ============================================================
-# 7. DEMAND FORECAST — ผลพยากรณ์จาก LSTM
+# 7. DEMAND FORECAST — ผลพยากรณ์จาก ML (Stacking Ensemble)
 #
-# LSTM จะเทรนจากข้อมูล Booking แล้วเขียนผลลงตารางนี้
+# โมเดลจะเทรนจากข้อมูล Booking แล้วเขียนผลลงตารางนี้
 # ระบบอ่านค่าจากตารางนี้ไปแสดงผลบนหน้าเว็บ
 #
-# ตัวอย่างที่ LSTM จะทำนาย:
-#   ห้อง A201 | จันทร์ 09:00 → predicted_demand = 0.85
+# ตัวอย่างที่โมเดลจะทำนาย:
+#   ห้อง A201 | จันทร์ 09:00 → predicted_demand = 85.0
 #   → demand_level  = 'high'
 #   → availability  = 'likely_full'   ← แสดงผลให้ User เห็น
 # ============================================================
 class DemandForecast(models.Model):
 
-    # ระดับความต้องการ (LSTM ทำนายออกมาเป็นตัวเลข 0-1 แล้ว Map เป็น level นี้)
+    # ระดับความต้องการ (โมเดลทำนายออกมาเป็นตัวเลข 0-100 แล้ว Map เป็น level นี้)
     DEMAND_LEVEL_CHOICES = [
-        ('low',    'ต่ำ'),       # 0.00 – 0.39
-        ('medium', 'ปานกลาง'),  # 0.40 – 0.69
-        ('high',   'สูง'),       # 0.70 – 1.00
+        ('low',    'ต่ำ'),       # 0 – 34
+        ('medium', 'ปานกลาง'),  # 35 – 69
+        ('high',   'สูง'),       # 70 – 100
     ]
 
     # สถานะที่ระบบแสดงให้ผู้ใช้เห็น (แปลจาก demand_level อีกทีเพื่อความชัดเจน)
     AVAILABILITY_CHOICES = [
-        ('likely_available', '🟢 มีโอกาสว่างสูง'),   # demand ต่ำ
+        ('likely_available', '🟢 มีโอกาสว่างสูง'),    # demand ต่ำ
         ('likely_busy',      '🟡 มีโอกาสแน่นปานกลาง'), # demand ปานกลาง
-        ('likely_full',      '🔴 มีโอกาสเต็ม'),       # demand สูง
+        ('likely_full',      '🔴 มีโอกาสเต็ม'),        # demand สูง
     ]
 
-    room             = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='forecasts')
-    forecast_date    = models.DateField(verbose_name='วันที่พยากรณ์')
-    hour             = models.IntegerField(verbose_name='ชั่วโมง (0-23)')
+    room          = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='forecasts')
+    forecast_date = models.DateField(verbose_name='วันที่พยากรณ์')
+    hour          = models.IntegerField(verbose_name='ชั่วโมง (0-23)')
 
-    # ค่าตัวเลขดิบที่ LSTM คำนวณออกมา (0.0 - 1.0)
+    # ค่าตัวเลขดิบที่โมเดลคำนวณออกมา (0 – 100)
     predicted_demand = models.FloatField(
-        verbose_name='ค่าความต้องการที่คาดการณ์ (0.0-1.0)',
-        help_text='0 = ไม่มีความต้องการเลย, 1 = ต้องการสูงสุด'
+        verbose_name='ค่าความต้องการที่คาดการณ์ (0–100)',
+        help_text='0 = ไม่มีความต้องการเลย, 100 = ต้องการสูงสุด'
     )
 
     # ระดับที่แปลงจากตัวเลขแล้ว (low / medium / high)
-    demand_level     = models.CharField(
+    demand_level = models.CharField(
         max_length=10,
         choices=DEMAND_LEVEL_CHOICES,
         default='low',
@@ -189,7 +189,7 @@ class DemandForecast(models.Model):
     )
 
     # สถานะที่แสดงให้ผู้ใช้เห็นบนหน้าเว็บ
-    availability     = models.CharField(
+    availability = models.CharField(
         max_length=20,
         choices=AVAILABILITY_CHOICES,
         default='likely_available',
@@ -197,7 +197,7 @@ class DemandForecast(models.Model):
     )
 
     # ความมั่นใจของโมเดล (0-100%) — ไว้แสดงใน Dashboard Admin
-    confidence       = models.FloatField(
+    confidence = models.FloatField(
         default=0.0,
         verbose_name='ความมั่นใจของโมเดล (%)',
         help_text='0-100 เปอร์เซ็นต์'
@@ -215,20 +215,12 @@ class DemandForecast(models.Model):
             f"{self.room} | "
             f"{self.forecast_date} {self.hour:02d}:00 | "
             f"{self.get_availability_display()} "
-            f"({self.predicted_demand:.0%})"
+            f"({self.predicted_demand:.1f}%)"  # ← แสดง 42.3% ถูกต้อง
         )
 
     def save(self, *args, **kwargs):
-        if self.predicted_demand < 0.35:
-            self.demand_level = 'low'
-            self.availability = 'likely_available'
-        elif self.predicted_demand < 0.65:
-            self.demand_level = 'medium'
-            self.availability = 'likely_busy'
-        else:
-            self.demand_level = 'high'
-            self.availability = 'likely_full'
         super().save(*args, **kwargs)
+
 
 # ============================================================
 # 8. NOTIFICATION — การแจ้งเตือน
