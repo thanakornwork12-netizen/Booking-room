@@ -110,6 +110,9 @@ class Booking(models.Model):
     note        = models.TextField(blank=True, verbose_name='หมายเหตุ')
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
+    
+    checked_in = models.BooleanField(default=False, verbose_name='Check-in แล้ว')
+    reminded   = models.BooleanField(default=False, verbose_name='แจ้งเตือนแล้ว')
     approved_by = models.ForeignKey(
         User, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='approved_bookings'

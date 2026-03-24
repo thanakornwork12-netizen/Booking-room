@@ -155,10 +155,11 @@ print("=" * 80)
 raw_qs = Booking.objects.exclude(status='cancelled').values('start_time', 'room_id')
 raw    = pd.DataFrame(list(raw_qs))
 raw['date'] = pd.to_datetime(raw['start_time']).dt.date
-DemandForecast.objects.all().delete()
 
 all_stats      = []
 all_thresholds = []
+today          = pd.to_datetime('today').date()
+forecast_dates = [today + timedelta(days=d) for d in range(FORECAST_DAYS)]
 
 for room in Room.objects.all():
     rdf = raw[raw['room_id'] == room.id]
@@ -195,7 +196,6 @@ for room in Room.objects.all():
 
     peak_ref          = float(daily.quantile(0.95)) or 1.0
     thr_high, thr_med = compute_adaptive_thresholds(daily, peak_ref)
-    peak_ratio        = max(room_hour_dist.values())
 
     all_thresholds.append({'Room': room.name, 'peak_ref': round(peak_ref, 2),
                            'thr_high': thr_high, 'thr_med': thr_med})
@@ -205,47 +205,62 @@ for room in Room.objects.all():
 
     history = daily.copy()
     bulk    = []
-    today   = pd.to_datetime('today').date()
 
     for d in range(FORECAST_DAYS):
-        fc_date  = today + timedelta(days=d)
+        fc_date  = forecast_dates[d]
         extended = pd.concat([history, pd.Series([np.nan], index=[fc_date])])
         f_df     = build_features(extended).loc[[fc_date]].drop(columns='y')
         d_pred   = max(0.0, float(lgb_model.predict(f_df)[0]))
         history.loc[fc_date] = d_pred
 
-        day_norm = float(np.clip(d_pred / (peak_ref + 1e-6), 0, 1))
+        # ✅ day_norm = 0.0-1.0 → ใช้เป็น predicted_demand และ classify ระดับวัน
+        day_norm = float(np.clip(d_pred / (peak_ref + 1e-6), 0.0, 1.0))
 
         if day_norm >= thr_high:
-            level, avail = 'high',   'likely_full'
+            day_level, day_avail = 'high',   'likely_full'
         elif day_norm >= thr_med:
-            level, avail = 'medium', 'likely_busy'
+            day_level, day_avail = 'medium', 'likely_busy'
         else:
-            level, avail = 'low',    'likely_available'
+            day_level, day_avail = 'low',    'likely_available'
 
-        for hr, ratio in room_hour_dist.items():
-            hour_demand = round(day_norm * (ratio / (peak_ratio + 1e-6)) * 100, 2)
+        for hr in room_hour_dist.keys():
+            # ✅ FIX: predicted_demand = day_norm ทุก hour
+            # → สอดคล้องกับ demand_level เสมอ ไม่มี 0.0 + medium อีกแล้ว
+            # hour_dist ใช้แค่กำหนดว่า hour ไหนบ้างที่มีข้อมูล (8-17)
             bulk.append(DemandForecast(
-                room=room, forecast_date=fc_date, hour=hr,
-                predicted_demand=hour_demand,
-                demand_level=level,
-                availability=avail,
-                confidence=round(max(0.0, m_r2) * 100, 1),
+                room             = room,
+                forecast_date    = fc_date,
+                hour             = hr,
+                predicted_demand = round(day_norm, 4),  # ✅ 0.0-1.0 สอดคล้อง demand_level
+                demand_level     = day_level,
+                availability     = day_avail,
+                confidence       = round(max(0.0, m_r2) * 100, 1),
             ))
 
-    DemandForecast.objects.bulk_create(bulk)
+    # ✅ delete เฉพาะห้องนี้ก่อน → ไม่มี unique_together conflict
+    # ถ้า script crash กลางคัน ห้องที่ save แล้วยังอยู่ครบ
+    DemandForecast.objects.filter(
+        room=room,
+        forecast_date__in=forecast_dates,
+    ).delete()
 
+    DemandForecast.objects.bulk_create(bulk)
+    print(f"   💾 Saved {len(bulk)} records")
+
+# ── Summary ──────────────────────────────────────────────────────────────────
 df_res = pd.DataFrame(all_stats)
 df_thr = pd.DataFrame(all_thresholds)
 
 print("\n" + "=" * 80)
-print(f"📈 Avg R²:    {df_res['R2'].mean():.3f}")
-print(f"📉 Avg MAE:   {df_res['MAE'].mean():.2f}")
-print(f"📉 Avg RMSE:  {df_res['RMSE'].mean():.2f}")
-print(f"📉 Avg MAPE:  {df_res['MAPE'].mean():.1f}%")
-print(f"📉 Avg sMAPE: {df_res['sMAPE'].mean():.1f}%")
-print("\n── Adaptive Thresholds ที่ใช้ (0-1) ──")
-print(df_thr.to_string(index=False))
+if len(df_res):
+    print(f"📈 Avg R²:    {df_res['R2'].mean():.3f}")
+    print(f"📉 Avg MAE:   {df_res['MAE'].mean():.2f}")
+    print(f"📉 Avg RMSE:  {df_res['RMSE'].mean():.2f}")
+    print(f"📉 Avg MAPE:  {df_res['MAPE'].mean():.1f}%")
+    print(f"📉 Avg sMAPE: {df_res['sMAPE'].mean():.1f}%")
+    print("\n── Adaptive Thresholds ที่ใช้ (0-1) ──")
+    print(df_thr.to_string(index=False))
+
 print("\n── จำนวน Record ต่อระดับ ──")
 for lvl in ['high', 'medium', 'low']:
     c = DemandForecast.objects.filter(demand_level=lvl).count()

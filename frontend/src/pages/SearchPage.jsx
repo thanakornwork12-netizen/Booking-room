@@ -27,6 +27,8 @@ const DURATIONS = [
 
 const ATTENDEES_PRESETS = [2, 5, 10, 20, 30, 50]
 
+const CAPACITY_BUFFER = 10  // รับห้องที่จุได้เกินจำนวนคนไม่เกิน 10
+
 const FORECAST_CONFIG = {
   low: {
     badge: 'จองได้เลย', sub: 'ห้องว่าง พร้อมใช้งาน',
@@ -196,12 +198,11 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         </div>
       )}
 
-      {/* STEP 1 DESKTOP — 2 column */}
+      {/* STEP 1 DESKTOP */}
       {step === 1 && (
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="grid grid-cols-3 gap-6">
 
-            {/* LEFT: form fields */}
             <div className="col-span-2 space-y-5">
               <div className="grid grid-cols-2 gap-5">
                 {/* จำนวนคน */}
@@ -241,7 +242,7 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                 </div>
               </div>
 
-              {/* เวลา full-width */}
+              {/* เวลา */}
               <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au3">
                 <SectionLabel icon={Clock}>เวลา</SectionLabel>
                 <div className="grid grid-cols-8 gap-2 mb-4">
@@ -290,6 +291,10 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                     <span className="text-slate-500">อาคาร</span>
                     <span className="font-bold text-slate-800">{BUILDINGS.find(b => b.code === building)?.label || 'ทั้งหมด'}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">ขนาดห้อง</span>
+                    <span className="font-bold text-slate-800">{attendees}–{attendees + CAPACITY_BUFFER} คน</span>
+                  </div>
                 </div>
                 <button onClick={handleSearch} disabled={loading}
                   className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:cursor-not-allowed">
@@ -303,23 +308,22 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         </div>
       )}
 
-      {/* STEP 2 DESKTOP — list */}
+      {/* STEP 2 DESKTOP */}
       {step === 2 && (
         <div className="max-w-7xl mx-auto px-6 py-8">
-          {/* summary */}
           <div className="bg-blue-700 rounded-2xl px-6 py-4 flex items-center justify-between mb-6 shadow-md shadow-blue-300 au">
             <div className="flex gap-6 items-center">
               <span className="text-white font-bold">{attendees} คน</span>
               <span className="text-blue-200 text-sm">{formatDateShort(date)}</span>
               <span className="text-blue-200 text-sm">{startTime}–{endTime}</span>
               {building && <span className="text-blue-200 text-sm">{BUILDINGS.find(b=>b.code===building)?.label}</span>}
+              <span className="text-blue-200 text-sm">ห้องจุ {attendees}–{attendees + CAPACITY_BUFFER} คน</span>
             </div>
             <div className="flex items-center gap-2 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1.5">
               <Zap size={11} />AI Forecast
             </div>
           </div>
 
-          {/* demand stat + list */}
           <div className="grid grid-cols-4 gap-6">
             <div className="space-y-3 au1">
               {[
@@ -342,7 +346,8 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
               {rooms.length === 0 ? (
                 <div className="bg-white border border-blue-100 rounded-2xl py-16 text-center">
                   <Building2 size={40} className="text-blue-200 mx-auto mb-4" />
-                  <p className="font-semibold text-blue-700 mb-2">ไม่พบห้องว่าง</p>
+                  <p className="font-semibold text-blue-700 mb-2">ไม่พบห้องว่างที่เหมาะสม</p>
+                  <p className="text-xs text-slate-400 mb-4">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
                   <button onClick={() => setStep(1)} className="text-sm text-blue-600 hover:underline">← ค้นหาใหม่</button>
                 </div>
               ) : rooms.map((room, idx) => {
@@ -395,6 +400,7 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                     {label:'วันที่',       value: formatDate(date)},
                     {label:'เวลา',         value: `${startTime} – ${endTime} น.`},
                     {label:'ผู้เข้าร่วม', value: `${attendees} คน`},
+                    {label:'ความจุห้อง',  value: `${selectedRoom.capacity} คน`},
                   ].map((r,i) => (
                     <div key={i} className="flex justify-between px-4 py-3 bg-white border-b border-blue-50 last:border-0">
                       <span className="text-xs text-slate-500">{r.label}</span>
@@ -565,6 +571,7 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
                 <span className="font-bold text-white">{attendees} คน</span>
                 <span className="text-blue-200 text-xs">{formatDateShort(date)}</span>
                 <span className="text-blue-200 text-xs">{startTime}–{endTime}</span>
+                <span className="text-blue-200 text-xs">จุ {attendees}–{attendees + CAPACITY_BUFFER} คน</span>
               </div>
               <div className="flex items-center gap-1.5 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1"><Zap size={10} />AI</div>
             </div>
@@ -587,7 +594,8 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
             {rooms.length === 0 ? (
               <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au">
                 <Building2 size={32} className="text-blue-200 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-blue-700 mb-1">ไม่พบห้องว่าง</p>
+                <p className="text-sm font-semibold text-blue-700 mb-1">ไม่พบห้องว่างที่เหมาะสม</p>
+                <p className="text-xs text-slate-400 mb-3">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
                 <button onClick={() => setStep(1)} className="text-xs text-blue-600 hover:underline mt-2">← ค้นหาใหม่</button>
               </div>
             ) : rooms.map((room,idx) => {
@@ -632,7 +640,12 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
                   </div>
                 </div>
                 <div className="border-2 border-blue-50 rounded-xl overflow-hidden">
-                  {[{label:'วันที่',value:formatDate(date)},{label:'เวลา',value:`${startTime}–${endTime} น.`},{label:'ผู้เข้าร่วม',value:`${attendees} คน`}].map((r,i)=>(
+                  {[
+                    {label:'วันที่',      value: formatDate(date)},
+                    {label:'เวลา',        value: `${startTime}–${endTime} น.`},
+                    {label:'ผู้เข้าร่วม',value: `${attendees} คน`},
+                    {label:'ความจุห้อง', value: `${selectedRoom.capacity} คน`},
+                  ].map((r,i)=>(
                     <div key={i} className="flex justify-between px-4 py-2.5 bg-white border-b border-blue-50 last:border-0">
                       <span className="text-xs text-slate-500">{r.label}</span>
                       <span className="text-sm font-semibold text-slate-800">{r.value}</span>
@@ -669,19 +682,19 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
 export default function SearchPage() {
   const navigate    = useNavigate()
   const isMobile    = useDevice()
-  const [step, setStep]         = useState(1)
-  const [attendees, setAttendees] = useState(5)
-  const [date, setDate]           = useState(new Date().toISOString().split('T')[0])
-  const [startTime, setStartTime] = useState('')
-  const [duration, setDuration]   = useState(1)
-  const [building, setBuilding]   = useState('')
-  const [rooms, setRooms]         = useState([])
+  const [step, setStep]               = useState(1)
+  const [attendees, setAttendees]     = useState(5)
+  const [date, setDate]               = useState(new Date().toISOString().split('T')[0])
+  const [startTime, setStartTime]     = useState('')
+  const [duration, setDuration]       = useState(1)
+  const [building, setBuilding]       = useState('')
+  const [rooms, setRooms]             = useState([])
   const [selectedRoom, setSelectedRoom] = useState(null)
-  const [title, setTitle]         = useState('')
-  const [loading, setLoading]     = useState(false)
+  const [title, setTitle]             = useState('')
+  const [loading, setLoading]         = useState(false)
   const [bookingLoading, setBookingLoading] = useState(false)
-  const [success, setSuccess]     = useState(false)
-  const [error, setError]         = useState('')
+  const [success, setSuccess]         = useState(false)
+  const [error, setError]             = useState('')
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
@@ -693,10 +706,14 @@ export default function SearchPage() {
         attendees, date, start_time: startTime, end_time: endTime,
         building_code: building || undefined,
       })
-      const sorted = [...res.data].sort((a,b) =>
-        FORECAST_CONFIG[a.forecast?.demand_level||'none'].sort -
-        FORECAST_CONFIG[b.forecast?.demand_level||'none'].sort
-      )
+
+      // ✅ filter เฉพาะห้องที่จุได้ในช่วง attendees ถึง attendees+CAPACITY_BUFFER
+      const sorted = [...res.data]
+        .filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
+        .sort((a,b) =>
+          FORECAST_CONFIG[a.forecast?.demand_level||'none'].sort -
+          FORECAST_CONFIG[b.forecast?.demand_level||'none'].sort
+        )
       setRooms(sorted); setStep(2)
     } catch { setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง') }
     finally   { setLoading(false) }
@@ -717,9 +734,9 @@ export default function SearchPage() {
   }
 
   const shared = {
-    formProps: { attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, endTime, loading, handleSearch, error },
+    formProps:   { attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, endTime, loading, handleSearch, error },
     resultProps: { rooms, setSelectedRoom },
-    confirmProps: { selectedRoom, title, setTitle, bookingLoading, handleBook, success },
+    confirmProps:{ selectedRoom, title, setTitle, bookingLoading, handleBook, success },
   }
 
   return isMobile

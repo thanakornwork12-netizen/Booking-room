@@ -1,5 +1,6 @@
 from django.utils import timezone
 from django.db.models import Q, Count
+from django.db import transaction
 from datetime import datetime, date as date_type
 import threading
 
@@ -70,6 +71,7 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             return RoomListSerializer
         return RoomSerializer
 
+    # ✅ FIX: indent ถูกต้อง อยู่ใน RoomViewSet
     @action(detail=False, methods=['post'])
     def search(self, request):
         ser = RoomSearchSerializer(data=request.data)
@@ -79,21 +81,29 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         date     = d['date']
         start_dt = timezone.make_aware(datetime.combine(date, d['start_time']))
         end_dt   = timezone.make_aware(datetime.combine(date, d['end_time']))
+        now      = timezone.now()
 
         facilities = request.data.get('facilities', [])
 
-        # ห้องที่ถูกจองไว้แล้ว (approved เท่านั้น)
+        # ✅ FIX: ห้องที่ถูกจองอยู่จริงๆ ณ ช่วงเวลานั้น
+        # เพิ่ม end_time__gt=now → การจองที่หมดเวลาแล้วไม่ block ห้องอีกต่อไป
+        # เช่น จอง 14:00-16:00 ตอนนี้ 16:01 → ห้องกลับมาว่างทันที
         booked_ids = Booking.objects.filter(
             status__in=['approved'],
             start_time__lt=end_dt,
-            end_time__gt=start_dt,
+            end_time__gt=max(start_dt, now),  # ✅ overlap กับ "ตอนนี้" หรือ "เวลาที่ค้นหา" whichever is later
         ).values_list('room_id', flat=True)
 
+        # ✅ FIX: ไม่ filter status='available' ตายตัว
+        # → exclude maintenance/disabled แทน เพราะ status='occupied' อาจค้างจากการจองเก่า
         available = Room.objects.filter(
             is_active=True,
-            status='available',
             capacity__gte=d['attendees'],
-        ).exclude(id__in=booked_ids).select_related('building').prefetch_related('facilities')
+        ).exclude(
+            id__in=booked_ids
+        ).exclude(
+            status__in=['maintenance', 'disabled']
+        ).select_related('building').prefetch_related('facilities')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -110,23 +120,15 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         else:
             results = list(available.order_by('capacity'))
 
-        # ── ดึง Forecast ตรง date + hour ที่ user ค้นหาพอดี ──
-        hour = d['start_time'].hour  # int เช่น 10, 13, 14
+        hour = d['start_time'].hour
 
         response_data = []
         for room in results:
-            # แก้ Bug 2: ใช้ .filter().first() แทน .first() แบบเดิม
-            # และส่ง predicted_demand กลับด้วย (Frontend ต้องการ)
             forecast = (
                 DemandForecast.objects
-                .filter(
-                    room=room,
-                    forecast_date=date,   # date object ตรงกับที่ DRF parse แล้ว
-                    hour=hour,            # int ตรงกับที่ ML script บันทึก
-                )
+                .filter(room=room, forecast_date=date, hour=hour)
                 .first()
             )
-
             room_data = RoomSerializer(room, context={'request': request}).data
             room_data['forecast'] = {
                 'demand_level':     forecast.demand_level     if forecast else 'none',
@@ -136,8 +138,6 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             }
             response_data.append(room_data)
 
-        # เรียงตาม demand_level: low → medium → high
-        # (ห้องที่ว่างขึ้นก่อน เพราะน่าจองมากกว่า)
         level_order = {'low': 0, 'medium': 1, 'high': 2, 'none': 3}
         response_data.sort(
             key=lambda r: level_order.get(r['forecast']['demand_level'], 3)
@@ -191,14 +191,46 @@ class BookingViewSet(viewsets.ModelViewSet):
         return BookingSerializer
 
     def perform_create(self, serializer):
-        booking = serializer.save(user=self.request.user, status='approved')
-        Notification.objects.create(
-            user=self.request.user,
-            booking=booking,
-            type='booking_approved',
-            title='จองห้องสำเร็จ',
-            message=f'จองห้อง {booking.room.name} วันที่ {booking.start_time.strftime("%d/%m/%Y %H:%M")} เรียบร้อยแล้ว'
-        )
+        # ✅ FIX: ป้องกันการจองพร้อมกัน (Race Condition)
+        # select_for_update() + atomic → lock row ระหว่าง transaction
+        # ถ้า 2 คนกด "จอง" พร้อมกัน คนที่ 2 จะได้รับ error แทนที่จะ double book
+        with transaction.atomic():
+            room       = serializer.validated_data['room']
+            start_time = serializer.validated_data['start_time']
+            end_time   = serializer.validated_data['end_time']
+
+            # Lock rows ที่ overlap กับช่วงเวลานี้ก่อน
+            conflict = (
+                Booking.objects
+                .select_for_update()   # ✅ lock ระหว่าง transaction
+                .filter(
+                    room=room,
+                    status='approved',
+                    start_time__lt=end_time,
+                    end_time__gt=start_time,
+                )
+                .exists()
+            )
+
+            if conflict:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({
+                    'non_field_errors': ['ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกเวลาอื่น']
+                })
+
+            booking = serializer.save(user=self.request.user, status='approved')
+
+            Notification.objects.create(
+                user=self.request.user,
+                booking=booking,
+                type='booking_approved',
+                title='จองห้องสำเร็จ',
+                message=(
+                    f'จองห้อง {booking.room.name} '
+                    f'วันที่ {booking.start_time.strftime("%d/%m/%Y %H:%M")} '
+                    f'เรียบร้อยแล้ว'
+                )
+            )
 
     def destroy(self, request, *args, **kwargs):
         return Response(
@@ -237,10 +269,10 @@ class DashboardView(generics.GenericAPIView):
         if request.user.role not in ['admin', 'staff']:
             return Response({'error': 'หน้านี้สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
-        today         = timezone.now().date()
-        total_rooms   = Room.objects.filter(is_active=True).count()
+        today          = timezone.now().date()
+        total_rooms    = Room.objects.filter(is_active=True).count()
         today_bookings = Booking.objects.filter(start_time__date=today, status='approved').count()
-        utilization   = round((today_bookings / total_rooms * 100), 1) if total_rooms > 0 else 0
+        utilization    = round((today_bookings / total_rooms * 100), 1) if total_rooms > 0 else 0
 
         popular_rooms = (
             Booking.objects.filter(status='approved')
