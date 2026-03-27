@@ -1,5 +1,5 @@
 # booking/consumers.py
-
+#ไฟลหลักในการส่งข้อมมูล แบบ realtime ใน db
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -12,18 +12,18 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
     URL: ws://localhost:8000/ws/rooms/
     ทุก Client ที่เชื่อมต่อจะได้รับการอัปเดตพร้อมกัน
     """
-
+    #ทำgroup เมื่อ user ล็อตอินมา
     async def connect(self):
         self.group_name = 'room_status'
 
-        # เข้าร่วม Group
+        
         await self.channel_layer.group_add(
             self.group_name,
             self.channel_name
         )
-        await self.accept()
+        await self.accept()#เป็นการอนุญาติให้เชื่อมต่อ
 
-        # ส่งสถานะห้องทั้งหมดให้ Client ทันทีที่เชื่อมต่อ
+        #เมื่อผ่านการยืนยัน ก็จะดึงข้อมูลทั้งหมดมาโชว
         rooms = await self.get_all_rooms()
         await self.send(text_data=json.dumps({
             'type':  'initial_rooms',

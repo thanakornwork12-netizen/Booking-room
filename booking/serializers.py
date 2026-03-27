@@ -1,12 +1,10 @@
-# booking/serializers.py
-
 from rest_framework import serializers
+from django.utils import timezone
 from .models import (
     User, Building, Room, RoomFacility,
     Booking, BookingLog, DemandForecast,
     Notification, RoomUsageStat
 )
-
 
 # ============================================================
 # USER
@@ -37,9 +35,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
-        user = User(**validated_data)
-        user.set_password(password)
-        user.save()
+
+        user = User.objects.create_user(
+            password=password,
+            **validated_data
+        )
         return user
 
 
@@ -84,11 +84,10 @@ class RoomSerializer(serializers.ModelSerializer):
 
 
 class RoomListSerializer(serializers.ModelSerializer):
-    """ใช้ตอนแสดงรายการ ไม่ต้องการรายละเอียด facilities"""
-    building_name    = serializers.CharField(source='building.name', read_only=True)
-    building_code    = serializers.CharField(source='building.code', read_only=True)
-    demand_level     = serializers.SerializerMethodField()
-    availability     = serializers.SerializerMethodField()
+    building_name = serializers.CharField(source='building.name', read_only=True)
+    building_code = serializers.CharField(source='building.code', read_only=True)
+    demand_level  = serializers.SerializerMethodField()
+    availability  = serializers.SerializerMethodField()
 
     class Meta:
         model  = Room
@@ -98,22 +97,26 @@ class RoomListSerializer(serializers.ModelSerializer):
             'demand_level', 'availability'
         ]
 
+    def _get_current_forecast(self, obj):
+        now = timezone.now()
+
+        # ใช้ cache ใน memory (แก้ N+1)
+        forecasts = getattr(obj, 'prefetched_forecasts', None)
+
+        if forecasts is None:
+            forecasts = obj.forecasts.all()
+
+        for f in forecasts:
+            if f.forecast_date == now.date() and f.hour == now.hour:
+                return f
+        return None
+
     def get_demand_level(self, obj):
-        """ดึงค่าพยากรณ์ล่าสุดจาก LSTM"""
-        from django.utils import timezone
-        forecast = obj.forecasts.filter(
-            forecast_date=timezone.now().date(),
-            hour=timezone.now().hour
-        ).first()
+        forecast = self._get_current_forecast(obj)
         return forecast.demand_level if forecast else 'low'
 
     def get_availability(self, obj):
-        forecast = None
-        from django.utils import timezone
-        forecast = obj.forecasts.filter(
-            forecast_date=timezone.now().date(),
-            hour=timezone.now().hour
-        ).first()
+        forecast = self._get_current_forecast(obj)
         return forecast.availability if forecast else 'likely_available'
 
 
@@ -135,7 +138,6 @@ class BookingSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'user', 'status', 'created_at', 'updated_at']
 
     def validate(self, data):
-        """ตรวจสอบว่าห้องไม่ถูกจองซ้อนเวลา"""
         room       = data.get('room')
         start_time = data.get('start_time')
         end_time   = data.get('end_time')
@@ -143,28 +145,27 @@ class BookingSerializer(serializers.ModelSerializer):
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
 
-        # เช็คการซ้อนเวลา
         overlap = Booking.objects.filter(
             room=room,
             status__in=['pending', 'approved'],
             start_time__lt=end_time,
             end_time__gt=start_time,
         )
+
         if self.instance:
             overlap = overlap.exclude(pk=self.instance.pk)
+
         if overlap.exists():
             raise serializers.ValidationError('ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว')
 
         return data
 
     def create(self, validated_data):
-        # ดึง user จาก request context
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
-    """ใช้ตอนสร้างการจองใหม่ — รับแค่ข้อมูลที่จำเป็น"""
     class Meta:
         model  = Booking
         fields = ['room', 'title', 'attendees', 'start_time', 'end_time', 'note']
@@ -183,6 +184,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             start_time__lt=end_time,
             end_time__gt=start_time,
         )
+
         if overlap.exists():
             raise serializers.ValidationError('ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว')
 
@@ -233,19 +235,15 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# ROOM SEARCH (สำหรับ Pop-up ค้นหาห้อง)
-# รับ: attendees, room_type, building_code, date, start_hour, end_hour
-# คืน: ห้องที่ว่าง เรียงตามความเหมาะสม
+# ROOM SEARCH
 # ============================================================
 class RoomSearchSerializer(serializers.Serializer):
-    attendees    = serializers.IntegerField(min_value=1, help_text='จำนวนคน')
-    room_type    = serializers.CharField(required=False, allow_blank=True,
-                                         help_text='ประเภทห้อง (ไม่บังคับ)')
-    building_code = serializers.CharField(required=False, allow_blank=True,
-                                          help_text='รหัสอาคาร (ไม่บังคับ)')
-    date         = serializers.DateField(help_text='วันที่ต้องการจอง')
-    start_time   = serializers.TimeField(help_text='เวลาเริ่ม')
-    end_time     = serializers.TimeField(help_text='เวลาสิ้นสุด')
+    attendees     = serializers.IntegerField(min_value=1)
+    room_type     = serializers.CharField(required=False, allow_blank=True)
+    building_code = serializers.CharField(required=False, allow_blank=True)
+    date          = serializers.DateField()
+    start_time    = serializers.TimeField()
+    end_time      = serializers.TimeField()
 
     def validate(self, data):
         if data['start_time'] >= data['end_time']:

@@ -30,6 +30,7 @@ urlpatterns = [
 path('retrain/', views.trigger_retrain),
     # Dashboard
     path('dashboard/',          DashboardView.as_view(),        name='dashboard'),
+    
 
     # ViewSets
     path('', include(router.urls)),
