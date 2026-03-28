@@ -2,9 +2,9 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 
-# ============================================================
+
 # 1. USER — ผู้ใช้งานระบบ
-# ============================================================
+
 class User(AbstractUser):
     ROLE_CHOICES = [
         ('admin',     'ผู้ดูแลระบบ'),

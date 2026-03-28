@@ -1,5 +1,3 @@
-# booking/urls.py
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import (
@@ -13,6 +11,7 @@ from .views import (
     DemandForecastViewSet, DashboardView,
 )
 from booking import views
+from .views_export import export_excel  # ← เพิ่มบรรทัดนี้
 
 router = DefaultRouter()
 router.register('buildings',    BuildingViewSet,       basename='building')
@@ -23,14 +22,19 @@ router.register('forecasts',    DemandForecastViewSet, basename='forecast')
 
 urlpatterns = [
     # Auth
-    path('auth/register/',      RegisterView.as_view(),         name='register'),
-    path('auth/login/',         TokenObtainPairView.as_view(),  name='login'),
-    path('auth/refresh/',       TokenRefreshView.as_view(),     name='token_refresh'),
-    path('auth/profile/',       ProfileView.as_view(),          name='profile'),
-path('retrain/', views.trigger_retrain),
+    path('auth/register/',  RegisterView.as_view(),        name='register'),
+    path('auth/login/',     TokenObtainPairView.as_view(), name='login'),
+    path('auth/refresh/',   TokenRefreshView.as_view(),    name='token_refresh'),
+    path('auth/profile/',   ProfileView.as_view(),         name='profile'),
+
+    # Export
+    path('export/excel/',   export_excel,                  name='export_excel'),
+
+    # Retrain
+    path('retrain/',        views.trigger_retrain,         name='retrain'),
+
     # Dashboard
-    path('dashboard/',          DashboardView.as_view(),        name='dashboard'),
-    
+    path('dashboard/',      DashboardView.as_view(),       name='dashboard'),
 
     # ViewSets
     path('', include(router.urls)),

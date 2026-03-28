@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CheckCircle, Building2, ChevronRight,
-  Search, Clock, Users, Calendar, MapPin, Zap, Monitor, Smartphone
+  Search, Clock, Users, Calendar, MapPin, Zap, Monitor, Smartphone,
+  AlertTriangle
 } from 'lucide-react'
 import api from '../api/axios'
 
@@ -26,8 +27,7 @@ const DURATIONS = [
 ]
 
 const ATTENDEES_PRESETS = [2, 5, 10, 20, 30, 50]
-
-const CAPACITY_BUFFER = 10  // รับห้องที่จุได้เกินจำนวนคนไม่เกิน 10
+const CAPACITY_BUFFER = 10
 
 const FORECAST_CONFIG = {
   low: {
@@ -84,6 +84,7 @@ const ANIM = `
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
 @keyframes slideRight{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 .au{animation:fadeUp .28s ease both}
 .au1{animation:fadeUp .28s .06s ease both}
 .au2{animation:fadeUp .28s .12s ease both}
@@ -92,6 +93,7 @@ const ANIM = `
 .si{animation:scaleIn .22s ease both}
 .af{animation:fadeIn .2s ease both}
 .sr{animation:slideRight .25s ease both}
+.checkin-pulse{animation:pulse 2.5s ease-in-out infinite}
 `
 
 function useDevice() {
@@ -127,6 +129,54 @@ function SectionLabel({ icon: Icon, children }) {
   )
 }
 
+// ── CHECK-IN REMINDER BANNER ──────────────────────────
+function CheckInReminder({ startTime, compact = false }) {
+  if (!startTime) return null
+  return (
+    <div className={`
+      checkin-pulse relative overflow-hidden
+      border-2 border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50
+      rounded-2xl shadow-md shadow-amber-100
+      ${compact ? 'px-4 py-3.5' : 'px-5 py-4'}
+    `}>
+      {/* accent bar ซ้าย */}
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-amber-400 to-orange-400 rounded-l-2xl" />
+      <div className={`flex items-start gap-3 ${compact ? '' : 'ml-1'}`}>
+        <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center flex-shrink-0 shadow-sm shadow-amber-200">
+          <AlertTriangle size={18} color="#fff" strokeWidth={2.5} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-amber-900 font-extrabold text-sm leading-snug mb-1">
+            ⚠️ อย่าลืม Check-in ก่อนเริ่ม!
+          </p>
+          <p className="text-amber-800 text-xs leading-relaxed">
+            กดปุ่ม <span className="font-bold bg-amber-200 px-1.5 py-0.5 rounded-md">Check-in</span> ภายใน{' '}
+            <span className="font-bold text-orange-700">15 นาที</span> หลังเวลา{' '}
+            <span className="font-bold text-orange-700">{startTime} น.</span> มิฉะนั้น
+            ระบบจะ <span className="font-bold text-red-600">ยกเลิกการจองอัตโนมัติ</span>
+          </p>
+          <div className="mt-2.5 flex items-center gap-4 text-xs text-amber-700 font-semibold">
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-4 rounded-full bg-green-500 inline-flex items-center justify-center text-white" style={{fontSize:9}}>✓</span>
+              จองสำเร็จ
+            </span>
+            <span className="text-amber-300">→</span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-4 rounded-full bg-amber-400 inline-flex items-center justify-center text-white" style={{fontSize:9}}>!</span>
+              Check-in ภายใน 15 นาที
+            </span>
+            <span className="text-amber-300">→</span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-4 rounded-full bg-blue-600 inline-flex items-center justify-center text-white" style={{fontSize:9}}>✓</span>
+              ใช้ห้องได้เลย
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── DESKTOP LAYOUT ────────────────────────────────────
 function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confirmProps }) {
   const {
@@ -150,8 +200,13 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         <p className="text-lg font-bold text-blue-700 mb-4">{selectedRoom?.name}</p>
         <p className="text-sm text-slate-500">{formatDate(date)}</p>
         <p className="text-sm text-slate-500 mt-1">{startTime} – {endTime} น. · {attendees} ผู้เข้าร่วม</p>
+        {/* reminder หลังจองสำเร็จ */}
+        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
+          <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
+          <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
+        </div>
         <button onClick={() => navigate('/')}
-          className="mt-8 w-full bg-blue-700 hover:bg-blue-800 text-white rounded-2xl py-4 font-bold text-sm transition-all shadow-lg shadow-blue-200 active:scale-95">
+          className="mt-5 w-full bg-blue-700 hover:bg-blue-800 text-white rounded-2xl py-4 font-bold text-sm transition-all shadow-lg shadow-blue-200 active:scale-95">
           กลับหน้าหลัก
         </button>
       </div>
@@ -162,7 +217,6 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
     <div className="min-h-screen bg-slate-100" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
 
-      {/* TOP NAVBAR */}
       <div className="bg-blue-700 shadow-lg shadow-blue-900/20">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-4">
           <button onClick={() => step === 1 ? navigate('/') : setStep(step - 1)}
@@ -198,14 +252,12 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         </div>
       )}
 
-      {/* STEP 1 DESKTOP */}
+      {/* STEP 1 */}
       {step === 1 && (
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="grid grid-cols-3 gap-6">
-
             <div className="col-span-2 space-y-5">
               <div className="grid grid-cols-2 gap-5">
-                {/* จำนวนคน */}
                 <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au">
                   <SectionLabel icon={Users}>จำนวนผู้เข้าร่วม</SectionLabel>
                   <div className="flex items-center gap-4 mb-4">
@@ -222,8 +274,6 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                     {ATTENDEES_PRESETS.map(n => <Chip key={n} active={attendees === n} onClick={() => setAttendees(n)}>{n} คน</Chip>)}
                   </div>
                 </div>
-
-                {/* วันที่ + อาคาร */}
                 <div className="space-y-5">
                   <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au1">
                     <SectionLabel icon={Calendar}>วันที่</SectionLabel>
@@ -241,8 +291,6 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                   </div>
                 </div>
               </div>
-
-              {/* เวลา */}
               <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au3">
                 <SectionLabel icon={Clock}>เวลา</SectionLabel>
                 <div className="grid grid-cols-8 gap-2 mb-4">
@@ -268,39 +316,20 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                 </div>
               </div>
             </div>
-
-            {/* RIGHT: summary + search */}
             <div className="au4">
               <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm sticky top-20">
                 <p className="text-base font-bold text-slate-900 mb-1">สรุปการค้นหา</p>
                 <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-4" />
                 <div className="space-y-3 mb-6 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">ผู้เข้าร่วม</span>
-                    <span className="font-bold text-slate-800">{attendees} คน</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">วันที่</span>
-                    <span className="font-bold text-slate-800">{formatDateShort(date)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">เวลา</span>
-                    <span className="font-bold text-slate-800">{startTime ? `${startTime}–${endTime}` : '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">อาคาร</span>
-                    <span className="font-bold text-slate-800">{BUILDINGS.find(b => b.code === building)?.label || 'ทั้งหมด'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">ขนาดห้อง</span>
-                    <span className="font-bold text-slate-800">{attendees}–{attendees + CAPACITY_BUFFER} คน</span>
-                  </div>
+                  <div className="flex justify-between"><span className="text-slate-500">ผู้เข้าร่วม</span><span className="font-bold text-slate-800">{attendees} คน</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">วันที่</span><span className="font-bold text-slate-800">{formatDateShort(date)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">เวลา</span><span className="font-bold text-slate-800">{startTime ? `${startTime}–${endTime}` : '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">อาคาร</span><span className="font-bold text-slate-800">{BUILDINGS.find(b => b.code === building)?.label || 'ทั้งหมด'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">ขนาดห้อง</span><span className="font-bold text-slate-800">{attendees}–{attendees + CAPACITY_BUFFER} คน</span></div>
                 </div>
                 <button onClick={handleSearch} disabled={loading}
                   className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:cursor-not-allowed">
-                  {loading
-                    ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />ค้นหา...</>
-                    : <><Search size={15} />ค้นหาห้องว่าง</>}
+                  {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />ค้นหา...</> : <><Search size={15} />ค้นหาห้องว่าง</>}
                 </button>
               </div>
             </div>
@@ -308,7 +337,7 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         </div>
       )}
 
-      {/* STEP 2 DESKTOP */}
+      {/* STEP 2 */}
       {step === 2 && (
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="bg-blue-700 rounded-2xl px-6 py-4 flex items-center justify-between mb-6 shadow-md shadow-blue-300 au">
@@ -323,15 +352,10 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
               <Zap size={11} />AI Forecast
             </div>
           </div>
-
           <div className="grid grid-cols-4 gap-6">
             <div className="space-y-3 au1">
-              {[
-                {level:'low',    label:'จองได้เลย'},
-                {level:'medium', label:'ควรจองตอนนี้'},
-                {level:'high',   label:'รีบจองด่วน!'},
-              ].map(s => {
-                const cfg   = FORECAST_CONFIG[s.level]
+              {[{level:'low',label:'จองได้เลย'},{level:'medium',label:'ควรจองตอนนี้'},{level:'high',label:'รีบจองด่วน!'}].map(s => {
+                const cfg = FORECAST_CONFIG[s.level]
                 const count = rooms.filter(r => (r.forecast?.demand_level||'none') === s.level).length
                 return (
                   <div key={s.level} className={`border rounded-2xl py-4 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
@@ -382,8 +406,13 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         const cfg = FORECAST_CONFIG[selectedRoom.forecast?.demand_level || 'none']
         return (
           <div className="max-w-3xl mx-auto px-6 py-8">
+            {/* ── CHECK-IN REMINDER โดดเด่น ── */}
+            <div className="mb-6 au">
+              <CheckInReminder startTime={startTime} />
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
-              <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au">
+              <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au1">
                 <SectionLabel icon={Building2}>ห้องที่เลือก</SectionLabel>
                 <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-5" />
                 <div className="flex gap-3 mb-5">
@@ -416,7 +445,8 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                   </div>
                 )}
               </div>
-              <div className="space-y-5 au1">
+
+              <div className="space-y-5 au2">
                 <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm">
                   <SectionLabel>หัวข้อการประชุม</SectionLabel>
                   <input type="text" autoFocus
@@ -463,7 +493,12 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
         <p className="text-base font-bold text-blue-700 mb-3">{selectedRoom?.name}</p>
         <p className="text-sm text-slate-500 mb-1">{formatDateShort(date)}</p>
         <p className="text-sm text-slate-500 mb-1">{startTime} – {endTime} น.</p>
-        <p className="text-sm text-slate-500 mb-7">{attendees} ผู้เข้าร่วม</p>
+        <p className="text-sm text-slate-500 mb-5">{attendees} ผู้เข้าร่วม</p>
+        {/* reminder หลังจองสำเร็จ */}
+        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-left mb-5">
+          <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
+          <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
+        </div>
         <button onClick={() => navigate('/')}
           className="w-full bg-blue-700 hover:bg-blue-800 text-white rounded-xl py-3.5 text-sm font-bold transition-all shadow-md shadow-blue-200 active:scale-95">
           กลับหน้าหลัก
@@ -627,7 +662,12 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
           const cfg = FORECAST_CONFIG[selectedRoom.forecast?.demand_level || 'none']
           return (
             <>
-              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au">
+              {/* ── CHECK-IN REMINDER โดดเด่น ── */}
+              <div className="au">
+                <CheckInReminder startTime={startTime} compact />
+              </div>
+
+              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au1">
                 <SectionLabel icon={Building2}>ห้องที่เลือก</SectionLabel>
                 <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-4" />
                 <div className="flex gap-3 mb-4">
@@ -659,15 +699,17 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
                   </div>
                 )}
               </div>
-              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au1">
+
+              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au2">
                 <SectionLabel>หัวข้อการประชุม</SectionLabel>
                 <input type="text" autoFocus placeholder="เช่น ประชุมกลุ่ม, นำเสนองาน..."
                   value={title} onChange={e=>setTitle(e.target.value)}
                   className="w-full border-2 border-blue-100 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-blue-50/40 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all placeholder:text-slate-400"
                   style={{fontFamily:"inherit"}} />
               </div>
+
               <button onClick={handleBook} disabled={bookingLoading}
-                className="au2 w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:cursor-not-allowed">
+                className="au3 w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:cursor-not-allowed">
                 {bookingLoading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />กำลังจอง...</> : <><CheckCircle size={15} />ยืนยันการจอง</>}
               </button>
             </>
@@ -706,8 +748,6 @@ export default function SearchPage() {
         attendees, date, start_time: startTime, end_time: endTime,
         building_code: building || undefined,
       })
-
-      // ✅ filter เฉพาะห้องที่จุได้ในช่วง attendees ถึง attendees+CAPACITY_BUFFER
       const sorted = [...res.data]
         .filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
         .sort((a,b) =>

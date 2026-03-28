@@ -1,3 +1,5 @@
+#หน้าที่เป็นตัวกลางในการแปลงข้อมูลระหว่าง Model และ API โดยมีการตรวจสอบความถูกต้องของข้อมูล เช่น การป้องกันการจองซ้ำซ้อน 
+# การตรวจสอบช่วงเวลา และการควบคุมสิทธิ์ผู้ใช้งาน รวมถึงรองรับการแสดงข้อมูลเชิงลึก
 from rest_framework import serializers
 from django.utils import timezone
 from .models import (
@@ -6,9 +8,9 @@ from .models import (
     Notification, RoomUsageStat
 )
 
-# ============================================================
+
 # USER
-# ============================================================
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model  = User

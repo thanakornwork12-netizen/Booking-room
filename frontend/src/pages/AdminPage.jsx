@@ -1,17 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, BarChart2, TrendingUp, Calendar, X, Building2, AlertTriangle, Zap, UserX } from 'lucide-react'
+import {
+  ArrowLeft, Clock, BarChart2, TrendingUp, Calendar, X,
+  Building2, AlertTriangle, Zap, UserX,
+  Download, ChevronDown, FileSpreadsheet, Check
+} from 'lucide-react'
 import api from '../api/axios'
 
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
 @keyframes rot{to{transform:rotate(360deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .au{animation:fadeUp .28s ease both}
 .au1{animation:fadeUp .28s .06s ease both}
 .au2{animation:fadeUp .28s .12s ease both}
 .si{animation:scaleIn .22s ease both}
 `
+
+// ── ตรวจว่าเลยเวลาสิ้นสุดแล้วหรือยัง ──────────────────────
+const isPast = (endTime) => new Date() > new Date(endTime)
 
 function useDevice() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -30,15 +38,176 @@ const STATUS_CFG = {
 }
 const getS = s => STATUS_CFG[s] || { label:s, bg:'bg-slate-100', text:'text-slate-500', dot:'#94a3b8' }
 
-// ── No-Show Rate Card ──────────────────────────────────
-function NoShowCard({ bookings }) {
-  const total   = bookings.filter(b => ['approved','completed','cancelled','no_show'].includes(b.status)).length
-  const noShow  = bookings.filter(b => b.status === 'no_show').length
-  const rate    = total > 0 ? (noShow / total * 100).toFixed(1) : 0
-  const isHigh  = rate >= 20
-  const isMed   = rate >= 10
+// ── ดึง status ที่ถูกต้อง (approved+หมดเวลา → completed) ──
+const getEffectiveS = (b) => {
+  if (b.status === 'approved' && isPast(b.end_time)) return STATUS_CFG.completed
+  return getS(b.status)
+}
 
-  // top 3 users ที่ no-show บ่อย
+// ============================================================
+// EXPORT BUTTON
+// ============================================================
+const SHEETS = [
+  { key: 'users',         label: 'ผู้ใช้งาน',      icon: '👤' },
+  { key: 'buildings',     label: 'อาคาร',          icon: '🏛️' },
+  { key: 'rooms',         label: 'ห้อง',           icon: '🚪' },
+  { key: 'facilities',    label: 'อุปกรณ์ในห้อง', icon: '🖥️' },
+  { key: 'bookings',      label: 'การจอง',         icon: '📅' },
+  { key: 'logs',          label: 'ประวัติการจอง',  icon: '📋' },
+  { key: 'forecasts',     label: 'ผลพยากรณ์ AI',  icon: '🤖' },
+  { key: 'notifications', label: 'การแจ้งเตือน',  icon: '🔔' },
+  { key: 'stats',         label: 'สถิติห้อง',      icon: '📊' },
+]
+
+function ExportButton({ isMobile = false }) {
+  const [open,     setOpen]     = useState(false)
+  const [loading,  setLoading]  = useState(false)
+  const [selected, setSelected] = useState(new Set(['all']))
+  const [done,     setDone]     = useState(false)
+
+  const toggleSheet = (key) => {
+    if (key === 'all') { setSelected(new Set(['all'])); return }
+    const next = new Set(selected)
+    next.delete('all')
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    if (next.size === 0) next.add('all')
+    setSelected(next)
+  }
+
+  const isAll = selected.has('all')
+
+  const handleExport = async () => {
+    setLoading(true)
+    try {
+      const sheets = isAll ? 'all' : [...selected].join(',')
+      const res = await api.get(`export/excel/?sheets=${sheets}`, {
+        responseType: 'blob',
+      })
+
+      const contentType = res.headers['content-type'] || ''
+      if (contentType.includes('application/json')) {
+        const text = await res.data.text()
+        alert('Server Error: ' + text)
+        return
+      }
+
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const url  = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href  = url
+      const now  = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      link.setAttribute('download', `room_booking_export_${now}.xlsx`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+
+      setDone(true)
+      setTimeout(() => { setDone(false); setOpen(false) }, 2000)
+    } catch (err) {
+      if (err.response?.data instanceof Blob) {
+        const text = await err.response.data.text()
+        alert(`Error ${err.response.status}: ${text}`)
+      } else {
+        alert(`Error: ${err.message}`)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1.5 font-semibold transition-all active:scale-95
+          ${isMobile
+            ? 'text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg'
+            : 'text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg shadow-sm'
+          }`}>
+        <Download size={isMobile ? 12 : 13} />
+        {!isMobile && 'Export Excel'}
+        <ChevronDown size={11} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-10 w-72 bg-white border border-blue-100 rounded-2xl shadow-2xl z-50 overflow-hidden"
+          style={{ animation: 'fadeUp .2s ease both' }}>
+          <div className="px-4 py-3 flex items-center justify-between border-b border-blue-50 bg-emerald-50">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet size={15} className="text-emerald-600" />
+              <span className="text-sm font-bold text-emerald-800">Export ข้อมูล Excel</span>
+            </div>
+            <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="px-4 py-3">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">เลือก Sheet ที่ต้องการ</p>
+            <button onClick={() => toggleSheet('all')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold mb-1 transition-all
+                ${isAll ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-50 text-slate-700 border border-slate-100'}`}>
+              <span>📦</span>
+              <span className="flex-1 text-left">ทั้งหมด (All Sheets)</span>
+              {isAll && <Check size={13} />}
+            </button>
+            <div className="border-t border-slate-100 my-2" />
+            <div className="space-y-0.5 max-h-52 overflow-y-auto pr-1">
+              {SHEETS.map(s => {
+                const active = !isAll && selected.has(s.key)
+                return (
+                  <button key={s.key} onClick={() => toggleSheet(s.key)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
+                      ${active
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : 'hover:bg-slate-50 text-slate-600 border border-transparent'
+                      }`}>
+                    <span>{s.icon}</span>
+                    <span className="flex-1 text-left">{s.label}</span>
+                    {active && <Check size={11} className="text-emerald-600" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="px-4 pb-4">
+            <p className="text-xs text-slate-400 mb-2.5 text-center">
+              {isAll ? 'จะ export ทุก Sheet (10 Sheet)' : `เลือก ${selected.size} Sheet`}
+            </p>
+            <button onClick={handleExport} disabled={loading || done}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:cursor-not-allowed
+                ${done
+                  ? 'bg-emerald-500 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 disabled:bg-slate-300'
+                }`}>
+              {loading
+                ? <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} />กำลัง Export...</>
+                : done
+                  ? <><Check size={15} />ดาวน์โหลดสำเร็จ!</>
+                  : <><Download size={15} />ดาวน์โหลด Excel</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// NO-SHOW CARD
+// ============================================================
+function NoShowCard({ bookings }) {
+  const total  = bookings.filter(b => ['approved','completed','cancelled','no_show'].includes(b.status)).length
+  const noShow = bookings.filter(b => b.status === 'no_show').length
+  const rate   = total > 0 ? (noShow / total * 100).toFixed(1) : 0
+  const isHigh = rate >= 20
+  const isMed  = rate >= 10
+
   const userCount = {}
   bookings.filter(b => b.status === 'no_show').forEach(b => {
     const name = b.user_name || `User #${b.user}`
@@ -50,36 +219,25 @@ function NoShowCard({ bookings }) {
     <div className={`border rounded-2xl p-5 shadow-sm ${isHigh?'bg-red-50 border-red-200':isMed?'bg-orange-50 border-orange-200':'bg-white border-blue-100'}`}>
       <div className="flex items-center gap-2 mb-3">
         <UserX size={16} className={isHigh?'text-red-500':isMed?'text-orange-500':'text-slate-400'} />
-        <span className={`text-sm font-bold ${isHigh?'text-red-700':isMed?'text-orange-700':'text-slate-700'}`}>
-          อัตรา No-Show
-        </span>
+        <span className={`text-sm font-bold ${isHigh?'text-red-700':isMed?'text-orange-700':'text-slate-700'}`}>อัตรา No-Show</span>
         {isHigh && <span className="text-xs bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded-full font-bold ml-auto">⚠️ สูงมาก</span>}
         {isMed && !isHigh && <span className="text-xs bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full font-bold ml-auto">ควรดูแล</span>}
       </div>
-
       <div className="flex items-end gap-3 mb-3">
-        <span className={`text-4xl font-extrabold ${isHigh?'text-red-600':isMed?'text-orange-600':'text-slate-700'}`}>
-          {rate}%
-        </span>
+        <span className={`text-4xl font-extrabold ${isHigh?'text-red-600':isMed?'text-orange-600':'text-slate-700'}`}>{rate}%</span>
         <span className="text-sm text-slate-500 mb-1.5">{noShow} / {total} การจอง</span>
       </div>
-
-      {/* progress bar */}
       <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4">
         <div className="h-full rounded-full transition-all"
-          style={{
-            width: `${Math.min(rate, 100)}%`,
-            background: isHigh ? '#ef4444' : isMed ? '#f97316' : '#10b981',
-          }} />
+          style={{width:`${Math.min(rate,100)}%`,background:isHigh?'#ef4444':isMed?'#f97316':'#10b981'}} />
       </div>
-
       {topUsers.length > 0 && (
         <>
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">No-Show บ่อยที่สุด</p>
-          {topUsers.map(([name, cnt], i) => (
+          {topUsers.map(([name,cnt],i) => (
             <div key={i} className="flex justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
               <span className="text-slate-700 font-medium">{name}</span>
-              <span className={`font-bold ${cnt >= 3 ? 'text-red-600' : 'text-orange-500'}`}>{cnt} ครั้ง {cnt >= 3 ? '⚠️' : ''}</span>
+              <span className={`font-bold ${cnt>=3?'text-red-600':'text-orange-500'}`}>{cnt} ครั้ง {cnt>=3?'⚠️':''}</span>
             </div>
           ))}
         </>
@@ -88,9 +246,12 @@ function NoShowCard({ bookings }) {
   )
 }
 
+// ============================================================
+// BOOKING DETAIL MODAL
+// ============================================================
 function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }) {
   if (!booking) return null
-  const s = getS(booking.status)
+  const s = getEffectiveS(booking)
   return (
     <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end md:items-center justify-center px-0 md:px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -127,8 +288,9 @@ function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }
             ))}
           </div>
           <p className="text-xs text-slate-300 text-center mb-4">ID: #{booking.id}</p>
-          {booking.status === 'approved' && (
-            <button onClick={() => onCancel(booking.id)} className="w-full border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
+          {booking.status === 'approved' && !isPast(booking.end_time) && (
+            <button onClick={() => onCancel(booking.id)}
+              className="w-full border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
               ยกเลิกการจองนี้
             </button>
           )}
@@ -138,6 +300,9 @@ function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }
   )
 }
 
+// ============================================================
+// BAR CHART
+// ============================================================
 function BarChartBlock({ weekStats }) {
   const maxCount = Math.max(...weekStats.map(s=>s.count), 1)
   return (
@@ -157,28 +322,39 @@ function BarChartBlock({ weekStats }) {
   )
 }
 
-// ── DESKTOP ────────────────────────────────────────────
+// ============================================================
+// DESKTOP
+// ============================================================
 function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
-  const activeB    = bookings.filter(b=>b.status==='approved')
-  const cancelledB = bookings.filter(b=>b.status==='cancelled')
-  const noShowB    = bookings.filter(b=>b.status==='no_show')
+
+  // approved + ยังไม่หมดเวลา = กำลังจองจริงๆ
+  const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
+  const cancelledB = bookings.filter(b => b.status === 'cancelled')
+  const noShowB    = bookings.filter(b => b.status === 'no_show')
+
   const tabs = [
     {key:'active',   label:'กำลังจอง', count:activeB.length},
     {key:'overview', label:'ภาพรวม',   count:null},
     {key:'noshow',   label:'No-Show',  count:noShowB.length},
     {key:'all',      label:'ทั้งหมด',  count:bookings.length},
   ]
+
   return (
     <div className="min-h-screen bg-slate-100" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
       <div className="bg-blue-700 shadow-lg shadow-blue-900/20">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-4">
-          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-white/80 hover:text-white text-sm font-medium"><ArrowLeft size={15} />หน้าหลัก</button>
+          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-white/80 hover:text-white text-sm font-medium">
+            <ArrowLeft size={15} />หน้าหลัก
+          </button>
           <div className="h-5 w-px bg-white/20" />
           <span className="text-white font-bold text-sm">Admin Dashboard</span>
-          <div className="ml-auto flex items-center gap-1.5 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1.5">
-            <Zap size={10} />AI Forecast Active
+          <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1.5">
+              <Zap size={10} />AI Forecast Active
+            </div>
+            <ExportButton isMobile={false} />
           </div>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-300" />
@@ -205,9 +381,9 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
           <div className="grid grid-cols-3 gap-6">
             <div className="space-y-4 au">
               {[
-                {label:'จองวันนี้',      value:dashboard?.today_bookings??0,  color:'text-blue-700'},
-                {label:'กำลังจองทั้งหมด',value:activeB.length,                 color:'text-emerald-600'},
-                {label:'ยกเลิกแล้ว',    value:cancelledB.length,              color:'text-red-500'},
+                {label:'จองวันนี้',       value:dashboard?.today_bookings??0, color:'text-blue-700'},
+                {label:'กำลังจองทั้งหมด', value:activeB.length,               color:'text-emerald-600'},
+                {label:'ยกเลิกแล้ว',     value:cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm">
                   <p className={`text-3xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -301,7 +477,7 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
                   </p>
                   <div className="space-y-4">
                     {dashboard.popular_rooms.map((room,i) => {
-                      const pct = Math.round((room.count/(dashboard.popular_rooms[0]?.count||1))*100)
+                      const pct  = Math.round((room.count/(dashboard.popular_rooms[0]?.count||1))*100)
                       const cols = ['bg-blue-500','bg-blue-400','bg-blue-300','bg-blue-200','bg-blue-100']
                       return (
                         <div key={i} className="flex items-center gap-4">
@@ -357,10 +533,11 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
         {tab === 'all' && (
           <div className="space-y-2 au">
             {bookings.map(b => {
-              const s = getS(b.status)
+              const s = getEffectiveS(b)
               return (
                 <div key={b.id} onClick={() => setSelectedBooking(b)}
-                  className="bg-white border border-blue-100 rounded-xl px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-blue-50/40 transition-colors">
+                  className={`bg-white border border-blue-100 rounded-xl px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-blue-50/40 transition-colors
+                    ${isPast(b.end_time) && b.status === 'approved' ? 'opacity-60' : ''}`}>
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:s.dot}} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">{b.title}</p>
@@ -379,18 +556,23 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
   )
 }
 
-// ── MOBILE ─────────────────────────────────────────────
+// ============================================================
+// MOBILE
+// ============================================================
 function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
-  const activeB = bookings.filter(b=>b.status==='approved')
-  const cancelledB = bookings.filter(b=>b.status==='cancelled')
-  const noShowB = bookings.filter(b=>b.status==='no_show')
+
+  const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
+  const cancelledB = bookings.filter(b => b.status === 'cancelled')
+  const noShowB    = bookings.filter(b => b.status === 'no_show')
+
   const tabs = [
     {key:'active',   label:'จอง',     count:activeB.length},
     {key:'overview', label:'ภาพรวม',  count:null},
     {key:'noshow',   label:'No-Show', count:noShowB.length},
     {key:'all',      label:'ทั้งหมด', count:bookings.length},
   ]
+
   return (
     <div className="min-h-screen bg-blue-50" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
@@ -398,7 +580,10 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
         <div className="max-w-lg mx-auto px-4 h-12 flex items-center gap-3">
           <button onClick={() => navigate('/')} className="text-white/80 hover:text-white flex items-center"><ArrowLeft size={14} /></button>
           <span className="text-white font-bold text-sm flex-1">Admin Dashboard</span>
-          <div className="flex items-center gap-1 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-2 py-0.5"><Zap size={9} />AI</div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-2 py-0.5"><Zap size={9} />AI</div>
+            <ExportButton isMobile={true} />
+          </div>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-300" />
         <div className="max-w-lg mx-auto px-4 flex border-t border-white/10">
@@ -423,9 +608,9 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
           <>
             <div className="grid grid-cols-3 gap-2 au">
               {[
-                {label:'วันนี้',     value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'กำลังจอง',  value:activeB.length,               color:'text-emerald-600'},
-                {label:'ยกเลิก',    value:cancelledB.length,            color:'text-red-500'},
+                {label:'วันนี้',    value:dashboard?.today_bookings??0, color:'text-blue-700'},
+                {label:'กำลังจอง', value:activeB.length,               color:'text-emerald-600'},
+                {label:'ยกเลิก',   value:cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-3 text-center shadow-sm">
                   <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -434,27 +619,34 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
               ))}
             </div>
             <div className="au1"><NoShowCard bookings={bookings} /></div>
-            {activeB.map(b => (
-              <div key={b.id}
-                className="bg-white border border-blue-100 rounded-2xl px-4 py-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all au2"
-                style={{borderLeftWidth:4,borderLeftColor:'#10b981'}}
-                onClick={() => setSelectedBooking(b)}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <p className="font-bold text-slate-900 text-sm truncate">{b.title}</p>
-                    {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">✓ Check-in</span>}
-                  </div>
-                  <p className="text-xs text-blue-600 mb-1">{b.room_name}</p>
-                  <div className="flex gap-3 text-xs text-slate-400">
-                    <span>📅 {fmtDate(b.start_time)}</span>
-                    <span>⏰ {fmtTime(b.start_time)}</span>
-                  </div>
+            {activeB.length === 0
+              ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au1">
+                  <Calendar size={32} className="text-blue-200 mx-auto mb-3" />
+                  <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
                 </div>
-                <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}} className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1 flex-shrink-0">
-                  <X size={11} />ยกเลิก
-                </button>
-              </div>
-            ))}
+              : activeB.map(b => (
+                  <div key={b.id}
+                    className="bg-white border border-blue-100 rounded-2xl px-4 py-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all au2"
+                    style={{borderLeftWidth:4,borderLeftColor:'#10b981'}}
+                    onClick={() => setSelectedBooking(b)}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <p className="font-bold text-slate-900 text-sm truncate">{b.title}</p>
+                        {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">✓ Check-in</span>}
+                      </div>
+                      <p className="text-xs text-blue-600 mb-1">{b.room_name}</p>
+                      <div className="flex gap-3 text-xs text-slate-400">
+                        <span>📅 {fmtDate(b.start_time)}</span>
+                        <span>⏰ {fmtTime(b.start_time)}</span>
+                      </div>
+                    </div>
+                    <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
+                      className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1 flex-shrink-0">
+                      <X size={11} />ยกเลิก
+                    </button>
+                  </div>
+                ))
+            }
           </>
         )}
 
@@ -476,7 +668,9 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
             </div>
             <div className="au1"><NoShowCard bookings={bookings} /></div>
             <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au2">
-              <p className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2"><BarChart2 size={13} className="text-blue-600" />การจองรายวัน 7 วัน</p>
+              <p className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <BarChart2 size={13} className="text-blue-600" />การจองรายวัน 7 วัน
+              </p>
               <BarChartBlock weekStats={weekStats} />
             </div>
           </>
@@ -486,7 +680,9 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
           <>
             <div className="au"><NoShowCard bookings={bookings} /></div>
             {noShowB.length === 0
-              ? <div className="bg-white border border-blue-100 rounded-2xl py-10 text-center au1"><p className="text-slate-400 text-sm">ไม่มีรายการ No-Show 🎉</p></div>
+              ? <div className="bg-white border border-blue-100 rounded-2xl py-10 text-center au1">
+                  <p className="text-slate-400 text-sm">ไม่มีรายการ No-Show 🎉</p>
+                </div>
               : noShowB.map(b => (
                   <div key={b.id} onClick={() => setSelectedBooking(b)}
                     className="bg-white border border-orange-100 rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-orange-50/40 au1"
@@ -506,10 +702,11 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
         {tab === 'all' && (
           <div className="space-y-2 au">
             {bookings.map(b => {
-              const s = getS(b.status)
+              const s = getEffectiveS(b)
               return (
                 <div key={b.id} onClick={() => setSelectedBooking(b)}
-                  className="bg-white border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-blue-50/40">
+                  className={`bg-white border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-blue-50/40
+                    ${isPast(b.end_time) && b.status === 'approved' ? 'opacity-60' : ''}`}>
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:s.dot}} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">{b.title}</p>
@@ -528,21 +725,26 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
   )
 }
 
-// ── ROOT ───────────────────────────────────────────────
+// ============================================================
+// ROOT
+// ============================================================
 export default function AdminPage() {
   const navigate = useNavigate()
   const isMobile = useDevice()
-  const [dashboard,setDashboard]   = useState(null)
-  const [bookings,setBookings]     = useState([])
-  const [tab,setTab]               = useState('active')
-  const [loading,setLoading]       = useState(true)
-  const [weekStats,setWeekStats]   = useState([])
-  const [selectedBooking,setSelectedBooking] = useState(null)
+  const [dashboard,       setDashboard]      = useState(null)
+  const [bookings,        setBookings]        = useState([])
+  const [tab,             setTab]             = useState('active')
+  const [loading,         setLoading]         = useState(true)
+  const [weekStats,       setWeekStats]       = useState([])
+  const [selectedBooking, setSelectedBooking] = useState(null)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [dashRes,bookingRes] = await Promise.all([api.get('/dashboard/'),api.get('/bookings/')])
+        const [dashRes, bookingRes] = await Promise.all([
+          api.get('dashboard/'),
+          api.get('bookings/'),
+        ])
         setDashboard(dashRes.data)
         const all = bookingRes.data.results || []
         setBookings(all)
@@ -551,19 +753,27 @@ export default function AdminPage() {
         for (let i=6;i>=0;i--) {
           const d = new Date(); d.setDate(d.getDate()-i)
           const ds = d.toISOString().split('T')[0]
-          stats.push({day:days[d.getDay()],date:ds,count:all.filter(b=>new Date(b.start_time).toISOString().split('T')[0]===ds&&b.status==='approved').length})
+          stats.push({
+            day: days[d.getDay()], date: ds,
+            count: all.filter(b =>
+              new Date(b.start_time).toISOString().split('T')[0] === ds &&
+              b.status === 'approved'
+            ).length
+          })
         }
         setWeekStats(stats)
-      } catch { navigate('/login') } finally { setLoading(false) }
-    }; load()
+      } catch { navigate('/login') }
+      finally  { setLoading(false) }
+    }
+    load()
   }, [])
 
   const handleCancel = async (id) => {
     if (!confirm('ยืนยันการยกเลิกการจองนี้?')) return
     try {
-      await api.post(`/bookings/${id}/cancel/`)
-      setBookings(prev => prev.map(b=>b.id===id?{...b,status:'cancelled'}:b))
-      if (selectedBooking?.id===id) setSelectedBooking(prev=>({...prev,status:'cancelled'}))
+      await api.post(`bookings/${id}/cancel/`)
+      setBookings(prev => prev.map(b => b.id===id ? {...b,status:'cancelled'} : b))
+      if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'cancelled'}))
     } catch { alert('เกิดข้อผิดพลาด') }
   }
 
@@ -579,7 +789,10 @@ export default function AdminPage() {
     </div>
   )
 
-  const props = { dashboard, bookings, weekStats, tab, setTab, selectedBooking, setSelectedBooking,
-    handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }
+  const props = {
+    dashboard, bookings, weekStats, tab, setTab,
+    selectedBooking, setSelectedBooking,
+    handleCancel, fmtDate, fmtTime, fmtDateFull, navigate
+  }
   return isMobile ? <MobileAdmin {...props} /> : <DesktopAdmin {...props} />
 }

@@ -26,6 +26,10 @@ const canCheckIn = (startTime) => {
   return diff >= -15 && diff <= 15
 }
 
+const isPast = (endTime) => {
+  return new Date() > new Date(endTime)
+}
+
 const timeUntil = (startTime) => {
   const diff = Math.round((new Date(startTime) - new Date()) / 60000)
   if (diff > 60) return `${Math.floor(diff/60)} ชม. ${diff%60} นาที`
@@ -66,7 +70,6 @@ const TUTORIAL_STEPS = [
   },
 ]
 
-// ── Tutorial ผูกกับ userId ──────────────────────────────
 function TutorialModal({ onClose, userId }) {
   const [step, setStep] = useState(0)
   const isLast = step === TUTORIAL_STEPS.length - 1
@@ -145,12 +148,16 @@ function NotiDropdown({ notifications, onDismiss, onClose }) {
 function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateFull }) {
   if (!booking) return null
   const isActive    = booking.status === 'approved'
+  const isFinished  = isActive && isPast(booking.end_time)
   const isCancelled = booking.status === 'cancelled'
   const isNoShow    = booking.status === 'no_show'
-  const showCheckIn = isActive && canCheckIn(booking.start_time) && !booking.checked_in
-  const until       = isActive && !booking.checked_in ? timeUntil(booking.start_time) : null
-  const statusColor = isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1'
-  const statusLabel = isActive ? 'กำลังจอง' : isNoShow ? 'ไม่มาใช้งาน' : 'ยกเลิกแล้ว'
+  
+  const showCheckIn = isActive && !isFinished && canCheckIn(booking.start_time) && !booking.checked_in
+  const until       = isActive && !isFinished && !booking.checked_in ? timeUntil(booking.start_time) : null
+  
+  // Logic การแสดงผลสถานะที่ผ่านไปแล้ว
+  const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1')
+  const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'กำลังจอง' : isNoShow ? 'ไม่มาใช้งาน' : 'ยกเลิกแล้ว')
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end md:items-center justify-center px-0 md:px-4"
@@ -167,8 +174,8 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
         </div>
         <div className="px-5 py-4">
           <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-4" />
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-2xl p-4 flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-blue-700 rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className={`bg-gradient-to-br border rounded-2xl p-4 flex items-center gap-3 mb-4 ${isFinished ? 'from-slate-50 to-slate-100 border-slate-200' : 'from-blue-50 to-blue-100 border-blue-200'}`}>
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isFinished ? 'bg-slate-500' : 'bg-blue-700'}`}>
               <Building2 size={20} color="#fff" />
             </div>
             <div>
@@ -177,7 +184,7 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
               {booking.checked_in && <span className="ml-2 text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200">✓ Check-in แล้ว</span>}
             </div>
           </div>
-          {isActive && !booking.checked_in && until && (
+          {isActive && !isFinished && !booking.checked_in && until && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 mb-4 flex items-start gap-2">
               <AlertCircle size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-yellow-800">
@@ -210,16 +217,19 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
                 <CheckCircle2 size={16} />ยืนยันการมาใช้งาน (Check-in)
               </button>
             )}
-            {isActive && (
+            {isActive && !isFinished && (
               <button onClick={() => onCancel(booking.id)}
                 className="w-full border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
                 ยกเลิกการจองนี้
               </button>
             )}
-            {(isCancelled || isNoShow) && (
+            {(isCancelled || isNoShow || isFinished) && (
               <div className={`rounded-2xl px-4 py-3 text-center text-xs font-semibold
-                ${isNoShow ? 'bg-orange-50 border border-orange-200 text-orange-700' : 'bg-blue-50 border border-blue-100 text-slate-500'}`}>
-                {isNoShow ? '⚠️ บันทึกว่า ไม่มาใช้งาน (No-Show)' : 'การจองนี้ถูกยกเลิกแล้ว'}
+                ${isNoShow ? 'bg-orange-50 border border-orange-200 text-orange-700' : 
+                  isFinished ? 'bg-slate-50 border border-slate-200 text-slate-500' : 
+                  'bg-blue-50 border border-blue-100 text-slate-500'}`}>
+                {isNoShow ? '⚠️ บันทึกว่า ไม่มาใช้งาน (No-Show)' : 
+                 isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : 'การจองนี้ถูกยกเลิกแล้ว'}
               </div>
             )}
           </div>
@@ -231,11 +241,13 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
 
 function BookingRow({ b, onClick, fmtDate, fmtTime, compact=false }) {
   const isActive    = b.status === 'approved'
+  const isFinished  = isActive && isPast(b.end_time)
   const isCancelled = b.status === 'cancelled'
   const isNoShow    = b.status === 'no_show'
-  const showCI      = isActive && canCheckIn(b.start_time) && !b.checked_in
-  const dotColor    = isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1'
-  const opacity     = isCancelled || isNoShow ? 'opacity-50' : ''
+  
+  const showCI      = isActive && !isFinished && canCheckIn(b.start_time) && !b.checked_in
+  const dotColor    = isFinished ? '#94a3b8' : (isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1')
+  const opacity     = isCancelled || isNoShow || isFinished ? 'opacity-50' : ''
 
   return (
     <div onClick={onClick}
@@ -246,6 +258,7 @@ function BookingRow({ b, onClick, fmtDate, fmtTime, compact=false }) {
           <p className="text-sm font-bold text-slate-900 truncate">{b.room_name || `ห้อง #${b.room}`}</p>
           {showCI && <span className="text-xs bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold pulse flex-shrink-0">Check-in เปิดแล้ว</span>}
           {isNoShow && <span className="text-xs bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full font-bold flex-shrink-0">No-Show</span>}
+          {isFinished && <span className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full font-bold flex-shrink-0">เสร็จสิ้น</span>}
         </div>
         <p className="text-xs text-slate-500 truncate mb-1">{b.title}</p>
         <div className="flex gap-3 text-xs text-slate-400">
@@ -449,7 +462,6 @@ export default function HomePage() {
         setUser(p.data)
         setBookings(b.data.results || [])
         setNotifications(n.data.results || [])
-        // ── ผูก tutorial กับ user id ──────────────────────
         if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
       } catch { navigate('/login') }
       finally   { setLoading(false) }
@@ -493,7 +505,8 @@ export default function HomePage() {
   const fmtDateFull = dt => new Date(dt).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
 
   const unreadNotis       = notifications.filter(n => !n.is_read)
-  const activeBookings    = bookings.filter(b => b.status === 'approved')
+  // เฉพาะรายการที่ยังไม่จบเวลา และมีสถานะ approved
+  const activeBookings    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledBookings = bookings.filter(b => b.status === 'cancelled')
   const noShowBookings    = bookings.filter(b => b.status === 'no_show')
 

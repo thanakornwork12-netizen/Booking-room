@@ -60,7 +60,7 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             Room.objects.filter(is_active=True)
             .select_related('building')
             .prefetch_related(
-                Prefetch('forecasts', to_attr='prefetched_forecasts')  # ✅ FIX N+1
+                Prefetch('forecasts', to_attr='prefetched_forecasts')
             )
         )
 
@@ -97,7 +97,6 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 
         facilities = request.data.get('facilities', [])
 
-        # ✅ FIX overlap + real-time availability
         booked_ids = Booking.objects.filter(
             status='approved',
             start_time__lt=end_dt,
@@ -130,7 +129,6 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         else:
             results = list(available.order_by('capacity'))
 
-        # ✅ FIX: preload forecast ทีเดียว (กัน N+1)
         forecasts = DemandForecast.objects.filter(
             forecast_date=date,
             hour=d['start_time'].hour,
@@ -200,6 +198,34 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        now  = timezone.now()
+
+        # ── auto-expire: booking ที่ end_time ผ่านแล้ว + approved + ไม่ได้ check-in
+        #    → เปลี่ยนเป็น no_show อัตโนมัติ ────────────────────────────────────────
+        expired_qs = Booking.objects.filter(
+            status='approved',
+            checked_in=False,
+            end_time__lt=now,
+        )
+        if user.role not in ['admin', 'staff']:
+            expired_qs = expired_qs.filter(user=user)
+
+        expired_ids = list(expired_qs.values_list('id', flat=True))
+
+        if expired_ids:
+            Booking.objects.filter(id__in=expired_ids).update(status='no_show')
+            # log การเปลี่ยนสถานะทุกรายการ
+            logs = [
+                BookingLog(
+                    booking_id=bid,
+                    changed_by=user,
+                    old_status='approved',
+                    new_status='no_show',
+                )
+                for bid in expired_ids
+            ]
+            BookingLog.objects.bulk_create(logs, ignore_conflicts=True)
+        # ─────────────────────────────────────────────────────────────────────────────
 
         qs = Booking.objects.select_related('user', 'room__building')
 
@@ -273,6 +299,32 @@ class BookingViewSet(viewsets.ModelViewSet):
         )
 
         return Response({'message': 'ยกเลิกสำเร็จ'})
+
+    @action(detail=True, methods=['post'])
+    def check_in(self, request, pk=None):
+        booking = self.get_object()
+
+        if booking.user != request.user and request.user.role not in ['admin', 'staff']:
+            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
+
+        if booking.status != 'approved':
+            return Response({'error': 'ไม่สามารถ check-in ได้'}, status=400)
+
+        if booking.checked_in:
+            return Response({'error': 'check-in แล้ว'}, status=400)
+
+        if not self._can_check_in(booking.start_time):
+            return Response({'error': 'ยังไม่ถึงเวลา check-in (15 นาทีก่อนเริ่ม)'}, status=400)
+
+        booking.checked_in = True
+        booking.save()
+
+        return Response({'message': 'check-in สำเร็จ'})
+
+    @staticmethod
+    def _can_check_in(start_time):
+        diff = (timezone.now() - start_time).total_seconds() / 60
+        return -15 <= diff <= 15
 
 
 # ============================================================
