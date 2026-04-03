@@ -1,6 +1,5 @@
 from django.utils import timezone
-from django.db.models import Q, Count, Prefetch
-from django.db import transaction
+from django.db.models import Q, Count
 from datetime import datetime, date as date_type
 import threading
 
@@ -31,14 +30,12 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
 
-
 class ProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
         return self.request.user
-
 
 # ============================================================
 # BUILDING
@@ -48,7 +45,6 @@ class BuildingViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BuildingSerializer
     permission_classes = [IsAuthenticated]
 
-
 # ============================================================
 # ROOM
 # ============================================================
@@ -56,14 +52,7 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = (
-            Room.objects.filter(is_active=True)
-            .select_related('building')
-            .prefetch_related(
-                Prefetch('forecasts', to_attr='prefetched_forecasts')
-            )
-        )
-
+        qs = Room.objects.filter(is_active=True).select_related('building')
         building  = self.request.query_params.get('building')
         room_type = self.request.query_params.get('room_type')
         capacity  = self.request.query_params.get('min_capacity')
@@ -74,16 +63,13 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(room_type=room_type)
         if capacity:
             qs = qs.filter(capacity__gte=int(capacity))
-
         return qs
 
     def get_serializer_class(self):
-        return RoomListSerializer if self.action == 'list' else RoomSerializer
+        if self.action == 'list':
+            return RoomListSerializer
+        return RoomSerializer
 
-
-    # ========================================================
-    # SEARCH ROOM
-    # ========================================================
     @action(detail=False, methods=['post'])
     def search(self, request):
         ser = RoomSearchSerializer(data=request.data)
@@ -93,33 +79,27 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         date     = d['date']
         start_dt = timezone.make_aware(datetime.combine(date, d['start_time']))
         end_dt   = timezone.make_aware(datetime.combine(date, d['end_time']))
-        now      = timezone.now()
 
         facilities = request.data.get('facilities', [])
 
         booked_ids = Booking.objects.filter(
-            status='approved',
+            status__in=['approved'],
             start_time__lt=end_dt,
-            end_time__gt=max(start_dt, now),
+            end_time__gt=start_dt,
         ).values_list('room_id', flat=True)
 
-        available = (
-            Room.objects.filter(
-                is_active=True,
-                capacity__gte=d['attendees'],
-            )
-            .exclude(id__in=booked_ids)
-            .exclude(status__in=['maintenance', 'disabled'])
-            .select_related('building')
-            .prefetch_related('facilities')
-        )
+        available = Room.objects.filter(
+            is_active=True,
+            status='available',
+            capacity__gte=d['attendees'],
+        ).exclude(id__in=booked_ids).select_related('building').prefetch_related('facilities')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
 
         if facilities:
-            for f in facilities:
-                available = available.filter(facilities__name__icontains=f)
+            for facility in facilities:
+                available = available.filter(facilities__name__icontains=facility)
             available = available.distinct()
 
         if d.get('building_code'):
@@ -129,41 +109,42 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         else:
             results = list(available.order_by('capacity'))
 
-        forecasts = DemandForecast.objects.filter(
-            forecast_date=date,
-            hour=d['start_time'].hour,
-            room__in=results
-        )
-
-        forecast_map = {(f.room_id): f for f in forecasts}
+        hour = d['start_time'].hour
 
         response_data = []
         for room in results:
-            forecast = forecast_map.get(room.id)
+            forecast = (
+                DemandForecast.objects
+                .filter(
+                    room=room,
+                    forecast_date=date,
+                    hour=hour,
+                )
+                .first()
+            )
 
             room_data = RoomSerializer(room, context={'request': request}).data
             room_data['forecast'] = {
-                'demand_level':     forecast.demand_level if forecast else 'none',
-                'availability':     forecast.availability if forecast else 'likely_available',
+                'demand_level':     forecast.demand_level            if forecast else None,  # ✅ None แทน 'none'
+                'availability':     forecast.availability            if forecast else None,
                 'predicted_demand': float(forecast.predicted_demand) if forecast else 0.0,
-                'confidence':       float(forecast.confidence) if forecast else 0.0,
+                'confidence':       float(forecast.confidence)       if forecast else 0.0,
+                'has_forecast':     forecast is not None,                                   # ✅ เพิ่ม field นี้
             }
             response_data.append(room_data)
 
-        level_order = {'low': 0, 'medium': 1, 'high': 2, 'none': 3}
-        response_data.sort(key=lambda r: level_order.get(r['forecast']['demand_level'], 3))
+        # None ต้องอยู่ใน level_order ด้วย
+        level_order = {'low': 0, 'medium': 1, 'high': 2, 'none': 3, None: 3}
+        response_data.sort(
+            key=lambda r: level_order.get(r['forecast']['demand_level'], 3)
+        )
 
         return Response(response_data)
 
-
-    # ========================================================
-    # AVAILABILITY
-    # ========================================================
     @action(detail=True, methods=['get'])
     def availability(self, request, pk=None):
         room = self.get_object()
         date_str = request.query_params.get('date')
-
         if not date_str:
             return Response({'error': 'กรุณาระบุวันที่ (YYYY-MM-DD)'}, status=400)
 
@@ -173,8 +154,7 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'error': 'รูปแบบวันที่ไม่ถูกต้อง'}, status=400)
 
         bookings = Booking.objects.filter(
-            room=room,
-            status='approved',
+            room=room, status='approved',
             start_time__date=target_date,
         ).values('start_time', 'end_time', 'title')
 
@@ -189,7 +169,6 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             'forecasts': list(forecasts),
         })
 
-
 # ============================================================
 # BOOKING
 # ============================================================
@@ -198,94 +177,39 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        now  = timezone.now()
-
-        # ── auto-expire: booking ที่ end_time ผ่านแล้ว + approved + ไม่ได้ check-in
-        #    → เปลี่ยนเป็น no_show อัตโนมัติ ────────────────────────────────────────
-        expired_qs = Booking.objects.filter(
-            status='approved',
-            checked_in=False,
-            end_time__lt=now,
-        )
-        if user.role not in ['admin', 'staff']:
-            expired_qs = expired_qs.filter(user=user)
-
-        expired_ids = list(expired_qs.values_list('id', flat=True))
-
-        if expired_ids:
-            Booking.objects.filter(id__in=expired_ids).update(status='no_show')
-            # log การเปลี่ยนสถานะทุกรายการ
-            logs = [
-                BookingLog(
-                    booking_id=bid,
-                    changed_by=user,
-                    old_status='approved',
-                    new_status='no_show',
-                )
-                for bid in expired_ids
-            ]
-            BookingLog.objects.bulk_create(logs, ignore_conflicts=True)
-        # ─────────────────────────────────────────────────────────────────────────────
-
-        qs = Booking.objects.select_related('user', 'room__building')
-
-        return qs if user.role in ['admin', 'staff'] else qs.filter(user=user)
+        if user.role in ['admin', 'staff']:
+            return Booking.objects.all().select_related('user', 'room__building')
+        return Booking.objects.filter(user=user).select_related('room__building')
 
     def get_serializer_class(self):
-        return BookingCreateSerializer if self.action == 'create' else BookingSerializer
-
+        if self.action == 'create':
+            return BookingCreateSerializer
+        return BookingSerializer
 
     def perform_create(self, serializer):
-        with transaction.atomic():
-            room       = serializer.validated_data['room']
-            start_time = serializer.validated_data['start_time']
-            end_time   = serializer.validated_data['end_time']
-
-            conflict = (
-                Booking.objects
-                .select_for_update()
-                .filter(
-                    room=room,
-                    status='approved',
-                    start_time__lt=end_time,
-                    end_time__gt=start_time,
-                )
-                .exists()
-            )
-
-            if conflict:
-                from rest_framework.exceptions import ValidationError
-                raise ValidationError({
-                    'non_field_errors': ['ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว']
-                })
-
-            booking = serializer.save(user=self.request.user, status='approved')
-
-            Notification.objects.create(
-                user=self.request.user,
-                booking=booking,
-                type='booking_approved',
-                title='จองห้องสำเร็จ',
-                message=f'จองห้อง {booking.room.name} เรียบร้อยแล้ว'
-            )
-
+        booking = serializer.save(user=self.request.user, status='approved')
+        Notification.objects.create(
+            user=self.request.user,
+            booking=booking,
+            type='booking_approved',
+            title='จองห้องสำเร็จ',
+            message=f'จองห้อง {booking.room.name} วันที่ {booking.start_time.strftime("%d/%m/%Y %H:%M")} เรียบร้อยแล้ว'
+        )
 
     def destroy(self, request, *args, **kwargs):
         return Response(
-            {'error': 'ไม่อนุญาตให้ลบข้อมูล กรุณาใช้ยกเลิกแทน'},
+            {'error': 'ไม่อนุญาตให้ลบข้อมูล กรุณาใช้ปุ่มยกเลิกการจองแทน'},
             status=status.HTTP_405_METHOD_NOT_ALLOWED
         )
-
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         booking = self.get_object()
-
         if booking.user != request.user and request.user.role not in ['admin', 'staff']:
-            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
+            return Response({'error': 'คุณไม่มีสิทธิ์ยกเลิกการจองนี้'}, status=403)
 
         if booking.status == 'cancelled':
-            return Response({'error': 'ถูกยกเลิกแล้ว'}, status=400)
+            return Response({'error': 'รายการนี้ถูกยกเลิกไปแล้ว'}, status=400)
 
         old_status = booking.status
         booking.status = 'cancelled'
@@ -297,35 +221,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             old_status=old_status,
             new_status='cancelled'
         )
-
-        return Response({'message': 'ยกเลิกสำเร็จ'})
-
-    @action(detail=True, methods=['post'])
-    def check_in(self, request, pk=None):
-        booking = self.get_object()
-
-        if booking.user != request.user and request.user.role not in ['admin', 'staff']:
-            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
-
-        if booking.status != 'approved':
-            return Response({'error': 'ไม่สามารถ check-in ได้'}, status=400)
-
-        if booking.checked_in:
-            return Response({'error': 'check-in แล้ว'}, status=400)
-
-        if not self._can_check_in(booking.start_time):
-            return Response({'error': 'ยังไม่ถึงเวลา check-in (15 นาทีก่อนเริ่ม)'}, status=400)
-
-        booking.checked_in = True
-        booking.save()
-
-        return Response({'message': 'check-in สำเร็จ'})
-
-    @staticmethod
-    def _can_check_in(start_time):
-        diff = (timezone.now() - start_time).total_seconds() / 60
-        return -15 <= diff <= 15
-
+        return Response({'message': 'ยกเลิกการจองเรียบร้อยแล้ว'})
 
 # ============================================================
 # DASHBOARD
@@ -335,17 +231,12 @@ class DashboardView(generics.GenericAPIView):
 
     def get(self, request):
         if request.user.role not in ['admin', 'staff']:
-            return Response({'error': 'สำหรับ admin เท่านั้น'}, status=403)
+            return Response({'error': 'หน้านี้สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
-        today = timezone.now().date()
-
-        total_rooms = Room.objects.filter(is_active=True).count()
-        today_bookings = Booking.objects.filter(
-            start_time__date=today,
-            status='approved'
-        ).count()
-
-        utilization = round((today_bookings / total_rooms * 100), 1) if total_rooms else 0
+        today          = timezone.now().date()
+        total_rooms    = Room.objects.filter(is_active=True).count()
+        today_bookings = Booking.objects.filter(start_time__date=today, status='approved').count()
+        utilization    = round((today_bookings / total_rooms * 100), 1) if total_rooms > 0 else 0
 
         popular_rooms = (
             Booking.objects.filter(status='approved')
@@ -355,33 +246,28 @@ class DashboardView(generics.GenericAPIView):
         )
 
         demand_alerts = list(
-            DemandForecast.objects.filter(
-                forecast_date=today,
-                demand_level='high'
-            ).values('room__name', 'hour', 'predicted_demand')
+            DemandForecast.objects.filter(forecast_date=today, demand_level='high')
+            .values('room__name', 'hour', 'predicted_demand')
             .order_by('-predicted_demand')[:5]
         )
 
         return Response({
-            'today_bookings': today_bookings,
-            'total_rooms': total_rooms,
+            'today_bookings':   today_bookings,
+            'total_rooms':      total_rooms,
             'utilization_rate': utilization,
-            'popular_rooms': list(popular_rooms),
-            'demand_alerts': demand_alerts,
+            'popular_rooms':    list(popular_rooms),
+            'demand_alerts':    demand_alerts,
         })
 
-
 # ============================================================
-# NOTIFICATION
+# NOTIFICATION & FORECAST
 # ============================================================
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = NotificationSerializer
+    serializer_class   = NotificationSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Notification.objects.filter(
-            user=self.request.user
-        ).order_by('-created_at')
+        return Notification.objects.filter(user=self.request.user).order_by('-created_at')
 
     @action(detail=True, methods=['post'])
     def read(self, request, pk=None):
@@ -390,27 +276,67 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         notif.save()
         return Response({'status': 'read'})
 
-
-# ============================================================
-# FORECAST
-# ============================================================
 class DemandForecastViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = DemandForecastSerializer
+    serializer_class   = DemandForecastSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = DemandForecast.objects.all().order_by('forecast_date', 'hour')
-
+        qs   = DemandForecast.objects.all().order_by('forecast_date', 'hour')
         room = self.request.query_params.get('room')
         date = self.request.query_params.get('date')
-
-        if room:
-            qs = qs.filter(room_id=room)
-        if date:
-            qs = qs.filter(forecast_date=date)
-
+        if room: qs = qs.filter(room_id=room)
+        if date: qs = qs.filter(forecast_date=date)
         return qs
 
+# ============================================================
+# EXPORT EXCEL
+# ============================================================
+import io
+from django.http import HttpResponse
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_excel(request):
+    if request.user.role not in ['admin', 'staff']:
+        return Response({'error': 'สิทธิ์ไม่เพียงพอ'}, status=403)
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill
+    except ImportError:
+        return Response({'error': 'Please install openpyxl'}, status=500)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Booking Export"
+
+    headers = ['ID', 'User', 'Room', 'Date', 'Start', 'End', 'Status']
+    for col, text in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=text)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill('solid', start_color='D6E4F0')
+
+    bookings = Booking.objects.all().select_related('user', 'room')
+    for i, b in enumerate(bookings, 2):
+        ws.cell(row=i, column=1, value=b.id)
+        ws.cell(row=i, column=2, value=b.user.username)
+        ws.cell(row=i, column=3, value=b.room.name)
+        ws.cell(row=i, column=4, value=b.start_time.strftime('%Y-%m-%d'))
+        ws.cell(row=i, column=5, value=b.start_time.strftime('%H:%M'))
+        ws.cell(row=i, column=6, value=b.end_time.strftime('%H:%M'))
+        ws.cell(row=i, column=7, value=b.status)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    filename = f"export_{timezone.now().strftime('%Y%m%d')}.xlsx"
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 # ============================================================
 # RETRAIN
@@ -419,11 +345,11 @@ class DemandForecastViewSet(viewsets.ReadOnlyModelViewSet):
 @permission_classes([IsAuthenticated])
 def trigger_retrain(request):
     if request.user.role not in ['admin', 'staff']:
-        return Response({'error': 'admin only'}, status=403)
+        return Response({'error': 'จำกัดสิทธิ์เฉพาะผู้ดูแลระบบ'}, status=403)
 
     def run_training():
         call_command('retrain')
 
-    threading.Thread(target=run_training, daemon=True).start()
-
-    return Response({'message': 'เริ่ม retrain แล้ว'})
+    thread = threading.Thread(target=run_training, daemon=True)
+    thread.start()
+    return Response({'message': 'ระบบเริ่มการเทรน AI ใหม่ในพื้นหลังแล้ว'})

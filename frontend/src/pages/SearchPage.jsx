@@ -79,6 +79,9 @@ const formatDateShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('th-
   day: 'numeric', month: 'short',
 })
 
+// ✅ แก้ไข: ใช้ ?? แทน || เพื่อให้ null/undefined → 'none' แต่ 'low'/'medium'/'high' ผ่านได้
+const getDemandLevel = (room) => room.forecast?.demand_level ?? 'none'
+
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -139,7 +142,6 @@ function CheckInReminder({ startTime, compact = false }) {
       rounded-2xl shadow-md shadow-amber-100
       ${compact ? 'px-4 py-3.5' : 'px-5 py-4'}
     `}>
-      {/* accent bar ซ้าย */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-amber-400 to-orange-400 rounded-l-2xl" />
       <div className={`flex items-start gap-3 ${compact ? '' : 'ml-1'}`}>
         <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center flex-shrink-0 shadow-sm shadow-amber-200">
@@ -200,7 +202,6 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
         <p className="text-lg font-bold text-blue-700 mb-4">{selectedRoom?.name}</p>
         <p className="text-sm text-slate-500">{formatDate(date)}</p>
         <p className="text-sm text-slate-500 mt-1">{startTime} – {endTime} น. · {attendees} ผู้เข้าร่วม</p>
-        {/* reminder หลังจองสำเร็จ */}
         <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
           <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
           <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
@@ -356,7 +357,8 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
             <div className="space-y-3 au1">
               {[{level:'low',label:'จองได้เลย'},{level:'medium',label:'ควรจองตอนนี้'},{level:'high',label:'รีบจองด่วน!'}].map(s => {
                 const cfg = FORECAST_CONFIG[s.level]
-                const count = rooms.filter(r => (r.forecast?.demand_level||'none') === s.level).length
+                // ✅ ใช้ getDemandLevel() เพื่อให้ null → 'none' ถูกต้อง
+                const count = rooms.filter(r => getDemandLevel(r) === s.level).length
                 return (
                   <div key={s.level} className={`border rounded-2xl py-4 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
                     <p className={`text-3xl font-extrabold ${cfg.numCls}`}>{count}</p>
@@ -375,7 +377,8 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                   <button onClick={() => setStep(1)} className="text-sm text-blue-600 hover:underline">← ค้นหาใหม่</button>
                 </div>
               ) : rooms.map((room, idx) => {
-                const level = room.forecast?.demand_level || 'none'
+                // ✅ ใช้ getDemandLevel() แทน || 'none'
+                const level = getDemandLevel(room)
                 const cfg   = FORECAST_CONFIG[level]
                 const isTop = idx === 0 && level === 'low'
                 return (
@@ -388,6 +391,10 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
                       <div className="flex items-center gap-3 mb-1.5">
                         <span className="text-base font-bold text-slate-900">{room.name}</span>
                         <span className={`text-xs font-bold px-3 py-0.5 rounded-full ${cfg.badgeCls}`}>{cfg.badge}</span>
+                        {/* ✅ แสดง badge "ไม่มีข้อมูล AI" เมื่อ has_forecast = false */}
+                        {room.forecast?.has_forecast === false && (
+                          <span className="text-xs text-slate-400 border border-slate-200 rounded-full px-2 py-0.5">ไม่มีข้อมูล AI</span>
+                        )}
                       </div>
                       <p className="text-sm text-slate-500">{room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง · {room.room_type}</p>
                       {level !== 'none' && <p className={`text-xs font-semibold mt-1 ${cfg.subCls}`}>{cfg.sub}</p>}
@@ -403,10 +410,10 @@ function DesktopLayout({ step, setStep, navigate, formProps, resultProps, confir
 
       {/* STEP 3 DESKTOP */}
       {step === 3 && selectedRoom && (() => {
-        const cfg = FORECAST_CONFIG[selectedRoom.forecast?.demand_level || 'none']
+        const level = getDemandLevel(selectedRoom)
+        const cfg = FORECAST_CONFIG[level]
         return (
           <div className="max-w-3xl mx-auto px-6 py-8">
-            {/* ── CHECK-IN REMINDER โดดเด่น ── */}
             <div className="mb-6 au">
               <CheckInReminder startTime={startTime} />
             </div>
@@ -494,7 +501,6 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
         <p className="text-sm text-slate-500 mb-1">{formatDateShort(date)}</p>
         <p className="text-sm text-slate-500 mb-1">{startTime} – {endTime} น.</p>
         <p className="text-sm text-slate-500 mb-5">{attendees} ผู้เข้าร่วม</p>
-        {/* reminder หลังจองสำเร็จ */}
         <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-left mb-5">
           <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
           <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
@@ -615,7 +621,8 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
               <div className="grid grid-cols-3 gap-2 au1">
                 {[{level:'low',label:'จองได้เลย'},{level:'medium',label:'ควรจองตอนนี้'},{level:'high',label:'รีบจองด่วน!'}].map(s => {
                   const cfg = FORECAST_CONFIG[s.level]
-                  const count = rooms.filter(r=>(r.forecast?.demand_level||'none')===s.level).length
+                  // ✅ ใช้ getDemandLevel()
+                  const count = rooms.filter(r => getDemandLevel(r) === s.level).length
                   return (
                     <div key={s.level} className={`border rounded-2xl py-3 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
                       <p className={`text-2xl font-extrabold ${cfg.numCls}`}>{count}</p>
@@ -634,7 +641,8 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
                 <button onClick={() => setStep(1)} className="text-xs text-blue-600 hover:underline mt-2">← ค้นหาใหม่</button>
               </div>
             ) : rooms.map((room,idx) => {
-              const level = room.forecast?.demand_level || 'none'
+              // ✅ ใช้ getDemandLevel()
+              const level = getDemandLevel(room)
               const cfg   = FORECAST_CONFIG[level]
               const isTop = idx === 0 && level === 'low'
               return (
@@ -647,6 +655,10 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-sm font-bold text-slate-900">{room.name}</span>
                       <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${cfg.badgeCls}`}>{cfg.badge}</span>
+                      {/* ✅ แสดง badge "ไม่มีข้อมูล AI" เมื่อ has_forecast = false */}
+                      {room.forecast?.has_forecast === false && (
+                        <span className="text-xs text-slate-400 border border-slate-200 rounded-full px-2 py-0.5">ไม่มีข้อมูล AI</span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500">{room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง</p>
                     {level !== 'none' && <p className={`text-xs font-semibold mt-1 ${cfg.subCls}`}>{cfg.sub}</p>}
@@ -659,10 +671,10 @@ function MobileLayout({ step, setStep, navigate, formProps, resultProps, confirm
         )}
 
         {step === 3 && selectedRoom && (() => {
-          const cfg = FORECAST_CONFIG[selectedRoom.forecast?.demand_level || 'none']
+          const level = getDemandLevel(selectedRoom)
+          const cfg = FORECAST_CONFIG[level]
           return (
             <>
-              {/* ── CHECK-IN REMINDER โดดเด่น ── */}
               <div className="au">
                 <CheckInReminder startTime={startTime} compact />
               </div>
@@ -751,8 +763,9 @@ export default function SearchPage() {
       const sorted = [...res.data]
         .filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
         .sort((a,b) =>
-          FORECAST_CONFIG[a.forecast?.demand_level||'none'].sort -
-          FORECAST_CONFIG[b.forecast?.demand_level||'none'].sort
+          // ✅ ใช้ getDemandLevel() ในการ sort ด้วย
+          FORECAST_CONFIG[getDemandLevel(a)].sort -
+          FORECAST_CONFIG[getDemandLevel(b)].sort
         )
       setRooms(sorted); setStep(2)
     } catch { setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง') }

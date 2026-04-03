@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Clock, BarChart2, TrendingUp, Calendar, X,
   Building2, AlertTriangle, Zap, UserX,
-  Download, ChevronDown, FileSpreadsheet, Check
+  Download, ChevronDown, FileSpreadsheet, Check, LayoutGrid
 } from 'lucide-react'
 import api from '../api/axios'
 
@@ -12,14 +12,77 @@ const ANIM = `
 @keyframes scaleIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
 @keyframes rot{to{transform:rotate(360deg)}}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .au{animation:fadeUp .28s ease both}
 .au1{animation:fadeUp .28s .06s ease both}
 .au2{animation:fadeUp .28s .12s ease both}
 .si{animation:scaleIn .22s ease both}
+.pulse{animation:pulse 2s ease-in-out infinite}
 `
+
+// ── ข้อมูลห้องทั้งหมด (static fallback + enrichment) ──────────
+const ALL_ROOMS_DATA = [
+  // LIB
+  { code:'LIB-01', capacity:18, util:0.611, peak:0.278, building:'ห้องสมุด' },
+  { code:'LIB-02', capacity:17, util:0.588, peak:0.353, building:'ห้องสมุด' },
+  { code:'LIB-03', capacity:16, util:0.625, peak:0.312, building:'ห้องสมุด' },
+  { code:'LIB-04', capacity:14, util:0.643, peak:0.357, building:'ห้องสมุด' },
+  { code:'LIB-05', capacity:21, util:0.667, peak:0.286, building:'ห้องสมุด' },
+  { code:'LIB-06', capacity:13, util:0.615, peak:0.308, building:'ห้องสมุด' },
+  { code:'LIB-07', capacity:19.6,util:0.612,peak:0.306, building:'ห้องสมุด' },
+  { code:'LIB-08', capacity:15, util:0.600, peak:0.333, building:'ห้องสมุด' },
+  { code:'LIB-09', capacity:16, util:0.625, peak:0.375, building:'ห้องสมุด' },
+  { code:'LIB-10', capacity:20, util:0.600, peak:0.350, building:'ห้องสมุด' },
+  { code:'LIB-11', capacity:22, util:0.591, peak:0.318, building:'ห้องสมุด' },
+  { code:'LIB-12', capacity:12, util:0.667, peak:0.333, building:'ห้องสมุด' },
+  // SC
+  { code:'SC-01',  capacity:17, util:0.588, peak:0.353, building:'วิทยาศาสตร์' },
+  { code:'SC-02',  capacity:17, util:0.588, peak:0.294, building:'วิทยาศาสตร์' },
+  { code:'SC-03',  capacity:12, util:0.583, peak:0.333, building:'วิทยาศาสตร์' },
+  { code:'SC-04',  capacity:19, util:0.632, peak:0.316, building:'วิทยาศาสตร์' },
+  { code:'SC-05',  capacity:13, util:0.615, peak:0.385, building:'วิทยาศาสตร์' },
+  { code:'SC-06',  capacity:15, util:0.667, peak:0.333, building:'วิทยาศาสตร์' },
+  { code:'SC-07',  capacity:16, util:0.625, peak:0.375, building:'วิทยาศาสตร์' },
+  { code:'SC-08',  capacity:16, util:0.625, peak:0.375, building:'วิทยาศาสตร์' },
+  { code:'SC-09',  capacity:15, util:0.533, peak:0.333, building:'วิทยาศาสตร์' },
+  { code:'SC-10',  capacity:19, util:0.632, peak:0.316, building:'วิทยาศาสตร์' },
+  // EN
+  { code:'EN-01',  capacity:12,   util:0.583, peak:0.333, building:'วิศวกรรม' },
+  { code:'EN-02',  capacity:17,   util:0.632, peak:0.353, building:'วิศวกรรม' },
+  { code:'EN-03',  capacity:14.55,util:0.619, peak:0.344, building:'วิศวกรรม' },
+  { code:'EN-04',  capacity:17,   util:0.588, peak:0.294, building:'วิศวกรรม' },
+  { code:'EN-05',  capacity:17,   util:0.647, peak:0.353, building:'วิศวกรรม' },
+  { code:'EN-06',  capacity:14,   util:0.571, peak:0.357, building:'วิศวกรรม' },
+  { code:'EN-07',  capacity:16,   util:0.625, peak:0.312, building:'วิศวกรรม' },
+  { code:'EN-08',  capacity:16,   util:0.625, peak:0.312, building:'วิศวกรรม' },
+  { code:'EN-09',  capacity:15,   util:0.600, peak:0.333, building:'วิศวกรรม' },
+  { code:'EN-10',  capacity:14,   util:0.643, peak:0.357, building:'วิศวกรรม' },
+  // MAIN
+  { code:'MAIN-01',capacity:16.5,util:0.606, peak:0.364, building:'อาคารหลัก' },
+  { code:'MAIN-02',capacity:11,  util:0.636, peak:0.364, building:'อาคารหลัก' },
+  { code:'MAIN-03',capacity:10,  util:0.600, peak:0.300, building:'อาคารหลัก' },
+  { code:'MAIN-04',capacity:15,  util:0.667, peak:0.333, building:'อาคารหลัก' },
+  { code:'MAIN-05',capacity:16,  util:0.625, peak:0.375, building:'อาคารหลัก' },
+  { code:'MAIN-06',capacity:22,  util:0.591, peak:0.318, building:'อาคารหลัก' },
+  { code:'MAIN-07',capacity:16,  util:0.625, peak:0.312, building:'อาคารหลัก' },
+  { code:'MAIN-08',capacity:13,  util:0.615, peak:0.308, building:'อาคารหลัก' },
+]
+
+// ── helper: ค้นหาข้อมูล static ของห้อง ──
+const getRoomData = (name) =>
+  ALL_ROOMS_DATA.find(r => name?.includes(r.code)) || null
 
 // ── ตรวจว่าเลยเวลาสิ้นสุดแล้วหรือยัง ──────────────────────
 const isPast = (endTime) => new Date() > new Date(endTime)
+const isNow  = (start, end) => {
+  const now = new Date()
+  return now >= new Date(start) && now <= new Date(end)
+}
+const isSoon = (start) => {
+  const now  = new Date()
+  const diff = new Date(start) - now
+  return diff > 0 && diff <= 30 * 60 * 1000
+}
 
 function useDevice() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -30,33 +93,109 @@ function useDevice() {
   return isMobile
 }
 
+// ── STATUS CONFIG ─────────────────────────────────────────────
+// สถานะ:
+//   pending   = รอยืนยัน (กำลังจอง - สีเหลือง)
+//   approved  + isNow   = กำลังใช้งาน (สีเขียว)
+//   approved  + isSoon  = จะเริ่มเร็วๆ นี้ (สีส้มอำพัน)
+//   approved  + future  = ยืนยันแล้ว (สีน้ำเงิน)
+//   approved  + isPast  = เสร็จสิ้น
+//   cancelled = ยกเลิกแล้ว
+//   no_show   = No-Show
 const STATUS_CFG = {
-  approved:  { label:'กำลังจอง',   bg:'bg-emerald-50',  text:'text-emerald-700', dot:'#10b981' },
-  cancelled: { label:'ยกเลิกแล้ว', bg:'bg-red-50',      text:'text-red-600',     dot:'#f87171' },
-  completed: { label:'เสร็จสิ้น',  bg:'bg-slate-100',   text:'text-slate-500',   dot:'#94a3b8' },
-  no_show:   { label:'No-Show',    bg:'bg-orange-50',   text:'text-orange-700',  dot:'#f97316' },
+  pending:   { label:'กำลังจอง',    bg:'bg-yellow-50',   text:'text-yellow-700', dot:'#f59e0b' },
+  approved:  { label:'ยืนยันแล้ว',  bg:'bg-blue-50',     text:'text-blue-700',   dot:'#3b82f6' },
+  active:    { label:'กำลังใช้งาน', bg:'bg-emerald-50',  text:'text-emerald-700',dot:'#10b981' },
+  soon:      { label:'จะเริ่มเร็วๆ',bg:'bg-amber-50',    text:'text-amber-700',  dot:'#f59e0b' },
+  cancelled: { label:'ยกเลิกแล้ว',  bg:'bg-red-50',      text:'text-red-600',    dot:'#f87171' },
+  completed: { label:'เสร็จสิ้น',   bg:'bg-slate-100',   text:'text-slate-500',  dot:'#94a3b8' },
+  no_show:   { label:'No-Show',     bg:'bg-orange-50',   text:'text-orange-700', dot:'#f97316' },
 }
 const getS = s => STATUS_CFG[s] || { label:s, bg:'bg-slate-100', text:'text-slate-500', dot:'#94a3b8' }
 
-// ── ดึง status ที่ถูกต้อง (approved+หมดเวลา → completed) ──
+// ── ดึง status ที่ถูกต้องตาม logic ──────────────────────────
 const getEffectiveS = (b) => {
-  if (b.status === 'approved' && isPast(b.end_time)) return STATUS_CFG.completed
+  if (b.status === 'approved') {
+    if (isPast(b.end_time))         return STATUS_CFG.completed
+    if (isNow(b.start_time, b.end_time)) return STATUS_CFG.active
+    if (isSoon(b.start_time))       return STATUS_CFG.soon
+    return STATUS_CFG.approved
+  }
+  if (b.status === 'pending') return STATUS_CFG.pending
   return getS(b.status)
 }
+
+// ── คำนวณ room status หลัก + รายการ bookings ทั้งหมด ────────
+const getRoomStatus = (roomName, bookings) => {
+  const now = new Date()
+  const roomBookings = bookings.filter(b => {
+    const bn = b.room_name || `ห้อง #${b.room}`
+    // เอาเฉพาะที่ยังไม่หมดเวลา (end_time > ตอนนี้) และสถานะ active/pending
+    return bn === roomName
+      && (b.status === 'approved' || b.status === 'pending')
+      && new Date(b.end_time) > now
+  })
+  const sorted = [...roomBookings].sort((a,b) => new Date(a.start_time)-new Date(b.start_time))
+
+  const active   = sorted.find(b => b.status === 'approved' && isNow(b.start_time, b.end_time))
+  const upcoming = sorted.find(b => b.status === 'approved' && isSoon(b.start_time))
+  const pending  = sorted.find(b => b.status === 'pending')
+  const booked   = sorted.find(b => b.status === 'approved' && !isPast(b.end_time) && !isNow(b.start_time, b.end_time) && !isSoon(b.start_time))
+
+  let state, label, color, bg, border
+  if (active)        { state='active';  label='กำลังใช้งาน';  color='#10b981'; bg='#d1fae5'; border='#6ee7b7' }
+  else if (upcoming) { state='soon';    label='จะเริ่มเร็วๆ'; color='#f59e0b'; bg='#fef3c7'; border='#fcd34d' }
+  else if (pending)  { state='pending'; label='กำลังจอง';    color='#eab308'; bg='#fefce8'; border='#fde047' }
+  else if (booked)   { state='booked';  label='ยืนยันแล้ว';  color='#3b82f6'; bg='#eff6ff'; border='#93c5fd' }
+  else               { state='free';    label='ว่าง';        color='#94a3b8'; bg='#f1f5f9'; border='#cbd5e1' }
+
+  return { state, label, color, bg, border, allBookings: sorted }
+}
+
+// ── รวม bookings + ALL_ROOMS_DATA เป็น rooms ─────────────────
+// ถ้า booking มีห้องใหม่ที่ไม่ใน ALL_ROOMS_DATA ก็เพิ่มเข้าไปด้วย
+const extractRooms = (bookings) => {
+  const map = {}
+
+  // เพิ่มจาก static list ก่อน
+  ALL_ROOMS_DATA.forEach(r => {
+    map[r.code] = { name:r.code, roomId:null, ...r }
+  })
+
+  // เพิ่ม/อัปเดตจาก bookings (กรณีชื่อ match กับ code)
+  bookings.forEach(b => {
+    const bname = b.room_name || `ห้อง #${b.room}`
+    if (!map[bname]) {
+      // ห้องใหม่ที่ไม่อยู่ใน static list
+      map[bname] = { name:bname, roomId:b.room, code:bname, building:'อื่นๆ', capacity:null, util:null, peak:null }
+    } else {
+      // อัปเดต roomId
+      map[bname].roomId = b.room
+    }
+    // ถ้า room_name จาก booking ตรงกับ code ใน static
+    const rd = getRoomData(bname)
+    if (rd && map[rd.code]) map[rd.code].roomId = b.room
+  })
+
+  return Object.values(map).sort((a,b) => a.name.localeCompare(b.name, 'th'))
+}
+
+// ── Building groups ──────────────────────────────────────────
+const BUILDING_ORDER = ['ห้องสมุด','วิทยาศาสตร์','วิศวกรรม','อาคารหลัก','อื่นๆ']
 
 // ============================================================
 // EXPORT BUTTON
 // ============================================================
 const SHEETS = [
-  { key: 'users',         label: 'ผู้ใช้งาน',      icon: '👤' },
-  { key: 'buildings',     label: 'อาคาร',          icon: '🏛️' },
-  { key: 'rooms',         label: 'ห้อง',           icon: '🚪' },
-  { key: 'facilities',    label: 'อุปกรณ์ในห้อง', icon: '🖥️' },
-  { key: 'bookings',      label: 'การจอง',         icon: '📅' },
-  { key: 'logs',          label: 'ประวัติการจอง',  icon: '📋' },
-  { key: 'forecasts',     label: 'ผลพยากรณ์ AI',  icon: '🤖' },
-  { key: 'notifications', label: 'การแจ้งเตือน',  icon: '🔔' },
-  { key: 'stats',         label: 'สถิติห้อง',      icon: '📊' },
+  { key:'users',         label:'ผู้ใช้งาน',      icon:'👤' },
+  { key:'buildings',     label:'อาคาร',           icon:'🏛️' },
+  { key:'rooms',         label:'ห้อง',            icon:'🚪' },
+  { key:'facilities',    label:'อุปกรณ์ในห้อง',  icon:'🖥️' },
+  { key:'bookings',      label:'การจอง',          icon:'📅' },
+  { key:'logs',          label:'ประวัติการจอง',   icon:'📋' },
+  { key:'forecasts',     label:'ผลพยากรณ์ AI',   icon:'🤖' },
+  { key:'notifications', label:'การแจ้งเตือน',   icon:'🔔' },
+  { key:'stats',         label:'สถิติห้อง',       icon:'📊' },
 ]
 
 function ExportButton({ isMobile = false }) {
@@ -81,30 +220,23 @@ function ExportButton({ isMobile = false }) {
     setLoading(true)
     try {
       const sheets = isAll ? 'all' : [...selected].join(',')
-      const res = await api.get(`export/excel/?sheets=${sheets}`, {
-        responseType: 'blob',
-      })
-
+      const res = await api.get(`export/excel/?sheets=${sheets}`, { responseType:'blob' })
       const contentType = res.headers['content-type'] || ''
       if (contentType.includes('application/json')) {
         const text = await res.data.text()
         alert('Server Error: ' + text)
         return
       }
-
-      const blob = new Blob([res.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      })
+      const blob = new Blob([res.data], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url  = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href  = url
-      const now  = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      const now  = new Date().toISOString().slice(0,10).replace(/-/g,'')
       link.setAttribute('download', `room_booking_export_${now}.xlsx`)
       document.body.appendChild(link)
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
-
       setDone(true)
       setTimeout(() => { setDone(false); setOpen(false) }, 2000)
     } catch (err) {
@@ -134,7 +266,7 @@ function ExportButton({ isMobile = false }) {
 
       {open && (
         <div className="absolute right-0 top-10 w-72 bg-white border border-blue-100 rounded-2xl shadow-2xl z-50 overflow-hidden"
-          style={{ animation: 'fadeUp .2s ease both' }}>
+          style={{ animation:'fadeUp .2s ease both' }}>
           <div className="px-4 py-3 flex items-center justify-between border-b border-blue-50 bg-emerald-50">
             <div className="flex items-center gap-2">
               <FileSpreadsheet size={15} className="text-emerald-600" />
@@ -144,7 +276,6 @@ function ExportButton({ isMobile = false }) {
               <X size={14} />
             </button>
           </div>
-
           <div className="px-4 py-3">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">เลือก Sheet ที่ต้องการ</p>
             <button onClick={() => toggleSheet('all')}
@@ -173,7 +304,6 @@ function ExportButton({ isMobile = false }) {
               })}
             </div>
           </div>
-
           <div className="px-4 pb-4">
             <p className="text-xs text-slate-400 mb-2.5 text-center">
               {isAll ? 'จะ export ทุก Sheet (10 Sheet)' : `เลือก ${selected.size} Sheet`}
@@ -274,11 +404,11 @@ function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }
           </div>
           <div className="border-2 border-blue-50 rounded-2xl overflow-hidden mb-4">
             {[
-              {icon:'📋',label:'หัวข้อ',     value:booking.title},
-              {icon:'📅',label:'วันที่',      value:fmtDateFull(booking.start_time)},
-              {icon:'⏰',label:'เวลาเริ่ม',   value:fmtTime(booking.start_time)+' น.'},
+              {icon:'📋',label:'หัวข้อ',      value:booking.title},
+              {icon:'📅',label:'วันที่',       value:fmtDateFull(booking.start_time)},
+              {icon:'⏰',label:'เวลาเริ่ม',    value:fmtTime(booking.start_time)+' น.'},
               {icon:'⏱️',label:'เวลาสิ้นสุด', value:fmtTime(booking.end_time)+' น.'},
-              {icon:'👥',label:'จำนวนคน',    value:`${booking.attendees} คน`},
+              {icon:'👥',label:'จำนวนคน',     value:`${booking.attendees} คน`},
             ].map((r,i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-blue-50 last:border-0">
                 <span className="text-sm w-5 flex-shrink-0">{r.icon}</span>
@@ -288,7 +418,7 @@ function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }
             ))}
           </div>
           <p className="text-xs text-slate-300 text-center mb-4">ID: #{booking.id}</p>
-          {booking.status === 'approved' && !isPast(booking.end_time) && (
+          {(booking.status === 'approved' || booking.status === 'pending') && !isPast(booking.end_time) && (
             <button onClick={() => onCancel(booking.id)}
               className="w-full border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
               ยกเลิกการจองนี้
@@ -323,21 +453,258 @@ function BarChartBlock({ weekStats }) {
 }
 
 // ============================================================
+// ROOM STATUS GRID — แสดงห้องทั้งหมด 38 ห้อง แยกตามอาคาร
+// ============================================================
+function RoomStatusGrid({ bookings, fmtTime, isMobile = false }) {
+  const [tick, setTick] = useState(0)
+  const [filterBuilding, setFilterBuilding] = useState('ทั้งหมด')
+  const [selectedRoom, setSelectedRoom] = useState(null)
+
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [])
+
+  const rooms = extractRooms(bookings)
+
+  // กรองตาม building
+  const buildings = ['ทั้งหมด', ...BUILDING_ORDER.filter(b => rooms.some(r => r.building === b))]
+  const filtered = filterBuilding === 'ทั้งหมด'
+    ? rooms
+    : rooms.filter(r => r.building === filterBuilding)
+
+  // แยกตาม building สำหรับ group display
+  const grouped = BUILDING_ORDER
+    .map(b => ({ building:b, rooms: filtered.filter(r => r.building === b) }))
+    .filter(g => g.rooms.length > 0)
+
+  // สรุปรวม
+  const activeCount  = rooms.filter(r => getRoomStatus(r.name, bookings).state === 'active').length
+  const soonCount    = rooms.filter(r => getRoomStatus(r.name, bookings).state === 'soon').length
+  const pendingCount = rooms.filter(r => getRoomStatus(r.name, bookings).state === 'pending').length
+  const freeCount    = rooms.filter(r => getRoomStatus(r.name, bookings).state === 'free').length
+
+  const getNextBooking = (roomName) => {
+    const now = new Date()
+    return bookings
+      .filter(b => (b.room_name === roomName || `ห้อง #${b.room}` === roomName)
+        && (b.status === 'approved' || b.status === 'pending')
+        && new Date(b.start_time) > now)
+      .sort((a,b) => new Date(a.start_time) - new Date(b.start_time))[0]
+  }
+
+  const BUILDING_ICONS = {
+    'ห้องสมุด':    '📚',
+    'วิทยาศาสตร์': '🔬',
+    'วิศวกรรม':   '⚙️',
+    'อาคารหลัก':  '🏛️',
+    'อื่นๆ':       '🚪',
+  }
+
+  return (
+    <div>
+      {/* Legend + Filter */}
+      <div className={`flex flex-wrap gap-3 mb-4 items-center`}>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-emerald-400" />
+            <span className="text-xs text-slate-600 font-medium">กำลังใช้งาน <span className="font-extrabold text-emerald-600">{activeCount}</span></span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-yellow-300" />
+            <span className="text-xs text-slate-600 font-medium">กำลังจอง <span className="font-extrabold text-yellow-600">{pendingCount}</span></span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-amber-300" />
+            <span className="text-xs text-slate-600 font-medium">จะเริ่มเร็วๆ <span className="font-extrabold text-amber-600">{soonCount}</span></span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-slate-200" />
+            <span className="text-xs text-slate-600 font-medium">ว่าง <span className="font-extrabold text-slate-500">{freeCount}</span></span>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
+          <Clock size={11} className="pulse" />
+          <span>อัปเดตทุก 30 วิ</span>
+        </div>
+      </div>
+
+      {/* Building Filter Tabs */}
+      <div className="flex gap-1.5 mb-5 flex-wrap">
+        {buildings.map(b => (
+          <button key={b} onClick={() => setFilterBuilding(b)}
+            className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all
+              ${filterBuilding === b
+                ? 'bg-blue-700 text-white shadow-sm'
+                : 'bg-white border border-blue-100 text-slate-600 hover:border-blue-300'
+              }`}>
+            {b !== 'ทั้งหมด' && <span className="mr-1">{BUILDING_ICONS[b]||'🚪'}</span>}
+            {b}
+          </button>
+        ))}
+      </div>
+
+      {/* Grid แยก group */}
+      {grouped.length === 0 ? (
+        <div className="bg-white border border-blue-100 rounded-2xl py-16 text-center shadow-sm">
+          <LayoutGrid size={36} className="text-blue-200 mx-auto mb-3" />
+          <p className="text-slate-400 text-sm">ไม่พบข้อมูลห้อง</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {grouped.map(({ building, rooms: brooms }) => (
+            <div key={building}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-base">{BUILDING_ICONS[building]||'🚪'}</span>
+                <h3 className="text-sm font-bold text-slate-700">{building}</h3>
+                <span className="text-xs text-slate-400">({brooms.length} ห้อง)</span>
+                <div className="flex-1 h-px bg-slate-100 ml-2" />
+              </div>
+              <div className={`grid gap-2.5 ${
+                isMobile
+                  ? 'grid-cols-2'
+                  : 'grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'
+              }`}>
+                {brooms.map((room) => {
+                  const rs = getRoomStatus(room.name, bookings)
+
+                  return (
+                    <div key={room.name}
+                      className="relative cursor-pointer select-none"
+                      onClick={() => setSelectedRoom(selectedRoom === room.name ? null : room.name)}>
+
+                      <div
+                        className="rounded-2xl border-2 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                        style={{
+                          background: rs.bg,
+                          borderColor: selectedRoom === room.name ? rs.color : rs.border,
+                          boxShadow: selectedRoom === room.name ? `0 0 0 3px ${rs.color}30` : undefined,
+                        }}>
+
+                        {/* ไฟสถานะ + badge */}
+                        <div className="flex items-start justify-between mb-2">
+                          <div
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
+                            style={{
+                              background: rs.color,
+                              boxShadow: (rs.state==='active' || rs.state==='pending') ? `0 0 0 4px ${rs.color}30` : undefined,
+                              animation: (rs.state==='active' || rs.state==='pending') ? 'pulse 2s ease-in-out infinite' : undefined,
+                            }}
+                          />
+                          <span
+                            className="text-xs font-bold px-1.5 py-0.5 rounded-full leading-tight"
+                            style={{ background: rs.color + '20', color: rs.color, fontSize:'10px' }}>
+                            {rs.label}
+                          </span>
+                        </div>
+
+                        {/* ชื่อห้อง */}
+                        <p className="text-sm font-extrabold text-slate-800 leading-tight mb-1">{room.name}</p>
+
+                        {/* รายการจองทั้งหมดของห้องนี้ */}
+                        {rs.allBookings.length === 0 ? (
+                          <p className="text-xs text-slate-400 mt-1">ไม่มีการจอง</p>
+                        ) : (
+                          <div className="mt-1.5 space-y-1">
+                            {rs.allBookings.map((bk, bi) => {
+                              const bNow  = isNow(bk.start_time, bk.end_time)
+                              const bSoon = isSoon(bk.start_time)
+                              const bPend = bk.status === 'pending'
+                              const dotC  = bNow ? '#10b981' : bSoon ? '#f59e0b' : bPend ? '#eab308' : '#3b82f6'
+                              const timeC = bNow ? 'text-emerald-600 font-bold' : bSoon ? 'text-amber-600 font-semibold' : bPend ? 'text-yellow-600' : 'text-blue-500'
+                              return (
+                                <div key={bi} className="flex items-center gap-1.5">
+                                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background: dotC}} />
+                                  <span className={`text-xs ${timeC} tabular-nums`}>
+                                    {fmtTime(bk.start_time)}–{fmtTime(bk.end_time)}
+                                  </span>
+                                  {bNow && <span className="text-xs text-emerald-600 font-bold">●</span>}
+                                  {bPend && <span className="text-xs text-yellow-500">?</span>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* สรุปท้าย */}
+      <div className="mt-6 bg-white border border-blue-100 rounded-2xl p-4 shadow-sm">
+        <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-6'}`}>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">สรุปสถานะห้องทั้งหมด {rooms.length} ห้อง</p>
+          <div className="flex gap-4 flex-wrap">
+            <div className="text-center">
+              <p className="text-2xl font-extrabold text-emerald-600">{activeCount}</p>
+              <p className="text-xs text-slate-400">กำลังใช้งาน</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-extrabold text-yellow-500">{pendingCount}</p>
+              <p className="text-xs text-slate-400">กำลังจอง</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-extrabold text-amber-500">{soonCount}</p>
+              <p className="text-xs text-slate-400">จะเริ่มเร็วๆ</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-extrabold text-slate-400">{freeCount}</p>
+              <p className="text-xs text-slate-400">ว่างอยู่</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-extrabold text-blue-700">{rooms.length}</p>
+              <p className="text-xs text-slate-400">ทั้งหมด</p>
+            </div>
+          </div>
+          {rooms.length > 0 && (
+            <div className="ml-auto hidden md:block">
+              <div className="h-3 rounded-full overflow-hidden bg-slate-100" style={{width:200}}>
+                <div className="h-full flex">
+                  <div style={{width:`${(activeCount/rooms.length)*100}%`, background:'#10b981'}} />
+                  <div style={{width:`${(pendingCount/rooms.length)*100}%`, background:'#f59e0b'}} />
+                  <div style={{width:`${(soonCount/rooms.length)*100}%`, background:'#fcd34d'}} />
+                </div>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 text-right">
+                อัตราการใช้งาน {(((activeCount+pendingCount)/rooms.length)*100).toFixed(0)}%
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // DESKTOP
 // ============================================================
 function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
 
-  // approved + ยังไม่หมดเวลา = กำลังจองจริงๆ
+  // pending = รอยืนยัน (กำลังจอง), approved = ยืนยันแล้ว (รวม active/soon/future)
+  const pendingB   = bookings.filter(b => b.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledB = bookings.filter(b => b.status === 'cancelled')
   const noShowB    = bookings.filter(b => b.status === 'no_show')
 
+  // Tab แสดง "กำลังจอง" = pending + approved ที่ยังไม่หมดเวลา
+  const currentB   = bookings.filter(b =>
+    (b.status === 'pending') ||
+    (b.status === 'approved' && !isPast(b.end_time))
+  )
+
   const tabs = [
-    {key:'active',   label:'กำลังจอง', count:activeB.length},
-    {key:'overview', label:'ภาพรวม',   count:null},
-    {key:'noshow',   label:'No-Show',  count:noShowB.length},
-    {key:'all',      label:'ทั้งหมด',  count:bookings.length},
+    {key:'active',   label:'การจองปัจจุบัน', count:currentB.length},
+    {key:'rooms',    label:'สถานะห้อง',      count:null},
+    {key:'overview', label:'ภาพรวม',         count:null},
+    {key:'noshow',   label:'No-Show',        count:noShowB.length},
+    {key:'all',      label:'ทั้งหมด',        count:bookings.length},
   ]
 
   return (
@@ -381,9 +748,10 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
           <div className="grid grid-cols-3 gap-6">
             <div className="space-y-4 au">
               {[
-                {label:'จองวันนี้',       value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'กำลังจองทั้งหมด', value:activeB.length,               color:'text-emerald-600'},
-                {label:'ยกเลิกแล้ว',     value:cancelledB.length,            color:'text-red-500'},
+                {label:'จองวันนี้',        value:dashboard?.today_bookings??0, color:'text-blue-700'},
+                {label:'รอยืนยัน (pending)',value:pendingB.length,              color:'text-yellow-600'},
+                {label:'ยืนยันแล้ว',       value:activeB.length,               color:'text-emerald-600'},
+                {label:'ยกเลิกแล้ว',       value:cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm">
                   <p className={`text-3xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -406,37 +774,54 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
               )}
             </div>
             <div className="col-span-2 space-y-3 au1">
-              {activeB.length === 0
+              {currentB.length === 0
                 ? <div className="bg-white border border-blue-100 rounded-2xl py-16 text-center shadow-sm">
                     <Calendar size={40} className="text-blue-200 mx-auto mb-3" />
                     <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
                   </div>
-                : activeB.map(b => (
-                    <div key={b.id}
-                      className="bg-white border border-blue-100 rounded-2xl px-6 py-4 flex items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all"
-                      style={{borderLeftWidth:4,borderLeftColor:'#10b981'}}
-                      onClick={() => setSelectedBooking(b)}>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-1">
-                          <p className="font-bold text-slate-900 truncate">{b.title}</p>
-                          <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">กำลังจอง</span>
-                          {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">✓ Check-in</span>}
+                : currentB.map(b => {
+                    const eff = getEffectiveS(b)
+                    const isPend = b.status === 'pending'
+                    return (
+                      <div key={b.id}
+                        className="bg-white border border-blue-100 rounded-2xl px-6 py-4 flex items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all"
+                        style={{borderLeftWidth:4, borderLeftColor: eff.dot}}
+                        onClick={() => setSelectedBooking(b)}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-1 flex-wrap">
+                            <p className="font-bold text-slate-900 truncate">{b.title}</p>
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${eff.bg} ${eff.text}`}>
+                              {eff.label}
+                            </span>
+                            {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">✓ Check-in</span>}
+                          </div>
+                          <p className="text-sm text-blue-600 font-medium mb-1">{b.room_name||`ห้อง #${b.room}`}</p>
+                          <div className="flex gap-4 text-xs text-slate-400">
+                            <span>📅 {fmtDate(b.start_time)}</span>
+                            <span>⏰ {fmtTime(b.start_time)}–{fmtTime(b.end_time)}</span>
+                            <span>👥 {b.attendees} คน</span>
+                          </div>
                         </div>
-                        <p className="text-sm text-blue-600 font-medium mb-1">{b.room_name||`ห้อง #${b.room}`}</p>
-                        <div className="flex gap-4 text-xs text-slate-400">
-                          <span>📅 {fmtDate(b.start_time)}</span>
-                          <span>⏰ {fmtTime(b.start_time)}–{fmtTime(b.end_time)}</span>
-                          <span>👥 {b.attendees} คน</span>
-                        </div>
+                        <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
+                          className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl flex-shrink-0">
+                          <X size={11} />ยกเลิก
+                        </button>
                       </div>
-                      <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
-                        className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl flex-shrink-0">
-                        <X size={11} />ยกเลิก
-                      </button>
-                    </div>
-                  ))
+                    )
+                  })
               }
             </div>
+          </div>
+        )}
+
+        {tab === 'rooms' && (
+          <div className="au">
+            <div className="flex items-center gap-2 mb-6">
+              <LayoutGrid size={16} className="text-blue-600" />
+              <h2 className="text-base font-bold text-slate-800">สถานะห้องแบบ Real-time</h2>
+              <span className="text-xs text-slate-400 ml-1">— ห้องทั้งหมด {ALL_ROOMS_DATA.length} ห้อง (อัปเดตทุก 30 วินาที)</span>
+            </div>
+            <RoomStatusGrid bookings={bookings} fmtTime={fmtTime} isMobile={false} />
           </div>
         )}
 
@@ -445,9 +830,9 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
             <div className="space-y-4 au">
               {[
                 {label:'จองวันนี้',    value:dashboard.today_bookings??0,        icon:'📅',color:'text-blue-700'},
-                {label:'ห้องทั้งหมด', value:dashboard.total_rooms??0,            icon:'🏢',color:'text-slate-700'},
+                {label:'ห้องทั้งหมด', value:ALL_ROOMS_DATA.length,               icon:'🏢',color:'text-slate-700'},
                 {label:'อัตราการใช้', value:`${dashboard.utilization_rate??0}%`, icon:'📊',color:'text-emerald-600'},
-                {label:'กำลังจอง',   value:activeB.length,                       icon:'✅',color:'text-blue-600'},
+                {label:'ยืนยันแล้ว',  value:activeB.length,                      icon:'✅',color:'text-blue-600'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm flex items-center gap-4">
                   <span className="text-2xl">{s.icon}</span>
@@ -562,12 +947,19 @@ function DesktopAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBoo
 function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
 
+  const pendingB   = bookings.filter(b => b.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledB = bookings.filter(b => b.status === 'cancelled')
   const noShowB    = bookings.filter(b => b.status === 'no_show')
 
+  const currentB = bookings.filter(b =>
+    (b.status === 'pending') ||
+    (b.status === 'approved' && !isPast(b.end_time))
+  )
+
   const tabs = [
-    {key:'active',   label:'จอง',     count:activeB.length},
+    {key:'active',   label:'จอง',     count:currentB.length},
+    {key:'rooms',    label:'ห้อง',    count:null},
     {key:'overview', label:'ภาพรวม',  count:null},
     {key:'noshow',   label:'No-Show', count:noShowB.length},
     {key:'all',      label:'ทั้งหมด', count:bookings.length},
@@ -586,10 +978,10 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
           </div>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-300" />
-        <div className="max-w-lg mx-auto px-4 flex border-t border-white/10">
+        <div className="max-w-lg mx-auto px-2 flex border-t border-white/10 overflow-x-auto">
           {tabs.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-xs font-semibold border-b-2 transition-colors
+              className={`flex-shrink-0 flex items-center justify-center gap-1 px-3 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap
                 ${tab===t.key?'border-yellow-400 text-white':'border-transparent text-white/55 hover:text-white'}`}>
               {t.label}
               {t.count!==null && (
@@ -606,11 +998,12 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
       <div className="max-w-lg mx-auto px-4 py-4 space-y-3 pb-12">
         {tab === 'active' && (
           <>
-            <div className="grid grid-cols-3 gap-2 au">
+            <div className="grid grid-cols-2 gap-2 au">
               {[
-                {label:'วันนี้',    value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'กำลังจอง', value:activeB.length,               color:'text-emerald-600'},
-                {label:'ยกเลิก',   value:cancelledB.length,            color:'text-red-500'},
+                {label:'วันนี้',     value:dashboard?.today_bookings??0, color:'text-blue-700'},
+                {label:'รอยืนยัน',  value:pendingB.length,              color:'text-yellow-600'},
+                {label:'ยืนยันแล้ว',value:activeB.length,               color:'text-emerald-600'},
+                {label:'ยกเลิก',    value:cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-3 text-center shadow-sm">
                   <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -619,45 +1012,59 @@ function MobileAdmin({ dashboard, bookings, weekStats, tab, setTab, selectedBook
               ))}
             </div>
             <div className="au1"><NoShowCard bookings={bookings} /></div>
-            {activeB.length === 0
+            {currentB.length === 0
               ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au1">
                   <Calendar size={32} className="text-blue-200 mx-auto mb-3" />
                   <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
                 </div>
-              : activeB.map(b => (
-                  <div key={b.id}
-                    className="bg-white border border-blue-100 rounded-2xl px-4 py-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all au2"
-                    style={{borderLeftWidth:4,borderLeftColor:'#10b981'}}
-                    onClick={() => setSelectedBooking(b)}>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className="font-bold text-slate-900 text-sm truncate">{b.title}</p>
-                        {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">✓ Check-in</span>}
+              : currentB.map(b => {
+                  const eff = getEffectiveS(b)
+                  return (
+                    <div key={b.id}
+                      className="bg-white border border-blue-100 rounded-2xl px-4 py-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all au2"
+                      style={{borderLeftWidth:4, borderLeftColor: eff.dot}}
+                      onClick={() => setSelectedBooking(b)}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <p className="font-bold text-slate-900 text-sm truncate">{b.title}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${eff.bg} ${eff.text}`}>{eff.label}</span>
+                          {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">✓ Check-in</span>}
+                        </div>
+                        <p className="text-xs text-blue-600 mb-1">{b.room_name}</p>
+                        <div className="flex gap-3 text-xs text-slate-400">
+                          <span>📅 {fmtDate(b.start_time)}</span>
+                          <span>⏰ {fmtTime(b.start_time)}</span>
+                        </div>
                       </div>
-                      <p className="text-xs text-blue-600 mb-1">{b.room_name}</p>
-                      <div className="flex gap-3 text-xs text-slate-400">
-                        <span>📅 {fmtDate(b.start_time)}</span>
-                        <span>⏰ {fmtTime(b.start_time)}</span>
-                      </div>
+                      <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
+                        className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1 flex-shrink-0">
+                        <X size={11} />ยกเลิก
+                      </button>
                     </div>
-                    <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
-                      className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1 flex-shrink-0">
-                      <X size={11} />ยกเลิก
-                    </button>
-                  </div>
-                ))
+                  )
+                })
             }
           </>
+        )}
+
+        {tab === 'rooms' && (
+          <div className="au">
+            <div className="flex items-center gap-2 mb-4">
+              <LayoutGrid size={14} className="text-blue-600" />
+              <h2 className="text-sm font-bold text-slate-800">สถานะห้อง {ALL_ROOMS_DATA.length} ห้อง</h2>
+            </div>
+            <RoomStatusGrid bookings={bookings} fmtTime={fmtTime} isMobile={true} />
+          </div>
         )}
 
         {tab === 'overview' && dashboard && (
           <>
             <div className="grid grid-cols-2 gap-2 au">
               {[
-                {label:'จองวันนี้',   value:dashboard.today_bookings??0,        icon:'📅',color:'text-blue-700'},
-                {label:'ห้องทั้งหมด',value:dashboard.total_rooms??0,            icon:'🏢',color:'text-slate-700'},
-                {label:'อัตราการใช้',value:`${dashboard.utilization_rate??0}%`, icon:'📊',color:'text-emerald-600'},
-                {label:'กำลังจอง',   value:activeB.length,                      icon:'✅',color:'text-blue-600'},
+                {label:'จองวันนี้',    value:dashboard.today_bookings??0,        icon:'📅',color:'text-blue-700'},
+                {label:'ห้องทั้งหมด', value:ALL_ROOMS_DATA.length,               icon:'🏢',color:'text-slate-700'},
+                {label:'อัตราการใช้', value:`${dashboard.utilization_rate??0}%`, icon:'📊',color:'text-emerald-600'},
+                {label:'ยืนยันแล้ว',  value:activeB.length,                      icon:'✅',color:'text-blue-600'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-4 shadow-sm">
                   <span className="text-xl">{s.icon}</span>
@@ -757,7 +1164,7 @@ export default function AdminPage() {
             day: days[d.getDay()], date: ds,
             count: all.filter(b =>
               new Date(b.start_time).toISOString().split('T')[0] === ds &&
-              b.status === 'approved'
+              (b.status === 'approved' || b.status === 'pending')
             ).length
           })
         }
