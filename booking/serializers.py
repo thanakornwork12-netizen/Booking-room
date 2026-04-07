@@ -1,16 +1,18 @@
-#หน้าที่เป็นตัวกลางในการแปลงข้อมูลระหว่าง Model และ API โดยมีการตรวจสอบความถูกต้องของข้อมูล เช่น การป้องกันการจองซ้ำซ้อน 
-# การตรวจสอบช่วงเวลา และการควบคุมสิทธิ์ผู้ใช้งาน รวมถึงรองรับการแสดงข้อมูลเชิงลึก
+# booking/serializers.py
+
 from rest_framework import serializers
 from django.utils import timezone
+from datetime import datetime
 from .models import (
     User, Building, Room, RoomFacility,
-    Booking, BookingLog, DemandForecast,
-    Notification, RoomUsageStat
+    TermBooking, Booking, BookingLog,
+    DemandForecast, Notification, RoomUsageStat
 )
 
 
+# ============================================================
 # USER
-
+# ============================================================
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model  = User
@@ -25,9 +27,8 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = User
-        fields = ['username', 'first_name', 'last_name',
-                  'email', 'password', 'password2',
-                  'role', 'faculty', 'phone']
+        fields = ['username', 'first_name', 'last_name', 'email',
+                  'password', 'password2', 'role', 'faculty', 'phone']
 
     def validate(self, data):
         if data['password'] != data['password2']:
@@ -37,11 +38,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
-
-        user = User.objects.create_user(
-            password=password,
-            **validated_data
-        )
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
         return user
 
 
@@ -60,7 +59,7 @@ class BuildingSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# ROOM FACILITY
+# ROOM
 # ============================================================
 class RoomFacilitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -68,9 +67,6 @@ class RoomFacilitySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'quantity']
 
 
-# ============================================================
-# ROOM
-# ============================================================
 class RoomSerializer(serializers.ModelSerializer):
     building_name = serializers.CharField(source='building.name', read_only=True)
     building_code = serializers.CharField(source='building.code', read_only=True)
@@ -78,52 +74,159 @@ class RoomSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Room
-        fields = [
-            'id', 'name', 'building', 'building_name', 'building_code',
-            'floor', 'capacity', 'room_type', 'status',
-            'description', 'image', 'is_active', 'facilities'
-        ]
+        fields = ['id', 'name', 'building', 'building_name', 'building_code',
+                  'floor', 'capacity', 'room_type', 'status',
+                  'description', 'image', 'is_active', 'facilities']
 
 
 class RoomListSerializer(serializers.ModelSerializer):
     building_name = serializers.CharField(source='building.name', read_only=True)
     building_code = serializers.CharField(source='building.code', read_only=True)
-    demand_level  = serializers.SerializerMethodField()
-    availability  = serializers.SerializerMethodField()
+    forecast      = serializers.SerializerMethodField()
 
     class Meta:
         model  = Room
-        fields = [
-            'id', 'name', 'building', 'building_name', 'building_code',
-            'floor', 'capacity', 'room_type', 'status',
-            'demand_level', 'availability'
-        ]
+        fields = ['id', 'name', 'building', 'building_name', 'building_code',
+                  'floor', 'capacity', 'room_type', 'status',
+                  'description', 'image', 'is_active', 'forecast']
 
-    def _get_current_forecast(self, obj):
-        now = timezone.now()
+    def get_forecast(self, obj):
+        request = self.context.get('request')
+        search_date = None
+        search_hour = None
+        
+        if request and 'date' in request.query_params and 'start_time' in request.query_params:
+            try:
+                search_date = datetime.strptime(request.query_params['date'], '%Y-%m-%d').date()
+                search_hour = datetime.strptime(request.query_params['start_time'], '%H:%M').hour
+            except ValueError:
+                pass
+        
+        if not search_date or search_hour is None:
+            now = timezone.now()
+            search_date = now.date()
+            search_hour = now.hour
 
-        # ใช้ cache ใน memory (แก้ N+1)
-        forecasts = getattr(obj, 'prefetched_forecasts', None)
+        f = obj.forecasts.filter(forecast_date=search_date, hour=search_hour).first()
 
-        if forecasts is None:
-            forecasts = obj.forecasts.all()
-
-        for f in forecasts:
-            if f.forecast_date == now.date() and f.hour == now.hour:
-                return f
-        return None
-
-    def get_demand_level(self, obj):
-        forecast = self._get_current_forecast(obj)
-        return forecast.demand_level if forecast else 'low'
-
-    def get_availability(self, obj):
-        forecast = self._get_current_forecast(obj)
-        return forecast.availability if forecast else 'likely_available'
+        if f:
+            return {
+                'has_forecast': True,
+                'demand_level': f.demand_level,
+                'availability': f.availability,
+                'predicted_demand': float(f.predicted_demand),
+                'term_demand': float(f.term_demand),
+                'dynamic_demand': float(f.dynamic_demand),
+                'confidence': float(f.confidence)
+            }
+            
+        return {
+            'has_forecast': False,
+            'demand_level': 'none',
+            'availability': None,
+            'predicted_demand': 0,
+            'term_demand': 0,
+            'dynamic_demand': 0,
+            'confidence': 0
+        }
 
 
 # ============================================================
-# BOOKING
+# TERM BOOKING — จองทั้งเทอม
+# ============================================================
+class TermBookingSerializer(serializers.ModelSerializer):
+    user_name     = serializers.CharField(source='user.get_full_name', read_only=True)
+    room_name     = serializers.CharField(source='room.name', read_only=True)
+    building_name = serializers.CharField(source='room.building.name', read_only=True)
+    day_name      = serializers.CharField(source='get_day_of_week_display', read_only=True)
+    total_weeks   = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = TermBooking
+        fields = [
+            'id', 'user', 'user_name', 'room', 'room_name', 'building_name',
+            'subject_name', 'subject_code', 'attendees',
+            'day_of_week', 'day_name', 'start_time', 'end_time',
+            'term_start', 'term_end', 'term_name',
+            'status', 'note', 'total_weeks', 'created_at',
+        ]
+        read_only_fields = ['id', 'user', 'status', 'created_at']
+
+    def get_total_weeks(self, obj):
+        return len(obj.get_weekly_slots())
+
+    def validate(self, data):
+        start = data.get('start_time')
+        end   = data.get('end_time')
+        room  = data.get('room')
+        dow   = data.get('day_of_week')
+        t_start = data.get('term_start')
+        t_end   = data.get('term_end')
+
+        if start >= end:
+            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+        if t_start >= t_end:
+            raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
+
+        overlap = TermBooking.objects.filter(
+            room=room,
+            day_of_week=dow,
+            status='active',
+            term_start__lte=t_end,
+            term_end__gte=t_start,
+        ).exclude(
+            start_time__gte=end
+        ).exclude(
+            end_time__lte=start
+        )
+        if self.instance:
+            overlap = overlap.exclude(pk=self.instance.pk)
+        if overlap.exists():
+            raise serializers.ValidationError(
+                f'ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว'
+            )
+        return data
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class TermBookingCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TermBooking
+        fields = ['room', 'subject_name', 'subject_code', 'attendees',
+                  'day_of_week', 'start_time', 'end_time',
+                  'term_start', 'term_end', 'term_name', 'note']
+
+    def validate(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+        if data['term_start'] >= data['term_end']:
+            raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
+
+        overlap = TermBooking.objects.filter(
+            room=data['room'],
+            day_of_week=data['day_of_week'],
+            status='active',
+            term_start__lte=data['term_end'],
+            term_end__gte=data['term_start'],
+        ).exclude(
+            start_time__gte=data['end_time']
+        ).exclude(
+            end_time__lte=data['start_time']
+        )
+        if overlap.exists():
+            raise serializers.ValidationError('ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว')
+        return data
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+# ============================================================
+# DYNAMIC BOOKING — จองรายวัน
 # ============================================================
 class BookingSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
@@ -132,39 +235,10 @@ class BookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Booking
-        fields = [
-            'id', 'user', 'user_name', 'room', 'room_name', 'building',
-            'title', 'attendees', 'start_time', 'end_time',
-            'status', 'note', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'user', 'status', 'created_at', 'updated_at']
-
-    def validate(self, data):
-        room       = data.get('room')
-        start_time = data.get('start_time')
-        end_time   = data.get('end_time')
-
-        if start_time >= end_time:
-            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
-
-        overlap = Booking.objects.filter(
-            room=room,
-            status__in=['pending', 'approved'],
-            start_time__lt=end_time,
-            end_time__gt=start_time,
-        )
-
-        if self.instance:
-            overlap = overlap.exclude(pk=self.instance.pk)
-
-        if overlap.exists():
-            raise serializers.ValidationError('ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว')
-
-        return data
-
-    def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
-        return super().create(validated_data)
+        fields = ['id', 'user', 'user_name', 'room', 'room_name', 'building',
+                  'title', 'attendees', 'start_time', 'end_time',
+                  'status', 'note', 'checked_in', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'status', 'checked_in', 'created_at', 'updated_at']
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
@@ -173,28 +247,85 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         fields = ['room', 'title', 'attendees', 'start_time', 'end_time', 'note']
 
     def validate(self, data):
-        room       = data.get('room')
-        start_time = data.get('start_time')
-        end_time   = data.get('end_time')
+        room       = data['room']
+        start_time = data['start_time']
+        end_time   = data['end_time']
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
 
-        overlap = Booking.objects.filter(
+        overlap_dynamic = Booking.objects.filter(
             room=room,
             status__in=['pending', 'approved'],
             start_time__lt=end_time,
             end_time__gt=start_time,
         )
-
-        if overlap.exists():
+        if self.instance:
+            overlap_dynamic = overlap_dynamic.exclude(pk=self.instance.pk)
+        if overlap_dynamic.exists():
             raise serializers.ValidationError('ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว')
 
+        target_date = start_time.date()
+        target_dow  = target_date.weekday()
+        overlap_term = TermBooking.objects.filter(
+            room=room,
+            day_of_week=target_dow,
+            status='active',
+            term_start__lte=target_date,
+            term_end__gte=target_date,
+        ).exclude(
+            start_time__gte=end_time.time()
+        ).exclude(
+            end_time__lte=start_time.time()
+        )
+        if overlap_term.exists():
+            tb = overlap_term.first()
+            raise serializers.ValidationError(
+                f'ห้องนี้ถูกจองทั้งเทอมโดย "{tb.subject_name}" '
+                f'({tb.start_time:%H:%M}–{tb.end_time:%H:%M})'
+            )
         return data
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
+
+
+# ============================================================
+# ROOM SEARCH
+# ============================================================
+class RoomSearchSerializer(serializers.Serializer):
+    attendees     = serializers.IntegerField(min_value=1)
+    room_type     = serializers.CharField(required=False, allow_blank=True)
+    building_code = serializers.CharField(required=False, allow_blank=True)
+    
+    # ✨ ให้ date รับค่าว่างได้ เผื่อค้นหาแบบเทอม
+    date          = serializers.DateField(required=False, allow_null=True)
+    
+    start_time    = serializers.TimeField()
+    end_time      = serializers.TimeField()
+    booking_type  = serializers.ChoiceField(
+        choices=['dynamic', 'term'], default='dynamic',
+        help_text='dynamic=จองรายวัน, term=จองทั้งเทอม'
+    )
+    # สำหรับ term booking
+    term_start    = serializers.DateField(required=False, allow_null=True)
+    term_end      = serializers.DateField(required=False, allow_null=True)
+    day_of_week   = serializers.IntegerField(required=False, min_value=0, max_value=6)
+
+    def validate(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+            
+        # ✨ เช็ค validation แยกตามประเภทการค้นหา
+        if data.get('booking_type') == 'term':
+            if data.get('day_of_week') is None:
+                raise serializers.ValidationError('การค้นหาห้องทั้งเทอมต้องระบุวันในสัปดาห์ (day_of_week)')
+        else:
+            if not data.get('date'):
+                raise serializers.ValidationError('การค้นหารายวันต้องระบุวันที่ (date)')
+                
+        return data
 
 
 # ============================================================
@@ -217,11 +348,9 @@ class BookingLogSerializer(serializers.ModelSerializer):
 class DemandForecastSerializer(serializers.ModelSerializer):
     class Meta:
         model  = DemandForecast
-        fields = [
-            'id', 'room', 'forecast_date', 'hour',
-            'predicted_demand', 'demand_level',
-            'availability', 'confidence'
-        ]
+        fields = ['id', 'room', 'forecast_date', 'hour',
+                  'predicted_demand', 'demand_level', 'availability',
+                  'confidence', 'term_demand', 'dynamic_demand']
 
 
 # ============================================================
@@ -230,27 +359,8 @@ class DemandForecastSerializer(serializers.ModelSerializer):
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Notification
-        fields = [
-            'id', 'type', 'title', 'message',
-            'is_read', 'booking', 'created_at'
-        ]
-
-
-# ============================================================
-# ROOM SEARCH
-# ============================================================
-class RoomSearchSerializer(serializers.Serializer):
-    attendees     = serializers.IntegerField(min_value=1)
-    room_type     = serializers.CharField(required=False, allow_blank=True)
-    building_code = serializers.CharField(required=False, allow_blank=True)
-    date          = serializers.DateField()
-    start_time    = serializers.TimeField()
-    end_time      = serializers.TimeField()
-
-    def validate(self, data):
-        if data['start_time'] >= data['end_time']:
-            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
-        return data
+        fields = ['id', 'type', 'title', 'message',
+                  'is_read', 'booking', 'term_booking', 'created_at']
 
 
 # ============================================================
@@ -261,8 +371,6 @@ class RoomUsageStatSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = RoomUsageStat
-        fields = [
-            'id', 'room', 'room_name', 'date',
-            'total_bookings', 'completed', 'no_show',
-            'cancelled', 'utilization_rate'
-        ]
+        fields = ['id', 'room', 'room_name', 'date',
+                  'total_bookings', 'term_bookings', 'dynamic_bookings',
+                  'completed', 'no_show', 'cancelled', 'utilization_rate']
