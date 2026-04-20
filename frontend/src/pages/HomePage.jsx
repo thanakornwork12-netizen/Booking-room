@@ -145,6 +145,56 @@ function NotiDropdown({ notifications, onDismiss, onClose }) {
   )
 }
 
+function TermBookingModal({ booking, onClose, onCancel }) {
+  if (!booking) return null
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end md:items-center justify-center px-0 md:px-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden si">
+        <div className="px-5 py-4 flex items-center justify-between border-b border-blue-50">
+          <div className="flex items-center gap-2">
+            <BookOpen size={18} className="text-blue-700" />
+            <span className="font-bold text-slate-900 text-sm">รายละเอียดวิชาเรียน (จองรายเทอม)</span>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-slate-400 hover:text-blue-600"><X size={14} /></button>
+        </div>
+        <div className="px-5 py-5">
+          <div className="bg-blue-700 text-white p-4 rounded-2xl mb-4 shadow-lg shadow-blue-200">
+            <p className="text-[10px] uppercase tracking-widest opacity-70 mb-1">รายวิชา / กิจกรรม</p>
+            <p className="text-lg font-bold leading-tight">{booking.subject_name}</p>
+            <p className="text-xs opacity-80 mt-1">{booking.subject_code || 'ไม่ระบุรหัสวิชา'}</p>
+          </div>
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl">
+              <Building2 size={16} className="text-blue-600" />
+              <div>
+                <p className="text-[10px] text-slate-400">ห้องประชุม / อาคาร</p>
+                <p className="text-sm font-bold">{booking.room_name} ({booking.building_name})</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl">
+              <Clock size={16} className="text-blue-600" />
+              <div>
+                <p className="text-[10px] text-slate-400">วันและเวลาที่เรียน</p>
+                <p className="text-sm font-bold">ทุกวัน{booking.day_name} | {booking.start_time_raw} - {booking.end_time_raw} น.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl">
+              <CalendarDays size={16} className="text-blue-600" />
+              <div>
+                <p className="text-[10px] text-slate-400">ระยะเวลาของเทอม</p>
+                <p className="text-sm font-bold">{booking.term_name} ({booking.term_start} ถึง {booking.term_end})</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => onCancel(booking.id)} className="w-full py-3 text-red-500 font-bold text-sm border-2 border-red-50 rounded-xl hover:bg-red-50 transition-colors">
+            ยกเลิกการจองรายเทอมนี้
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateFull }) {
   if (!booking) return null
   const isActive    = booking.status === 'approved'
@@ -155,7 +205,6 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
   const showCheckIn = isActive && !isFinished && canCheckIn(booking.start_time) && !booking.checked_in
   const until       = isActive && !isFinished && !booking.checked_in ? timeUntil(booking.start_time) : null
   
-  // Logic การแสดงผลสถานะที่ผ่านไปแล้ว
   const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1')
   const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'กำลังจอง' : isNoShow ? 'ไม่มาใช้งาน' : 'ยกเลิกแล้ว')
 
@@ -273,9 +322,10 @@ function BookingRow({ b, onClick, fmtDate, fmtTime, compact=false }) {
 }
 
 function DesktopHome(props) {
-  const { user, bookings, notifications, unreadNotis, activeBookings, cancelledBookings, noShowBookings,
+  const { user, bookings, termBookings, notifications, unreadNotis, activeBookings, cancelledBookings, noShowBookings,
     showNoti, setShowNoti, handleDismissNoti, handleLogout, navigate,
-    selectedBooking, setSelectedBooking, handleCancel, handleCheckIn, fmtDate, fmtTime, fmtDateFull } = props
+    selectedBooking, setSelectedBooking, setSelectedTermBooking, handleCancel, handleCheckIn, fmtDate, fmtTime, fmtDateFull } = props
+  
   return (
     <div className="min-h-screen bg-slate-100" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
@@ -321,12 +371,14 @@ function DesktopHome(props) {
                 <Search size={22} />
               </div>
             </button>
+            
             <div className="grid grid-cols-2 gap-3">
               {[
                 {label:'จองทั้งหมด', value: bookings.length,          color:'text-blue-700'},
                 {label:'กำลังจอง',   value: activeBookings.length,    color:'text-emerald-600'},
                 {label:'ยกเลิกแล้ว',value: cancelledBookings.length, color:'text-red-500'},
                 {label:'No-Show',   value: noShowBookings.length,    color:'text-orange-500'},
+                {label:'จองรายเทอม', value: termBookings.length,      color:'text-purple-600'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-4 text-center shadow-sm">
                   <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -334,10 +386,31 @@ function DesktopHome(props) {
                 </div>
               ))}
             </div>
+
+            {/* Term Bookings Quick View */}
+            <div className="bg-white border border-purple-100 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-4 py-3 bg-purple-50 flex items-center gap-2 border-b border-purple-100">
+                    <BookOpen size={16} className="text-purple-700"/>
+                    <span className="font-bold text-sm text-purple-900">วิชาที่จอง (รายเทอม)</span>
+                </div>
+                <div className="p-2 space-y-2">
+                    {termBookings.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 p-4 text-center">ไม่มีรายการจองรายเทอม</p>
+                    ) : (
+                        termBookings.map(tb => (
+                            <div key={tb.id} onClick={() => setSelectedTermBooking(tb)} className="p-3 bg-white hover:bg-purple-50 rounded-xl border border-transparent hover:border-purple-100 cursor-pointer transition-all">
+                                <p className="text-xs font-bold text-slate-800 truncate">{tb.subject_name}</p>
+                                <p className="text-[10px] text-purple-600 font-bold">ทุกวัน{tb.day_name} | {tb.start_time_raw} น.</p>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
           </div>
+          
           <div className="col-span-2 bg-white border border-blue-100 rounded-2xl shadow-sm overflow-hidden au1">
             <div className="px-6 py-4 flex justify-between items-center border-b border-blue-50">
-              <span className="font-bold text-slate-900">การจองของฉัน</span>
+              <span className="font-bold text-slate-900">การจองของฉัน (รายวัน)</span>
               <span className="text-xs text-slate-500 bg-blue-50 px-3 py-1 rounded-full">{bookings.length} รายการ</span>
             </div>
             {bookings.length === 0
@@ -353,16 +426,19 @@ function DesktopHome(props) {
           </div>
         </div>
       </div>
-      <BookingModal booking={selectedBooking} onClose={() => setSelectedBooking(null)}
-        onCancel={handleCancel} onCheckIn={handleCheckIn} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
     </div>
   )
 }
 
 function MobileHome(props) {
-  const { user, bookings, notifications, unreadNotis, activeBookings, cancelledBookings, noShowBookings,
+  const { 
+    user, bookings, termBookings, notifications, unreadNotis,
+    activeBookings, cancelledBookings, noShowBookings,
     showNoti, setShowNoti, handleDismissNoti, handleLogout, navigate,
-    selectedBooking, setSelectedBooking, handleCancel, handleCheckIn, fmtDate, fmtTime, fmtDateFull } = props
+    selectedBooking, setSelectedBooking, setSelectedTermBooking, handleCancel, handleCheckIn, 
+    fmtDate, fmtTime, fmtDateFull 
+  } = props
+
   return (
     <div className="min-h-screen bg-blue-50" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
@@ -392,7 +468,7 @@ function MobileHome(props) {
         </div>
         <div className="h-0.5 bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-300" />
       </div>
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-3 pb-12">
+      <div className="max-w-lg mx-auto px-4 py-4 space-y-4 pb-20">
         <button onClick={() => navigate('/search')}
           className="au w-full bg-gradient-to-br from-blue-700 to-blue-600 text-white rounded-2xl p-5 flex items-center justify-between shadow-lg shadow-blue-300 hover:opacity-95 active:scale-95 transition-all">
           <div>
@@ -403,22 +479,46 @@ function MobileHome(props) {
             <Search size={20} />
           </div>
         </button>
-        <div className="grid grid-cols-4 gap-2 au1">
+
+        <div className="grid grid-cols-5 gap-1 au1">
           {[
-            {label:'ทั้งหมด',    value: bookings.length,          color:'text-blue-700'},
-            {label:'กำลังจอง',   value: activeBookings.length,    color:'text-emerald-600'},
-            {label:'ยกเลิก',    value: cancelledBookings.length, color:'text-red-500'},
-            {label:'No-Show',   value: noShowBookings.length,    color:'text-orange-500'},
-          ].map((s,i) => (
-            <div key={i} className="bg-white border border-blue-100 rounded-2xl p-3 text-center shadow-sm">
-              <p className={`text-xl font-extrabold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-slate-500 mt-0.5 leading-tight">{s.label}</p>
+            { label: 'จองทั้งหมด', value: bookings.length, color: 'text-blue-700' },
+            { label: 'กำลังจอง', value: activeBookings.length, color: 'text-emerald-600' },
+            { label: 'ยกเลิกแล้ว', value: cancelledBookings.length, color: 'text-red-500' },
+            { label: 'No-Show', value: noShowBookings.length, color: 'text-orange-500' },
+            { label: 'รายเทอม', value: termBookings.length, color: 'text-purple-600' },
+          ].map((s, i) => (
+            <div key={i} className="bg-white border border-blue-100 rounded-xl p-2 text-center shadow-sm">
+              <p className={`text-lg font-extrabold ${s.color}`}>{s.value}</p>
+              <p className="text-[9px] text-slate-500 mt-0.5 leading-tight">{s.label}</p>
             </div>
           ))}
         </div>
+
+        {/* Term Bookings Slider for Mobile */}
+        <div className="au1">
+            <div className="flex items-center gap-2 mb-2 px-1">
+                <BookOpen size={16} className="text-blue-700"/>
+                <span className="font-bold text-slate-800 text-sm">จองรายเทอม</span>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                {termBookings.length === 0 ? (
+                    <div className="w-full p-6 bg-white rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-400">ไม่มีรายการ</div>
+                ) : (
+                    termBookings.map(tb => (
+                        <div key={tb.id} onClick={() => setSelectedTermBooking(tb)} className="min-w-[160px] bg-white p-4 rounded-2xl border border-blue-50 shadow-sm">
+                            <p className="text-[10px] font-bold text-blue-600 mb-1">ทุกวัน{tb.day_name}</p>
+                            <p className="text-xs font-bold text-slate-800 truncate mb-1">{tb.subject_name}</p>
+                            <p className="text-[10px] text-slate-400">{tb.start_time_raw} น.</p>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+
         <div className="bg-white border border-blue-100 rounded-2xl overflow-hidden shadow-sm au2">
           <div className="px-5 py-3.5 flex justify-between items-center border-b border-blue-50">
-            <span className="font-bold text-slate-900 text-sm">การจองของฉัน</span>
+            <span className="font-bold text-slate-900 text-sm">การจองของฉัน (รายวัน)</span>
             <span className="text-xs text-slate-500 bg-blue-50 px-2.5 py-0.5 rounded-full">{bookings.length} รายการ</span>
           </div>
           {bookings.length === 0
@@ -434,8 +534,6 @@ function MobileHome(props) {
           }
         </div>
       </div>
-      <BookingModal booking={selectedBooking} onClose={() => setSelectedBooking(null)}
-        onCancel={handleCancel} onCheckIn={handleCheckIn} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
     </div>
   )
 }
@@ -444,34 +542,41 @@ export default function HomePage() {
   const navigate  = useNavigate()
   const isMobile  = useDevice()
   const [bookings, setBookings]               = useState([])
+  const [termBookings, setTermBookings]       = useState([])
   const [notifications, setNotifications]     = useState([])
   const [user, setUser]                       = useState(null)
   const [loading, setLoading]                 = useState(true)
   const [showNoti, setShowNoti]               = useState(false)
   const [selectedBooking, setSelectedBooking] = useState(null)
+  const [selectedTermBooking, setSelectedTermBooking] = useState(null)
   const [showTutorial, setShowTutorial]       = useState(false)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [p,b,n] = await Promise.all([
+        const [p,b,n,t] = await Promise.all([
           api.get('/auth/profile/'),
           api.get('/bookings/'),
           api.get('/notifications/'),
+          // จุดสำคัญ: ลบ /api/ ออก เพื่อเลี่ยงปัญหา url ซ้อน
+          api.get('/term-bookings/').catch(() => ({ data: [] }))
         ])
         setUser(p.data)
-        setBookings(b.data.results || [])
-        setNotifications(n.data.results || [])
+        setBookings(b.data.results || b.data || [])
+        setNotifications(n.data.results || n.data || [])
+        setTermBookings(Array.isArray(t.data) ? t.data : (t.data.results || []))
+        
         if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
-      } catch { navigate('/login') }
-      finally   { setLoading(false) }
+      } catch (err) { 
+        console.error("Load Data Error", err)
+        navigate('/login') 
+      }
+      finally { setLoading(false) }
     }; load()
-  }, [])
+  }, [navigate])
 
   const handleLogout = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('user')
+    localStorage.clear()
     navigate('/login')
   }
 
@@ -487,7 +592,17 @@ export default function HomePage() {
     try {
       await api.post(`/bookings/${id}/cancel/`)
       setBookings(prev => prev.map(b => b.id === id ? {...b, status:'cancelled'} : b))
-      if (selectedBooking?.id === id) setSelectedBooking(prev => ({...prev, status:'cancelled'}))
+      if (selectedBooking?.id === id) setSelectedBooking(null)
+    } catch { alert('เกิดข้อผิดพลาด') }
+  }
+
+  const handleTermCancel = async (id) => {
+    if (!confirm('ยืนยันยกเลิกการจองรายเทอม?')) return
+    try {
+      await api.delete(`/term-bookings/${id}/`)
+      setTermBookings(prev => prev.filter(b => b.id !== id))
+      setSelectedTermBooking(null)
+      alert('ยกเลิกการจองรายเทอมสำเร็จ')
     } catch { alert('เกิดข้อผิดพลาด') }
   }
 
@@ -505,7 +620,6 @@ export default function HomePage() {
   const fmtDateFull = dt => new Date(dt).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
 
   const unreadNotis       = notifications.filter(n => !n.is_read)
-  // เฉพาะรายการที่ยังไม่จบเวลา และมีสถานะ approved
   const activeBookings    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledBookings = bookings.filter(b => b.status === 'cancelled')
   const noShowBookings    = bookings.filter(b => b.status === 'no_show')
@@ -519,17 +633,35 @@ export default function HomePage() {
   )
 
   const shared = {
-    user, bookings, notifications, unreadNotis,
+    user, bookings, termBookings, notifications, unreadNotis,
     activeBookings, cancelledBookings, noShowBookings,
     showNoti, setShowNoti, handleDismissNoti, handleLogout, navigate,
-    selectedBooking, setSelectedBooking, handleCancel, handleCheckIn,
-    fmtDate, fmtTime, fmtDateFull,
+    selectedBooking, setSelectedBooking, 
+    selectedTermBooking, setSelectedTermBooking,
+    handleCancel, handleTermCancel, handleCheckIn,
+    fmtDate, fmtTime, fmtDateFull
   }
 
   return (
     <>
       {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} userId={user?.id} />}
+      
       {isMobile ? <MobileHome {...shared} /> : <DesktopHome {...shared} />}
+      
+      <BookingModal 
+        booking={selectedBooking} 
+        onClose={() => setSelectedBooking(null)}
+        onCancel={handleCancel} 
+        onCheckIn={handleCheckIn} 
+        fmtTime={fmtTime} 
+        fmtDateFull={fmtDateFull} 
+      />
+
+      <TermBookingModal 
+        booking={selectedTermBooking} 
+        onClose={() => setSelectedTermBooking(null)} 
+        onCancel={handleTermCancel} 
+      />
     </>
   )
 }

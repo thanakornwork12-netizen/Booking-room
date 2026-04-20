@@ -90,6 +90,9 @@ class RoomFacility(models.Model):
 # ============================================================
 # 5. TERM BOOKING — จองทั้งเทอม (Fixed Schedule)
 # ============================================================
+# ============================================================
+# 5. TERM BOOKING — จองทั้งเทอม (Fixed Schedule)
+# ============================================================
 class TermBooking(models.Model):
     STATUS_CHOICES = [
         ('active',    'ใช้งานอยู่'),
@@ -130,6 +133,25 @@ class TermBooking(models.Model):
     class Meta:
         verbose_name = 'การจองทั้งเทอม'
         ordering = ['day_of_week', 'start_time']
+
+    # --- ฟังก์ชันที่เพิ่มเข้าไปเพื่อแก้ Error 500 ---
+    def get_weekly_slots(self):
+        """คำนวณรายการวันที่ต้องเข้าใช้งานทั้งหมดในช่วงเทอมตามวันในสัปดาห์ที่ระบุ"""
+        from datetime import timedelta
+        slots = []
+        curr = self.term_start
+        # วนลูปตั้งแต่วันเริ่มเทอมจนถึงวันสิ้นสุดเทอม
+        while curr <= self.term_end:
+            if curr.weekday() == self.day_of_week:
+                slots.append(curr)
+            curr += timedelta(days=1)
+        return slots
+
+    @property
+    def total_weeks(self):
+        """ส่งกลับจำนวนสัปดาห์ทั้งหมดที่มีการจอง"""
+        return len(self.get_weekly_slots())
+    # -------------------------------------------
 
     def __str__(self):
         days = ['จ','อ','พ','พฤ','ศ','ส','อา']

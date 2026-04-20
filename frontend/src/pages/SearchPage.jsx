@@ -21,7 +21,6 @@ const DURATIONS  = [{ label: '1 ชม.', hours: 1 },{ label: '2 ชม.', hours
 const ATTENDEES_PRESETS = [2, 5, 10, 20, 30, 50]
 const CAPACITY_BUFFER   = 10
 
-// Room types allowed in term mode (classroom / lecture)
 const TERM_ALLOWED_TYPES = ['ห้องเรียน', 'ห้อง lecture', 'ห้อง Lecture', 'classroom', 'lecture', 'Lecture Hall', 'lecture_hall']
 
 const DAYS_OF_WEEK = [
@@ -34,7 +33,6 @@ const DAYS_OF_WEEK = [
   { value: 0, label: 'อา.', full: 'วันอาทิตย์' },
 ]
 
-// ── room.status choices → badge ───────────────────────────────────────────────
 const ROOM_STATUS = {
   available:   { label: 'ว่าง',      cls: 'bg-green-50 text-green-700 border-green-200',  dot: '#16a34a' },
   occupied:    { label: 'ถูกใช้งาน', cls: 'bg-red-50 text-red-600 border-red-200',        dot: '#dc2626' },
@@ -42,11 +40,6 @@ const ROOM_STATUS = {
   disabled:    { label: 'ปิดใช้',    cls: 'bg-gray-100 text-gray-500 border-gray-200',    dot: '#9ca3af' },
 }
 
-// ── forecast demand_level → card config (4-tier: urgent / high / medium / low) ──
-//  score ≥ 0.70 → urgent   (book_now)
-//  0.50–0.69   → high     (book_soon)
-//  0.30–0.49   → medium   (recommended)
-//  < 0.30      → low      (likely_available)
 const FORECAST_CONFIG = {
   urgent: {
     badge: 'รีบจองด่วนที่สุด!', sub: 'โอกาสสุดท้ายก่อนเต็ม',
@@ -90,7 +83,6 @@ const FORECAST_CONFIG = {
   },
 }
 
-// Summary tiers shown in step-2 header
 const SUMMARY_TIERS = [
   { level: 'urgent', label: 'รีบจองด่วนที่สุด!' },
   { level: 'high',   label: 'รีบจองด่วน!'       },
@@ -111,11 +103,8 @@ const formatDateShort = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH
   day: 'numeric', month: 'short',
 })
 
-/** Resolve demand_level from API response.
- *  Supports both the old string field and a numeric score field. */
 const getDemandLevel = room => {
   const raw = room.forecast?.demand_level
-  // If backend sends availability string, map to our 4-tier
   const availMap = {
     book_now: 'urgent',
     book_soon: 'high',
@@ -123,14 +112,12 @@ const getDemandLevel = room => {
     likely_available: 'low',
   }
   if (raw && availMap[raw]) return availMap[raw]
-  // If backend already sends our tier names
   if (raw && FORECAST_CONFIG[raw]) return raw
   return 'none'
 }
 
 const getDayLabel = v => DAYS_OF_WEEK.find(d => d.value === v)?.full ?? ''
 
-/** Check if room type qualifies for term booking */
 const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()
@@ -313,7 +300,6 @@ function TermFilterBanner({ compact = false }) {
 }
 
 // ─── SummaryTiles ─────────────────────────────────────────────────────────────
-// 4-tier summary — works for both desktop (vertical) and mobile (2x2 grid)
 
 function SummaryTiles({ rooms, layout = 'vertical' }) {
   if (layout === 'grid') {
@@ -332,7 +318,6 @@ function SummaryTiles({ rooms, layout = 'vertical' }) {
       </div>
     )
   }
-  // vertical (desktop sidebar)
   return (
     <div className="space-y-3 au1">
       {SUMMARY_TIERS.map(s => {
@@ -408,6 +393,9 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
     startTime, setStartTime, duration, setDuration,
     building, setBuilding, endTime, loading, handleSearch, error,
     dayOfWeek, setDayOfWeek,
+    termStart, setTermStart,
+    termEnd, setTermEnd,
+    termName, setTermName,
   } = formProps
   const { rooms, setSelectedRoom } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success } = confirmProps
@@ -417,7 +405,6 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
   const accentHov  = isTermMode ? 'hover:bg-indigo-800' : 'hover:bg-blue-800'
   const accentShadow = isTermMode ? 'shadow-indigo-200' : 'shadow-blue-200'
 
-  // ── Success ────────────────────────────────────────────────────────────────
   if (success) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <style>{ANIM}</style>
@@ -429,7 +416,15 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
         <p className="text-2xl font-extrabold text-slate-900 mb-2">จองสำเร็จแล้ว</p>
         <p className={`text-lg font-bold mb-4 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
         {isTermMode
-          ? <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+          ? (
+            <>
+              <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+              {termStart && termEnd && (
+                <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
+              )}
+              {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
+            </>
+          )
           : <p className="text-sm text-slate-500">{formatDate(date)} · {startTime} – {endTime} น.</p>
         }
         <p className="text-sm text-slate-500 mt-1">{attendees} ผู้เข้าร่วม</p>
@@ -562,6 +557,48 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                 </div>
               </div>
 
+              {/* Term info */}
+              {isTermMode && (
+                <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
+                  <SectionLabel>ข้อมูลเทอม</SectionLabel>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
+                      <input
+                        type="text"
+                        value={termName}
+                        onChange={e => setTermName(e.target.value)}
+                        placeholder="เช่น ภาคเรียนที่ 1/2568"
+                        className="w-full border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+                        style={{fontFamily:"inherit"}}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
+                        <input
+                          type="date"
+                          value={termStart}
+                          onChange={e => setTermStart(e.target.value)}
+                          className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+                          style={{fontFamily:"inherit"}}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
+                        <input
+                          type="date"
+                          value={termEnd}
+                          onChange={e => setTermEnd(e.target.value)}
+                          className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+                          style={{fontFamily:"inherit"}}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Time */}
               <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
                 <SectionLabel icon={Clock}>เวลา</SectionLabel>
@@ -604,10 +641,22 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                     <span className={`font-bold ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{isTermMode ? 'ทั้งเทอม' : 'รายวัน'}</span>
                   </div>
                   {isTermMode && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">ห้อง</span>
-                      <span className="font-bold text-indigo-600 text-xs">เฉพาะห้องเรียน/Lecture</span>
-                    </div>
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">ห้อง</span>
+                        <span className="font-bold text-indigo-600 text-xs">เฉพาะห้องเรียน/Lecture</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">ชื่อเทอม</span>
+                        <span className="font-bold text-slate-800 text-xs truncate max-w-[120px]">{termName || '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">ช่วงเทอม</span>
+                        <span className="font-bold text-slate-800 text-xs">
+                          {termStart && termEnd ? `${formatDateShort(termStart)}–${formatDateShort(termEnd)}` : '—'}
+                        </span>
+                      </div>
+                    </>
                   )}
                   <div className="flex justify-between"><span className="text-slate-500">ผู้เข้าร่วม</span><span className="font-bold text-slate-800">{attendees} คน</span></div>
                   {isTermMode
@@ -643,6 +692,9 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
               <span className="text-white/80 text-sm">{startTime}–{endTime}</span>
               {building && <span className="text-white/80 text-sm">{BUILDINGS.find(b=>b.code===building)?.label}</span>}
               <span className="text-white/80 text-sm">จุ {attendees}–{attendees + CAPACITY_BUFFER} คน</span>
+              {isTermMode && termName && (
+                <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2.5 py-1">{termName}</span>
+              )}
               {isTermMode && (
                 <span className="bg-white/15 text-white text-xs font-bold rounded-full px-2.5 py-1 flex items-center gap-1">
                   <Filter size={10} />ห้องเรียน / Lecture เท่านั้น
@@ -655,9 +707,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
           </div>
 
           <div className="grid grid-cols-4 gap-6">
-            {/* Sidebar summary — 4 tiers */}
             <SummaryTiles rooms={rooms} layout="vertical" />
-
             <div className="col-span-3 space-y-3 au2">
               {rooms.length === 0 ? (
                 <div className="bg-white border border-blue-100 rounded-2xl py-16 text-center">
@@ -707,6 +757,10 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                     { label: 'เวลา',         value: `${startTime} – ${endTime} น.` },
                     { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
                     { label: 'ความจุห้อง',  value: `${selectedRoom.capacity} คน` },
+                    ...(isTermMode && termName ? [{ label: 'เทอม', value: termName }] : []),
+                    ...(isTermMode && termStart && termEnd
+                      ? [{ label: 'ช่วงเทอม', value: `${formatDateShort(termStart)} – ${formatDateShort(termEnd)}` }]
+                      : []),
                   ].map((r, i) => (
                     <div key={i} className="flex justify-between px-4 py-3 bg-white border-b border-blue-50 last:border-0">
                       <span className="text-xs text-slate-500">{r.label}</span>
@@ -758,6 +812,9 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
     startTime, setStartTime, duration, setDuration,
     building, setBuilding, endTime, loading, handleSearch, error,
     dayOfWeek, setDayOfWeek,
+    termStart, setTermStart,
+    termEnd, setTermEnd,
+    termName, setTermName,
   } = formProps
   const { rooms, setSelectedRoom } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success } = confirmProps
@@ -779,7 +836,15 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
         <p className="text-xl font-extrabold text-slate-900 mb-1.5">จองสำเร็จแล้ว</p>
         <p className={`text-base font-bold mb-3 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
         {isTermMode
-          ? <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+          ? (
+            <>
+              <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+              {termStart && termEnd && (
+                <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
+              )}
+              {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
+            </>
+          )
           : <p className="text-sm text-slate-500">{formatDateShort(date)} · {startTime} – {endTime} น.</p>
         }
         <p className="text-sm text-slate-500 mt-0.5">{attendees} คน</p>
@@ -882,6 +947,48 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
               </div>
             )}
 
+            {/* Term dates — mobile */}
+            {isTermMode && (
+              <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
+                <SectionLabel>ข้อมูลเทอม</SectionLabel>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
+                    <input
+                      type="text"
+                      value={termName}
+                      onChange={e => setTermName(e.target.value)}
+                      placeholder="เช่น ภาคเรียนที่ 1/2568"
+                      className="w-full border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+                      style={{fontFamily:"inherit"}}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
+                      <input
+                        type="date"
+                        value={termStart}
+                        onChange={e => setTermStart(e.target.value)}
+                        className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-all"
+                        style={{fontFamily:"inherit"}}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
+                      <input
+                        type="date"
+                        value={termEnd}
+                        onChange={e => setTermEnd(e.target.value)}
+                        className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-all"
+                        style={{fontFamily:"inherit"}}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
               <SectionLabel icon={Clock}>เวลาเริ่มต้น</SectionLabel>
               <div className="grid grid-cols-4 gap-1.5 mb-4">
@@ -948,7 +1055,6 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
               </div>
             </div>
 
-            {/* 4-tier summary — 2×2 grid on mobile */}
             {rooms.length > 0 && (
               <SummaryTiles rooms={rooms} layout="grid" />
             )}
@@ -997,6 +1103,10 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                     { label: 'เวลา',         value: `${startTime}–${endTime} น.` },
                     { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
                     { label: 'ความจุห้อง',  value: `${selectedRoom.capacity} คน` },
+                    ...(isTermMode && termName ? [{ label: 'เทอม', value: termName }] : []),
+                    ...(isTermMode && termStart && termEnd
+                      ? [{ label: 'ช่วงเทอม', value: `${formatDateShort(termStart)} – ${formatDateShort(termEnd)}` }]
+                      : []),
                   ].map((r, i) => (
                     <div key={i} className="flex justify-between px-4 py-2.5 bg-white border-b border-blue-50 last:border-0">
                       <span className="text-xs text-slate-500">{r.label}</span>
@@ -1042,27 +1152,32 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
 export default function SearchPage() {
   const navigate  = useNavigate()
   const isMobile  = useDevice()
-  const [step, setStep]                   = useState(1)
-  const [bookingType, setBookingType]     = useState('daily')
-  const [attendees, setAttendees]         = useState(5)
-  const [date, setDate]                   = useState(new Date().toISOString().split('T')[0])
-  const [dayOfWeek, setDayOfWeek]         = useState(null)
-  const [startTime, setStartTime]         = useState('')
-  const [duration, setDuration]           = useState(1)
-  const [building, setBuilding]           = useState('')
-  const [rooms, setRooms]                 = useState([])
-  const [selectedRoom, setSelectedRoom]   = useState(null)
-  const [title, setTitle]                 = useState('')
-  const [loading, setLoading]             = useState(false)
+  const [step, setStep]                     = useState(1)
+  const [bookingType, setBookingType]       = useState('daily')
+  const [attendees, setAttendees]           = useState(5)
+  const [date, setDate]                     = useState(new Date().toISOString().split('T')[0])
+  const [dayOfWeek, setDayOfWeek]           = useState(null)
+  const [startTime, setStartTime]           = useState('')
+  const [duration, setDuration]             = useState(1)
+  const [building, setBuilding]             = useState('')
+  const [rooms, setRooms]                   = useState([])
+  const [selectedRoom, setSelectedRoom]     = useState(null)
+  const [title, setTitle]                   = useState('')
+  const [loading, setLoading]               = useState(false)
   const [bookingLoading, setBookingLoading] = useState(false)
-  const [success, setSuccess]             = useState(false)
-  const [error, setError]                 = useState('')
+  const [success, setSuccess]               = useState(false)
+  const [error, setError]                   = useState('')
+  const [termStart, setTermStart]           = useState('')
+  const [termEnd, setTermEnd]               = useState('')
+  const [termName, setTermName]             = useState('ภาคเรียนที่ 1/2568')
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
   const handleSearch = async () => {
     if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
     if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
+    if (bookingType === 'term' && !termStart) { setError('กรุณาเลือกวันเริ่มเทอม'); return }
+    if (bookingType === 'term' && !termEnd) { setError('กรุณาเลือกวันสิ้นสุดเทอม'); return }
     if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
 
     setError(''); setLoading(true)
@@ -1073,7 +1188,15 @@ export default function SearchPage() {
         end_time: endTime,
         building_code: building || undefined,
         booking_type: bookingType === 'term' ? 'term' : 'dynamic',
-        ...(bookingType === 'term' ? { day_of_week: dayOfWeek } : { date }),
+        ...(bookingType === 'term'
+          ? {
+              day_of_week: dayOfWeek,
+              term_start: termStart,
+              term_end: termEnd,
+              term_name: termName || 'ภาคเรียนที่ 1/2568',
+            }
+          : { date }
+        ),
       }
       const res = await api.post('/rooms/search/', payload)
 
@@ -1081,7 +1204,6 @@ export default function SearchPage() {
         r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER
       )
 
-      // For term mode: keep only classroom / lecture room types
       if (bookingType === 'term') {
         filtered = filtered.filter(r => isClassroomType(r))
       }
@@ -1095,22 +1217,76 @@ export default function SearchPage() {
     }
   }
 
-  const handleBook = async () => {
-    if (!title.trim()) { setError('กรุณากรอกหัวข้อ'); return }
-    setBookingLoading(true); setError('')
-    try {
-      const payload = bookingType === 'term'
-        ? { room: selectedRoom.id, title, attendees, booking_type: 'term', day_of_week: dayOfWeek, start_time: startTime, end_time: endTime }
-        : { room: selectedRoom.id, title, attendees, booking_type: 'dynamic', start_time: `${date}T${startTime}:00+07:00`, end_time: `${date}T${endTime}:00+07:00` }
-      await api.post('/bookings/', payload)
-      setSuccess(true)
-    } catch {
-      setError('ไม่สามารถจองได้ กรุณาลองใหม่อีกครั้ง')
-    } finally {
-      setBookingLoading(false)
-    }
+  // SearchPage.jsx
+
+const handleBook = async () => {
+  console.log('=== handleBook called ===')
+  console.log('bookingType:', bookingType)
+  console.log('selectedRoom:', selectedRoom)
+  console.log('title:', title)
+  console.log('date:', date, 'startTime:', startTime, 'endTime:', endTime)
+
+  if (!selectedRoom) {
+    setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
+    return
   }
 
+  setBookingLoading(true)
+  setError('')
+
+  try {
+    let response
+
+    if (bookingType === 'term') {
+      const termPayload = {
+        room: selectedRoom.id,
+        subject_name: title,
+        subject_code: 'N/A',
+        attendees: parseInt(attendees),
+        day_of_week: dayOfWeek,
+        start_time: startTime,
+        end_time: endTime,
+        term_start: termStart,
+        term_end: termEnd,
+        term_name: termName,
+        note: '',
+      }
+      console.log('POST /term-bookings/ payload:', termPayload)
+      response = await api.post('term-bookings/', termPayload)
+
+    } else {
+      const dynamicPayload = {
+        room: selectedRoom.id,
+        title: title,
+        attendees: parseInt(attendees),
+        start_time: `${date}T${startTime}:00`,
+        end_time: `${date}T${endTime}:00`,
+        note: '',
+      }
+      console.log('POST /bookings/ payload:', dynamicPayload)
+      response = await api.post('bookings/', dynamicPayload)
+    }
+
+    console.log('response status:', response.status)
+    console.log('response data:', response.data)
+
+    if (response.status === 201 || response.status === 200) {
+      setSuccess(true)
+    } else {
+      setError('จองไม่สำเร็จ กรุณาลองใหม่')
+    }
+
+  } catch (err) {
+    console.error('=== handleBook error ===')
+    console.error('status:', err.response?.status)
+    console.error('data:', err.response?.data)
+    const errorData = err.response?.data
+    const msg = errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
+    setError(msg)
+  } finally {
+    setBookingLoading(false)
+  }
+}
   const shared = {
     bookingType, setBookingType,
     formProps: {
@@ -1118,6 +1294,9 @@ export default function SearchPage() {
       startTime, setStartTime, duration, setDuration,
       building, setBuilding, endTime, loading, handleSearch, error,
       dayOfWeek, setDayOfWeek,
+      termStart, setTermStart,
+      termEnd, setTermEnd,
+      termName, setTermName,
     },
     resultProps:  { rooms, setSelectedRoom },
     confirmProps: { selectedRoom, title, setTitle, bookingLoading, handleBook, success },

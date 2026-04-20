@@ -1,9 +1,7 @@
-"""
-seed.py — สร้างข้อมูลจำลองสมจริง ~50,000+ records (Dynamic & Term Bookings)
-วางไว้ที่: /Users/macthanakorn/room_booking/ml/saved/forecast.py
-รัน: python ml/saved/forecast.py --retrain
-"""
+'Booking → Clean → Feature Engineering → Train Model → Evaluate → Forecast 14 วัน → แปลงเป็นรายชั่วโมง → Save DemandForecast'
+      
 
+       
 import os, sys, warnings, argparse
 import numpy as np
 import pandas as pd
@@ -25,8 +23,8 @@ from sklearn.linear_model import Ridge, LinearRegression
 
 warnings.filterwarnings('ignore')
 
-# ── CONFIG ────────────────────────────────────────────────────────────────────
-MIN_DAYS      = 60
+
+MIN_DAYS      = 60 #จำนวนวันขั้นต่ำของการเทรน
 FORECAST_DAYS = 14
 MODEL_DIR     = os.path.join(CURRENT_DIR, "saved_models")
 META_DIR      = os.path.join(CURRENT_DIR, "saved_meta")
@@ -39,9 +37,9 @@ HOUR_DIST_FALLBACK = {
     13: 0.17, 14: 0.15, 15: 0.11, 16: 0.07, 17: 0.04,
 }
 
-# ── TERM BOOKING HELPERS ──────────────────────────────────────────────────────
 
-def load_term_schedule(room_id: int) -> list[dict]:
+
+def load_term_schedule(room_id: int) -> list[dict]:#เชคปิดเทอม   
     qs = TermBooking.objects.filter(room_id=room_id, status='active').values(
         'day_of_week', 'start_time', 'end_time', 'term_start', 'term_end'
     )
@@ -66,10 +64,10 @@ def compute_term_load(d, hour: int, schedule: list[dict]) -> float:
         if not (tb['term_start'] <= d <= tb['term_end']):
             continue
         if tb['start_hour'] <= hour < tb['end_hour']:
-            return 1.0
+               return 1.0
     return 0.0
 
-def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
+def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame: #เก็บข้อมูลว่าห้องเรียนหนักไหม
     rows = []
     for d in date_index:
         d_date   = d.date() if hasattr(d, 'date') else d
@@ -91,8 +89,8 @@ def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
         })
     return pd.DataFrame(rows, index=date_index)
 
-# ── HELPERS ───────────────────────────────────────────────────────────────────
 
+#เรียนรู้ “พฤติกรรมการจองในแต่ละชั่วโมง” จากข้อมูลจริง
 def learn_hour_dist(bookings_df, room_id=None, event_threshold_pct=95.0, min_days_required=30):
     df = bookings_df.copy()
     if room_id is not None:
@@ -249,7 +247,7 @@ def mape(y_true, y_pred):
 def rmse(y_true, y_pred):
     return np.sqrt(mean_squared_error(y_true, y_pred))
 
-# ── BUILD FORECAST BULK ───────────────────────────────────────────────────────
+#ข้อมูลจริง → ML → ได้จำนวนคนทั้งวัน→ แปลงเป็น % (0–1)→ กระจายตามพฤติกรรมเวลา→ รวมตารางเรียน→ ได้ demand รายชั่วโมง→ แปลงเป็นระดับ→ เก็บลง DB
 
 def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge, history, peak_ref, thr_high, thr_med, room_hour_dist, confidence, forecast_dates, schedule):
     max_hr_weight = max(room_hour_dist.values()) if room_hour_dist else 1.0
@@ -284,7 +282,7 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge, history, peak_r
             hr_term = max(day_term_demand * hr_factor, hr_term_load * day_norm)
             hr_dyn  = max(0.0, hr_pred - hr_term)
 
-            # ── Demand Score (0.0 – 1.0) with 4-tier label ──────────────────
+          
             demand_score = round(float(hr_pred), 4)
 
             if demand_score >= 0.70:

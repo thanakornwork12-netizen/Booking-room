@@ -187,15 +187,16 @@ const BUILDING_ORDER = ['ห้องสมุด','วิทยาศาสต�
 // EXPORT BUTTON
 // ============================================================
 const SHEETS = [
-  { key:'users',         label:'ผู้ใช้งาน',      icon:'👤' },
-  { key:'buildings',     label:'อาคาร',           icon:'🏛️' },
-  { key:'rooms',         label:'ห้อง',            icon:'🚪' },
-  { key:'facilities',    label:'อุปกรณ์ในห้อง',  icon:'🖥️' },
-  { key:'bookings',      label:'การจอง',          icon:'📅' },
-  { key:'logs',          label:'ประวัติการจอง',   icon:'📋' },
-  { key:'forecasts',     label:'ผลพยากรณ์ AI',   icon:'🤖' },
-  { key:'notifications', label:'การแจ้งเตือน',   icon:'🔔' },
-  { key:'stats',         label:'สถิติห้อง',       icon:'📊' },
+  { key:'users',         label:'ผู้ใช้งาน',       icon:'👤' },
+  { key:'buildings',     label:'อาคาร',            icon:'🏛️' },
+  { key:'rooms',         label:'ห้อง',             icon:'🚪' },
+  { key:'facilities',    label:'อุปกรณ์ในห้อง',   icon:'🖥️' },
+  { key:'bookings',      label:'การจอง',           icon:'📅' },
+  { key:'term_bookings', label:'ตารางสอน (เทอม)', icon:'🗓️' },
+  { key:'logs',          label:'ประวัติการจอง',    icon:'📋' },
+  { key:'forecasts',     label:'ผลพยากรณ์ AI',    icon:'🤖' },
+  { key:'notifications', label:'การแจ้งเตือน',    icon:'🔔' },
+  { key:'stats',         label:'สถิติห้อง',        icon:'📊' },
 ]
 
 function ExportButton({ isMobile = false }) {
