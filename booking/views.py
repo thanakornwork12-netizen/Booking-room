@@ -1,11 +1,10 @@
-# booking/views.py
-
+import pandas as pd
 from django.utils import timezone
 from django.db.models import Count, Q
 from datetime import datetime, date as date_type, timedelta
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 import io, threading
-
+from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -113,7 +112,6 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 
         blocked = set(list(booked_dynamic) + list(booked_term))
 
-        # แก้ไขจุดนี้: เปลี่ยนจาก prefetch_related('facilities') เป็น 'room_facilities__facility'
         available = Room.objects.filter(
             is_active=True, status='available',
             capacity__gte=d['attendees'],
@@ -152,7 +150,6 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             end_time__lte=d['start_time']
         ).values_list('room_id', flat=True)
 
-        # แก้ไขจุดนี้: เปลี่ยนจาก prefetch_related('facilities') เป็น 'room_facilities__facility'
         available = Room.objects.filter(
             is_active=True, status='available',
             capacity__gte=d['attendees'],
@@ -196,14 +193,12 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 
     def _enrich_rooms(self, rooms, target_date, start_time, end_time, booking_type, request):
         result = []
-
         start_hour = start_time.hour
         end_hour = end_time.hour
         if end_time.minute > 0:
             end_hour += 1
         check_end_hour = end_hour if end_hour > start_hour else start_hour + 1
 
-        # ── Demand level priority order (low → urgent) ───────────────────────
         level_order = {'low': 0, 'medium': 1, 'high': 2, 'urgent': 3}
 
         for room in rooms:
@@ -225,19 +220,14 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
                 avg_dyn  = sum(f.dynamic_demand for f in forecasts) / count
                 avg_conf = sum(f.confidence for f in forecasts) / count
 
-                # เช็กจาก Score ค่าเฉลี่ยตามตาราง Label
                 if avg_pred >= 0.70:
-                    final_level = 'urgent'      # 🔴 ควรจองตอนนี้เลย
-                    final_avail = 'book_now'
+                    final_level, final_avail = 'urgent', 'book_now'
                 elif avg_pred >= 0.50:
-                    final_level = 'high'        # 🟠 รีบจอง
-                    final_avail = 'book_soon'
+                    final_level, final_avail = 'high', 'book_soon'
                 elif avg_pred >= 0.30:
-                    final_level = 'medium'      # 🟡 ควรจอง
-                    final_avail = 'recommended'
+                    final_level, final_avail = 'medium', 'recommended'
                 else:
-                    final_level = 'low'         # 🟢 ยังว่าง
-                    final_avail = 'likely_available'
+                    final_level, final_avail = 'low', 'likely_available'
 
                 room_data['forecast'] = {
                     'demand_level':     final_level,
@@ -549,51 +539,85 @@ class DashboardView(generics.GenericAPIView):
 
 
 # ============================================================
-# EXPORT EXCEL
+# EXPORT EXCEL (Fixed: NameError APIView, Ordering, Timezone ###, Column Width)
 # ============================================================
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def export_excel(request):
-    if request.user.role not in ['admin', 'staff']:
-        return Response({'error': 'สิทธิ์ไม่เพียงพอ'}, status=403)
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill
-    except ImportError:
-        return Response({'error': 'กรุณา pip install openpyxl'}, status=500)
+# ============================================================
+# EXPORT EXCEL (เวอร์ชันแก้ปัญหา Term Booking ส่งออกไม่ได้)
+# ============================================================
+class ExportExcelView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    wb = openpyxl.Workbook()
+    def get(self, request):
+        sheets_param = request.query_params.get('sheets', 'all')
+        
+        mapping = {
+            'users':         User,
+            'buildings':     Building,
+            'rooms':         Room,
+            'facilities':    Facility,
+            'bookings':      Booking,
+            'term_bookings': TermBooking,
+            'logs':          BookingLog,
+            'forecasts':     DemandForecast,
+            'notifications': Notification,
+            'stats':         RoomUsageStat,
+        }
 
-    ws1 = wb.active
-    ws1.title = 'Dynamic Bookings'
-    h1 = ['ID', 'User', 'Room', 'Title', 'Date', 'Start', 'End', 'Attendees', 'Status']
-    for c, t in enumerate(h1, 1):
-        cell = ws1.cell(row=1, column=c, value=t)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill('solid', start_color='D6E4F0')
-    for i, b in enumerate(Booking.objects.all().select_related('user', 'room'), 2):
-        ws1.append([b.id, b.user.username, b.room.name, b.title,
-                    b.start_time.strftime('%Y-%m-%d'), b.start_time.strftime('%H:%M'),
-                    b.end_time.strftime('%H:%M'), b.attendees, b.status])
+        selected_keys = mapping.keys() if sheets_param == 'all' else sheets_param.split(',')
 
-    ws2 = wb.create_sheet('Term Bookings')
-    h2 = ['ID', 'User', 'Room', 'Subject', 'Code', 'Day', 'Start', 'End',
-          'Term Start', 'Term End', 'Term Name', 'Attendees', 'Status']
-    for c, t in enumerate(h2, 1):
-        cell = ws2.cell(row=1, column=c, value=t)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill('solid', start_color='D6FFD6')
-    days = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์']
-    for tb in TermBooking.objects.all().select_related('user', 'room'):
-        ws2.append([tb.id, tb.user.username, tb.room.name, tb.subject_name, tb.subject_code,
-                    days[tb.day_of_week], str(tb.start_time), str(tb.end_time),
-                    str(tb.term_start), str(tb.term_end), tb.term_name,
-                    tb.attendees, tb.status])
+        try:
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename="export.xlsx"'
 
-    buf = io.BytesIO()
-    wb.save(buf); buf.seek(0)
-    fname = f"export_{timezone.now().strftime('%Y%m%d')}.xlsx"
-    resp = HttpResponse(buf.getvalue(),
-                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return resp
+            with pd.ExcelWriter(response, engine='openpyxl') as writer:
+                for key in selected_keys:
+                    if key not in mapping: continue
+                    
+                    model = mapping[key]
+                    queryset = model.objects.all()
+                    
+                    # เรียงลำดับถ้าทำได้
+                    if hasattr(model, 'objects'):
+                        try:
+                            queryset = queryset.order_by('-id')
+                        except:
+                            pass
+
+                    data = list(queryset.values())
+                    df = pd.DataFrame(data)
+                    
+                    if df.empty:
+                        df = pd.DataFrame([{"System Message": "No data found"}])
+                    else:
+                        # จัดการวันที่ เวลา และค่าว่าง
+                        for col in df.columns:
+                            # ลบ Timezone
+                            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                                df[col] = df[col].dt.tz_localize(None)
+                            # ถ้าเป็น object/อื่นๆ ให้แปลงเป็น string และจัดการค่า None
+                            else:
+                                df[col] = df[col].apply(lambda x: "" if x is None else str(x))
+
+                    sheet_name = key.replace('_', ' ').title()[:31]
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                    # --- ส่วนที่เคย Error (แก้ไขแล้ว) ---
+                    worksheet = writer.sheets[sheet_name]
+                    for i, col in enumerate(df.columns):
+                        # หาค่าที่ยาวที่สุดในคอลัมน์นั้นๆ (แปลงเป็น string ก่อนเพื่อความปลอดภัย)
+                        # ใช้ list comprehension แทน map(len) เพื่อเลี่ยง TypeError float
+                        lengths = [len(str(val)) for val in df[col].values]
+                        max_len = max(lengths) if lengths else 0
+                        
+                        column_len = max(max_len, len(str(col))) + 2
+                        
+                        # คำนวณตัวอักษรคอลัมน์ (A, B, C...)
+                        col_letter = chr(65 + (i % 26)) if i < 26 else f"A{chr(65 + (i-26))}"
+                        worksheet.column_dimensions[col_letter].width = min(column_len, 50)
+
+            return response
+        except Exception as e:
+            import traceback
+            print(f"❌ Export Error: {str(e)}")
+            traceback.print_exc()
+            return JsonResponse({'error': str(e)}, status=400)

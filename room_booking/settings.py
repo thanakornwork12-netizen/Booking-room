@@ -30,7 +30,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'channels',
     'django_apscheduler',
-    
+    'import_export',
     # local apps
     'booking',
 ]

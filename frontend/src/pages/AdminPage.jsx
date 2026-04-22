@@ -187,16 +187,16 @@ const BUILDING_ORDER = ['ห้องสมุด','วิทยาศาสต�
 // EXPORT BUTTON
 // ============================================================
 const SHEETS = [
-  { key:'users',         label:'ผู้ใช้งาน',       icon:'👤' },
-  { key:'buildings',     label:'อาคาร',            icon:'🏛️' },
-  { key:'rooms',         label:'ห้อง',             icon:'🚪' },
-  { key:'facilities',    label:'อุปกรณ์ในห้อง',   icon:'🖥️' },
-  { key:'bookings',      label:'การจอง',           icon:'📅' },
-  { key:'term_bookings', label:'ตารางสอน (เทอม)', icon:'🗓️' },
-  { key:'logs',          label:'ประวัติการจอง',    icon:'📋' },
-  { key:'forecasts',     label:'ผลพยากรณ์ AI',    icon:'🤖' },
-  { key:'notifications', label:'การแจ้งเตือน',    icon:'🔔' },
-  { key:'stats',         label:'สถิติห้อง',        icon:'📊' },
+  { key:'users',         label:'ผู้ใช้งาน',          icon:'👤' },
+  { key:'buildings',     label:'อาคาร',             icon:'🏛️' },
+  { key:'rooms',         label:'ห้อง',              icon:'🚪' },
+  { key:'facilities',    label:'อุปกรณ์ในห้อง',      icon:'🖥️' },
+  { key:'bookings',      label:'รายการการจอง',      icon:'📅' }, // ข้อมูลการจองหลัก
+  { key:'term_bookings', label:'ตารางสอน (เทอม)',    icon:'🗓️' },
+  { key:'logs',          label:'บันทึกการแก้ไขสถานะ',  icon:'📋' }, // แก้จากประวัติการจองเป็นบันทึกการแก้ไข
+  { key:'forecasts',     label:'ผลพยากรณ์ AI',      icon:'🤖' },
+  { key:'notifications', label:'การแจ้งเตือน',       icon:'🔔' },
+  { key:'stats',         label:'สถิติห้อง',           icon:'📊' },
 ]
 
 function ExportButton({ isMobile = false }) {
@@ -223,11 +223,13 @@ function ExportButton({ isMobile = false }) {
       const sheets = isAll ? 'all' : [...selected].join(',')
       const res = await api.get(`export/excel/?sheets=${sheets}`, { responseType:'blob' })
       const contentType = res.headers['content-type'] || ''
+      
       if (contentType.includes('application/json')) {
         const text = await res.data.text()
         alert('Server Error: ' + text)
         return
       }
+
       const blob = new Blob([res.data], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url  = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -238,15 +240,11 @@ function ExportButton({ isMobile = false }) {
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
+      
       setDone(true)
       setTimeout(() => { setDone(false); setOpen(false) }, 2000)
     } catch (err) {
-      if (err.response?.data instanceof Blob) {
-        const text = await err.response.data.text()
-        alert(`Error ${err.response.status}: ${text}`)
-      } else {
-        alert(`Error: ${err.message}`)
-      }
+      alert('เกิดข้อผิดพลาดในการส่งออกข้อมูล')
     } finally {
       setLoading(false)
     }
@@ -328,7 +326,6 @@ function ExportButton({ isMobile = false }) {
     </div>
   )
 }
-
 // ============================================================
 // NO-SHOW CARD
 // ============================================================

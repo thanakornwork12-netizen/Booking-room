@@ -8,7 +8,7 @@ from .views import (
     BuildingViewSet, RoomViewSet,
     TermBookingViewSet, BookingViewSet,
     NotificationViewSet, DemandForecastViewSet,
-    DashboardView, export_excel,
+    DashboardView,ExportExcelView,
 )
 
 router = DefaultRouter()
@@ -28,7 +28,7 @@ urlpatterns = [
 
     # Dashboard + Export
     path('dashboard/',     DashboardView.as_view(),        name='dashboard'),
-    path('export/excel/',  export_excel,                   name='export_excel'),
+    path('export/excel/',  ExportExcelView.as_view(),      name='export_excel'),
 
     # ViewSets
     path('', include(router.urls)),
