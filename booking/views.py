@@ -3,6 +3,7 @@
 from django.utils import timezone
 from django.db.models import Count, Q
 from datetime import datetime, date as date_type, timedelta
+from django.http import HttpResponse
 import io, threading
 
 from rest_framework import viewsets, status, generics
@@ -11,7 +12,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from .models import (
-    User, Building, Room,
+    User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat
 )
@@ -112,10 +113,11 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 
         blocked = set(list(booked_dynamic) + list(booked_term))
 
+        # แก้ไขจุดนี้: เปลี่ยนจาก prefetch_related('facilities') เป็น 'room_facilities__facility'
         available = Room.objects.filter(
             is_active=True, status='available',
             capacity__gte=d['attendees'],
-        ).exclude(id__in=blocked).select_related('building').prefetch_related('facilities')
+        ).exclude(id__in=blocked).select_related('building').prefetch_related('room_facilities__facility')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -150,10 +152,11 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             end_time__lte=d['start_time']
         ).values_list('room_id', flat=True)
 
+        # แก้ไขจุดนี้: เปลี่ยนจาก prefetch_related('facilities') เป็น 'room_facilities__facility'
         available = Room.objects.filter(
             is_active=True, status='available',
             capacity__gte=d['attendees'],
-        ).exclude(id__in=booked_term).select_related('building').prefetch_related('facilities')
+        ).exclude(id__in=booked_term).select_related('building').prefetch_related('room_facilities__facility')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -548,8 +551,6 @@ class DashboardView(generics.GenericAPIView):
 # ============================================================
 # EXPORT EXCEL
 # ============================================================
-from django.http import HttpResponse
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def export_excel(request):

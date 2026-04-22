@@ -4,7 +4,7 @@ from rest_framework import serializers
 from django.utils import timezone
 from datetime import datetime
 from .models import (
-    User, Building, Room, RoomFacility,
+    User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat
 )
@@ -59,18 +59,21 @@ class BuildingSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# ROOM
+# ROOM (Updated for Facility Master)
 # ============================================================
 class RoomFacilitySerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='facility.name', read_only=True)
+    icon = serializers.CharField(source='facility.icon', read_only=True)
+
     class Meta:
         model  = RoomFacility
-        fields = ['id', 'name', 'quantity']
+        fields = ['id', 'name', 'icon', 'quantity']
 
 
 class RoomSerializer(serializers.ModelSerializer):
     building_name = serializers.CharField(source='building.name', read_only=True)
     building_code = serializers.CharField(source='building.code', read_only=True)
-    facilities    = RoomFacilitySerializer(many=True, read_only=True)
+    facilities    = RoomFacilitySerializer(source='room_facilities', many=True, read_only=True)
 
     class Meta:
         model  = Room
@@ -298,17 +301,13 @@ class RoomSearchSerializer(serializers.Serializer):
     attendees     = serializers.IntegerField(min_value=1)
     room_type     = serializers.CharField(required=False, allow_blank=True)
     building_code = serializers.CharField(required=False, allow_blank=True)
-    
-    # ✨ ให้ date รับค่าว่างได้ เผื่อค้นหาแบบเทอม
     date          = serializers.DateField(required=False, allow_null=True)
-    
     start_time    = serializers.TimeField()
     end_time      = serializers.TimeField()
     booking_type  = serializers.ChoiceField(
         choices=['dynamic', 'term'], default='dynamic',
         help_text='dynamic=จองรายวัน, term=จองทั้งเทอม'
     )
-    # สำหรับ term booking
     term_start    = serializers.DateField(required=False, allow_null=True)
     term_end      = serializers.DateField(required=False, allow_null=True)
     day_of_week   = serializers.IntegerField(required=False, min_value=0, max_value=6)
@@ -316,20 +315,17 @@ class RoomSearchSerializer(serializers.Serializer):
     def validate(self, data):
         if data['start_time'] >= data['end_time']:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
-            
-        # ✨ เช็ค validation แยกตามประเภทการค้นหา
         if data.get('booking_type') == 'term':
             if data.get('day_of_week') is None:
                 raise serializers.ValidationError('การค้นหาห้องทั้งเทอมต้องระบุวันในสัปดาห์ (day_of_week)')
         else:
             if not data.get('date'):
                 raise serializers.ValidationError('การค้นหารายวันต้องระบุวันที่ (date)')
-                
         return data
 
 
 # ============================================================
-# BOOKING LOG
+# BOOKING LOG (Updated fields)
 # ============================================================
 class BookingLogSerializer(serializers.ModelSerializer):
     changed_by_name = serializers.CharField(
@@ -338,8 +334,7 @@ class BookingLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = BookingLog
-        fields = ['id', 'old_status', 'new_status',
-                  'remark', 'changed_by_name', 'changed_at']
+        fields = ['id', 'old_status', 'new_status', 'changed_by_name', 'changed_at']
 
 
 # ============================================================
@@ -373,4 +368,4 @@ class RoomUsageStatSerializer(serializers.ModelSerializer):
         model  = RoomUsageStat
         fields = ['id', 'room', 'room_name', 'date',
                   'total_bookings', 'term_bookings', 'dynamic_bookings',
-                  'completed', 'no_show', 'cancelled', 'utilization_rate']
+                  'utilization_rate']

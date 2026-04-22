@@ -1,5 +1,6 @@
 """
 seed.py — สร้างข้อมูลจำลองสมจริง ~50,000+ records (Dynamic & Term Bookings)
+พร้อมข้อมูลอุปกรณ์ (Facility) ในแต่ละห้อง
 วางไว้ที่: /Users/macthanakorn/room_booking/ml/seed.py
 รัน: python ml/seed.py
 """
@@ -16,7 +17,7 @@ import django
 django.setup()
 
 from django.utils import timezone
-from booking.models import User, Building, Room, Booking, TermBooking
+from booking.models import User, Building, Room, Booking, TermBooking, Facility, RoomFacility
 
 random.seed(42)
 np.random.seed(42)
@@ -45,6 +46,21 @@ def delete_in_chunks(queryset, batch_size=900):
         ids = list(queryset.values_list('pk', flat=True)[:batch_size])
         queryset.model.objects.filter(pk__in=ids).delete()
 
+# ลบ RoomFacility และ Facility ก่อน (foreign key)
+try:
+    rfc = RoomFacility.objects.count()
+    delete_in_chunks(RoomFacility.objects.all())
+    row('ลบ RoomFacility', f'{rfc:,}', 'records')
+except Exception:
+    pass
+
+try:
+    fc = Facility.objects.count()
+    delete_in_chunks(Facility.objects.all())
+    row('ลบ Facility', f'{fc:,}', 'records')
+except Exception:
+    pass
+
 delete_in_chunks(Booking.objects.all())
 delete_in_chunks(TermBooking.objects.all())
 delete_in_chunks(Room.objects.all())
@@ -58,8 +74,6 @@ row('ลบ Building',               bdc,        'อาคาร')
 # ── Buildings + Rooms ──────────────────────────────────
 sep('Buildings + Rooms')
 
-# room_type weights: meeting / lecture / classroom
-# classroom = ห้องเรียนใหญ่ capacity 30-150 คน, จองรายเทอม
 building_configs = {
     'Library':     {'code': 'LIB',  'meeting': 10, 'lecture': 2,  'classroom': 2},
     'Science':     {'code': 'SC',   'meeting': 6,  'lecture': 2,  'classroom': 4},
@@ -80,7 +94,6 @@ for bname, cfg in building_configs.items():
     rooms_in_b = []
     room_idx   = 1
 
-    # Meeting rooms
     for _ in range(cfg['meeting']):
         r = Room.objects.create(
             name=f"{cfg['code']}-M{room_idx:02d}",
@@ -92,7 +105,6 @@ for bname, cfg in building_configs.items():
         )
         all_rooms.append(r); rooms_in_b.append(r); room_idx += 1
 
-    # Lecture rooms
     for _ in range(cfg['lecture']):
         r = Room.objects.create(
             name=f"{cfg['code']}-L{room_idx:02d}",
@@ -105,7 +117,6 @@ for bname, cfg in building_configs.items():
         all_rooms.append(r); rooms_in_b.append(r)
         lecture_rooms.append(r); room_idx += 1
 
-    # Classroom rooms (ห้องเรียนใหญ่ จองรายเทอม)
     for _ in range(cfg['classroom']):
         r = Room.objects.create(
             name=f"{cfg['code']}-C{room_idx:02d}",
@@ -116,7 +127,7 @@ for bname, cfg in building_configs.items():
             status='available',
         )
         all_rooms.append(r); rooms_in_b.append(r)
-        classroom_rooms.append(r); lecture_rooms.append(r)  # classroom ก็นับเป็น lecture ด้วย
+        classroom_rooms.append(r); lecture_rooms.append(r)
         room_idx += 1
 
     caps  = [r.capacity for r in rooms_in_b]
@@ -131,6 +142,142 @@ row('รวมทั้งหมด',        len(all_rooms),       'ห้อง
 row('  - classroom',     len(classroom_rooms),  'ห้อง')
 row('  - lecture',       len([r for r in all_rooms if r.room_type == 'lecture']), 'ห้อง')
 row('  - meeting',       len([r for r in all_rooms if r.room_type == 'meeting']), 'ห้อง')
+
+
+# ══════════════════════════════════════════════════════════════════
+# ── Facilities (อุปกรณ์) ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+sep('Facilities')
+
+"""
+แต่ละ room_type จะได้อุปกรณ์ต่างกัน:
+  meeting   → อุปกรณ์ประชุม (โปรเจกเตอร์, ไวท์บอร์ด, แอร์, WiFi, ไมค์ไร้สาย ฯลฯ)
+  lecture   → อุปกรณ์บรรยาย (โปรเจกเตอร์/Smart Board, ระบบเสียง, ไมค์ตั้งพื้น ฯลฯ)
+  classroom → อุปกรณ์ห้องเรียน (Smart Board, กล้อง, ระบบ LMS ฯลฯ)
+
+structure: {name: {qty_range, probability_by_type}}
+  probability_by_type = โอกาสที่ห้องประเภทนั้นจะมีอุปกรณ์นี้ (0.0 – 1.0)
+"""
+
+FACILITY_CATALOG = [
+    # ชื่ออุปกรณ์              qty_min  qty_max  meeting  lecture  classroom
+    ("โปรเจกเตอร์",                  1,      2,    0.95,    1.00,     0.70),
+    ("จอรับภาพ",                     1,      1,    0.90,    1.00,     0.60),
+    ("ไวท์บอร์ด",                    1,      2,    0.98,    0.80,     0.85),
+    ("กระดานไวท์บอร์ด",              1,      2,    0.30,    0.20,     0.30),
+    ("ระบบเสียง",                    1,      1,    0.70,    1.00,     0.95),
+    ("ไมโครโฟน",                     1,      2,    0.60,    0.90,     0.80),
+    ("ไมโครโฟนไร้สาย",               1,      4,    0.55,    0.85,     0.75),
+    ("เครื่องปรับอากาศ",             1,      4,    0.99,    0.99,     0.99),
+    ("WiFi",                         1,      1,    0.99,    0.99,     0.99),
+    ("เต้าเสียบไฟฟ้า",               4,     16,    0.85,    0.75,     0.90),
+    ("TV / จอแสดงผล",                1,      2,    0.65,    0.55,     0.50),
+    ("คอมพิวเตอร์ (สำหรับผู้นำเสนอ)", 1,     1,    0.50,    0.80,     0.40),
+    ("คอมพิวเตอร์ (สำหรับผู้สอน)",   1,      1,    0.20,    0.70,     0.85),
+    ("กล้องวิดีโอคอนเฟอเรนซ์",       1,      2,    0.40,    0.30,     0.55),
+    ("กล้องบันทึกการสอน",            1,      2,    0.10,    0.50,     0.70),
+    ("กระดาน Smart Board",           1,      1,    0.25,    0.55,     0.75),
+    ("Smart Board",                  1,      1,    0.15,    0.35,     0.50),
+    ("เครื่องพิมพ์เอกสาร",           1,      1,    0.30,    0.10,     0.20),
+    ("ตู้เก็บเอกสาร",                1,      2,    0.40,    0.20,     0.35),
+    ("ตู้เก็บอุปกรณ์การสอน",         1,      2,    0.10,    0.45,     0.60),
+    ("ม่านบังแสง",                   1,      1,    0.70,    0.90,     0.85),
+    ("นาฬิกาแขวน",                   1,      1,    0.80,    0.85,     0.90),
+    ("โพเดียม / แท่นบรรยาย",         1,      1,    0.35,    0.85,     0.75),
+    ("จอแสดงผลเสริม (ด้านข้าง)",      1,      2,    0.20,    0.60,     0.55),
+    ("ระบบ LMS (จอควบคุม)",          1,      1,    0.05,    0.40,     0.65),
+]
+
+# ── สร้าง Facility master records ──────────────────────
+facility_map = {}   # name → Facility instance
+for row_data in FACILITY_CATALOG:
+    name = row_data[0]
+    try:
+        fac = Facility.objects.create(name=name)
+    except Exception:
+        fac = Facility.objects.get(name=name)
+    facility_map[name] = fac
+
+row('สร้าง Facility master', len(facility_map), 'รายการ')
+
+# ── ผูกอุปกรณ์กับแต่ละห้อง ──────────────────────────────
+sep('Assign Facilities → Rooms')
+
+"""
+Logic การแจกอุปกรณ์:
+  1. อ่าน probability ของ room_type นั้น
+  2. สุ่มว่าห้องนี้มีอุปกรณ์นั้นไหม (random() < prob)
+  3. ถ้ามี → สุ่ม quantity ใน range
+  4. ห้องขนาดใหญ่ (capacity > 50) มีโอกาสได้อุปกรณ์เพิ่ม +10–20%
+  5. บังคับ: ทุกห้องต้องมีแอร์และ WiFi (สิ่งอำนวยความสะดวกพื้นฐาน)
+"""
+
+TYPE_IDX = {'meeting': 2, 'lecture': 3, 'classroom': 4}
+
+room_facility_bulk = []
+total_rf           = 0
+rf_counter         = Counter()
+
+for room in all_rooms:
+    t_idx   = TYPE_IDX.get(room.room_type, 2)
+    is_big  = room.capacity > 50   # ห้องใหญ่ boost โอกาสได้อุปกรณ์
+    bonus   = 0.15 if is_big else 0.0
+
+    assigned = []
+
+    for row_data in FACILITY_CATALOG:
+        name     = row_data[0]
+        qty_min  = row_data[1]
+        qty_max  = row_data[2]
+        base_prob = row_data[t_idx]
+
+        # บังคับอุปกรณ์พื้นฐาน
+        if name in ('เครื่องปรับอากาศ', 'WiFi'):
+            prob = 1.0
+        else:
+            prob = min(1.0, base_prob + bonus)
+
+        if random.random() < prob:
+            qty = random.randint(qty_min, qty_max)
+            # ห้องใหญ่มาก (≥80 คน) อาจได้จำนวนมากกว่า
+            if room.capacity >= 80 and qty_max > 1:
+                qty = random.randint(qty_min, min(qty_max + 1, qty_max * 2))
+            assigned.append((name, qty))
+            rf_counter[name] += 1
+
+    # สร้าง RoomFacility bulk
+    for name, qty in assigned:
+        room_facility_bulk.append(
+            RoomFacility(
+                room=room,
+                facility=facility_map[name],
+                quantity=qty,
+            )
+        )
+        total_rf += 1
+
+# Bulk create ทั้งหมด
+RoomFacility.objects.bulk_create(room_facility_bulk, batch_size=500)
+
+avg_per_room = total_rf / len(all_rooms) if all_rooms else 0
+row('RoomFacility records', f'{total_rf:,}',               'รายการ')
+row('เฉลี่ยต่อห้อง',         f'{avg_per_room:.1f}',         'อุปกรณ์/ห้อง')
+
+print(f"\n  {Y}อุปกรณ์ที่พบบ่อยที่สุด (top 10):{W}")
+for name, cnt in rf_counter.most_common(10):
+    pct = cnt / len(all_rooms) * 100
+    print(f"    {name:<36}  {G}{cnt:>3}{W} ห้อง  {D}({pct:.0f}%){W}")
+
+# ── ตรวจสอบตัวอย่าง ──────────────────────────────────────
+sep('ตัวอย่างอุปกรณ์ต่อ room_type')
+for rtype in ['meeting', 'lecture', 'classroom']:
+    sample_rooms = [r for r in all_rooms if r.room_type == rtype][:2]
+    for sr in sample_rooms:
+        facs = RoomFacility.objects.filter(room=sr).select_related('facility')
+        fac_names = [f"{rf.facility.name} ×{rf.quantity}" for rf in facs]
+        print(f"  {C}[{rtype}] {sr.name}{W} ({sr.capacity} คน):")
+        print(f"    {D}{', '.join(fac_names) if fac_names else '(ไม่มีอุปกรณ์)'}{W}")
+
 
 # ── Users ──────────────────────────────────────────────
 sep('Users')
@@ -148,7 +295,7 @@ if User.objects.filter(username__startswith='seed_').count() < 100:
                 'role':       role,
             },
         )
-users    = list(User.objects.all())
+users     = list(User.objects.all())
 lecturers = [u for u in users if u.role == 'lecturer']
 if not lecturers: lecturers = users[:10]
 
@@ -158,12 +305,12 @@ for role in ['student','lecturer','staff','admin']:
     if n: row(f'  role={role}', n, 'คน')
 row('users ทั้งหมดในระบบ', len(users), 'คน')
 
+
 # ── Term Config ────────────────────────────────────────
 sep('Term Config')
 
 today_date = date.today()
 
-# สร้าง 2 เทอม: เทอมที่แล้ว + เทอมปัจจุบัน (เพื่อให้มีประวัติ)
 terms = [
     {
         'name':  f"2/{today_date.year + 542}",
@@ -194,7 +341,6 @@ subjects = [
     ("BIO101",  "Biology Fundamentals",          'classroom', 2),
 ]
 
-# Class time slots: (start_hour, duration_hours)  — ตามตารางมหาวิทยาลัยจริง
 CLASS_SLOTS = [
     (8,  2), (8,  3),
     (10, 2), (10, 3),
@@ -204,6 +350,7 @@ CLASS_SLOTS = [
 
 row('จำนวนเทอม', len(terms), 'เทอม')
 row('วิชาทั้งหมด', len(subjects), 'วิชา')
+
 
 # ── Generate Term Bookings ──────────────────────────────
 sep('Generate Term Bookings')
@@ -215,23 +362,18 @@ for term in terms:
     t_start = term['start']
     t_end   = term['end']
 
-    # แบ่งห้อง classroom สำหรับเทอมนี้
-    target_rooms = classroom_rooms + lecture_rooms
-    target_rooms = list(set(target_rooms))  # dedup
+    target_rooms = list(set(classroom_rooms + lecture_rooms))
 
     for room in target_rooms:
-        # classroom รับได้มากกว่า 1 วิชาต่อสัปดาห์ (คนละ slot)
         max_subjects = 3 if room.room_type == 'classroom' else 2
         used_slots   = set()
-
-        num_subj = random.randint(1, max_subjects)
+        num_subj     = random.randint(1, max_subjects)
         random.shuffle(subjects)
 
         for subj_code, subj_name, preferred_type, days_per_week in subjects[:num_subj * 2]:
             if len(used_slots) >= max_subjects:
                 break
 
-            # เลือก day_of_week ตาม days_per_week
             available_days = [d for d in range(5)]
             random.shuffle(available_days)
             slot_days = []
@@ -278,19 +420,12 @@ if term_bookings_all:
         row(f"  เทอม {term['name']}", n, 'รายการ')
 
 
-# ── Expand TermBookings → Booking records (ให้ model เห็น pattern) ───────────
+# ── Expand TermBookings → Booking records ────────────────
 sep('Expand TermBookings → Booking History')
-
-"""
-TermBooking = ตารางสอน รายเทอม
-แต่ model เรียนรู้จาก Booking (รายวัน) ดังนั้นต้องสร้าง Booking จริงๆ
-จากทุก TermBooking โดย loop ทุกสัปดาห์ตลอดเทอม
-"""
 
 term_derived_bookings = []
 for tb in TermBooking.objects.select_related('room', 'user').all():
     cur = tb.term_start
-    # หาวันแรกของเทอมที่ตรง day_of_week
     while cur.weekday() != tb.day_of_week:
         cur += timedelta(days=1)
 
@@ -303,7 +438,6 @@ for tb in TermBooking.objects.select_related('room', 'user').all():
             datetime(cur.year, cur.month, cur.day,
                      tb.end_time.hour, tb.end_time.minute)
         )
-        # สุ่ม absent rate 5-15% (บางครั้งไม่มีคลาส)
         if random.random() > 0.10:
             term_derived_bookings.append(Booking(
                 user       = tb.user,
@@ -340,7 +474,6 @@ HOLIDAYS = {
 }
 room_pop = {r.id: np.random.beta(5, 2) for r in all_rooms}
 
-# classroom มี base popularity ต่ำกว่า (จองเป็นรายเทอม ไม่ walk-in)
 for r in classroom_rooms:
     room_pop[r.id] *= 0.25
 
@@ -379,7 +512,6 @@ total, bulk = 0, []
 title_counter, hour_counter, room_counter = Counter(), Counter(), Counter()
 cur = START
 
-# ชื่อกิจกรรมแยกตาม room_type
 TITLES_MEETING   = ["ประชุมกลุ่ม","ประชุมโครงการ","สัมมนา","อบรม","ประชุมคณะ"]
 TITLES_LECTURE   = ["ติวหนังสือ","เรียนพิเศษ","ทบทวนบทเรียน","สอบ","Workshop"]
 TITLES_CLASSROOM = ["สอบกลางภาค","สอบปลายภาค","อบรมพิเศษ","สอบแก้ตัว","กิจกรรมนักศึกษา"]
@@ -391,7 +523,7 @@ while cur <= END:
 
     for i, hr in enumerate(hours):
         for _ in range(dist[i]):
-            room   = random.choices(
+            room = random.choices(
                 all_rooms,
                 weights=[room_pop[r.id] for r in all_rooms],
                 k=1,
@@ -445,15 +577,19 @@ if bulk:
 
 days_covered = (END - START).days
 
+
 # ── Summary ────────────────────────────────────────────
 sep('สรุปผล')
-row('Records (รายวัน/dynamic)', f'{total:,}',                    'records')
-row('Records (จาก TermBooking)', f'{term_derived_count:,}',       'records')
-row('Records (TermBooking)',      f'{len(term_bookings_all):,}',  'วิชา')
-row('ช่วงเวลา',                   f'{START} → {END}',             f'({days_covered} วัน)')
-row('ห้อง',                        len(all_rooms),                 'ห้อง')
-row('เฉลี่ยต่อวัน',                f'{total//days_covered:,}',    'records/วัน')
-row('เฉลี่ยต่อห้อง',               f'{total//len(all_rooms):,}',  'records/ห้อง')
+row('Records (รายวัน/dynamic)',   f'{total:,}',               'records')
+row('Records (จาก TermBooking)',  f'{term_derived_count:,}',   'records')
+row('Records (TermBooking)',       f'{len(term_bookings_all):,}', 'วิชา')
+row('Facility types',              len(facility_map),           'ประเภท')
+row('RoomFacility records',        f'{total_rf:,}',             'records')
+row('เฉลี่ยอุปกรณ์ต่อห้อง',        f'{avg_per_room:.1f}',       'รายการ')
+row('ช่วงเวลา',                    f'{START} → {END}',          f'({days_covered} วัน)')
+row('ห้อง',                         len(all_rooms),              'ห้อง')
+row('เฉลี่ยต่อวัน',                 f'{total//days_covered:,}', 'records/วัน')
+row('เฉลี่ยต่อห้อง',                f'{total//len(all_rooms):,}','records/ห้อง')
 
 print(f"\n  {Y}ชั่วโมง top 3 (จองรายวัน):{W}")
 for hr, n in hour_counter.most_common(3):
@@ -468,6 +604,12 @@ for t, n in title_counter.most_common():
 print(f"\n  {Y}ห้อง top 5 (จองรายวัน):{W}")
 for name, n in room_counter.most_common(5):
     print(f"    {name:<12}  {G}{n:,}{W}  records")
+
+print(f"\n  {Y}อุปกรณ์ coverage:{W}")
+for name, cnt in rf_counter.most_common():
+    pct = cnt / len(all_rooms) * 100
+    bar = '█' * int(pct / 5)
+    print(f"    {name:<36}  {bar:<20}  {D}{pct:.0f}%{W}")
 
 print(f"\n{B}{'═'*52}{W}")
 print(f"  {G}✅ Seed เสร็จสมบูรณ์{W}")

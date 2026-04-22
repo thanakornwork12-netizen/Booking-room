@@ -1,11 +1,15 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
-    User, Building, Room, RoomFacility,
+    User, Building, Room, Facility, RoomFacility,
     Booking, BookingLog, DemandForecast,
-    Notification, RoomUsageStat,
-    TermBooking,  # ← เพิ่ม
+    Notification, RoomUsageStat, TermBooking
 )
+
+# ทำให้สามารถแก้ไขอุปกรณ์ได้โดยตรงในหน้า Room
+class RoomFacilityInline(admin.TabularInline):
+    model = RoomFacility
+    extra = 1
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
@@ -23,40 +27,38 @@ class BuildingAdmin(admin.ModelAdmin):
 class RoomAdmin(admin.ModelAdmin):
     list_display = ['name', 'building', 'floor', 'capacity', 'room_type', 'status']
     list_filter  = ['building', 'status', 'room_type']
+    inlines = [RoomFacilityInline] # เพิ่ม Inline อุปกรณ์
+
+@admin.register(Facility)
+class FacilityAdmin(admin.ModelAdmin):
+    list_display = ['name', 'icon']
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
     list_display  = ['user', 'room', 'title', 'start_time', 'end_time', 'status', 'checked_in']
     list_filter   = ['status', 'checked_in']
     search_fields = ['user__username', 'room__name', 'title']
-    ordering      = ['-created_at']
 
 @admin.register(TermBooking)
 class TermBookingAdmin(admin.ModelAdmin):
-    list_display  = ['user', 'room', 'subject_name', 'subject_code', 'day_of_week', 'start_time', 'end_time', 'term_name', 'status']
-    list_filter   = ['status', 'day_of_week', 'term_name']
-    search_fields = ['user__username', 'room__name', 'subject_name', 'subject_code']
-    ordering      = ['day_of_week', 'start_time']
+    list_display  = ['user', 'room', 'subject_name', 'day_of_week', 'start_time', 'end_time', 'status']
+    list_filter   = ['status', 'day_of_week']
 
 @admin.register(DemandForecast)
 class DemandForecastAdmin(admin.ModelAdmin):
-    list_display = ['room', 'forecast_date', 'hour', 'predicted_demand', 'demand_level', 'availability', 'confidence']
-    list_filter  = ['demand_level', 'availability', 'room']
+    list_display = ['room', 'forecast_date', 'hour', 'demand_level', 'availability']
 
 @admin.register(BookingLog)
 class BookingLogAdmin(admin.ModelAdmin):
     list_display = ['booking', 'term_booking', 'changed_by', 'old_status', 'new_status', 'changed_at']
-    list_filter  = ['old_status', 'new_status']
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
-    list_display  = ['user', 'type', 'title', 'is_read', 'created_at']
-    list_filter   = ['type', 'is_read']
-    search_fields = ['user__username', 'title']
+    list_display = ['user', 'type', 'title', 'is_read', 'created_at']
 
 @admin.register(RoomUsageStat)
 class RoomUsageStatAdmin(admin.ModelAdmin):
-    list_display = ['room', 'date', 'total_bookings', 'term_bookings', 'dynamic_bookings', 'utilization_rate']
-    list_filter  = ['room']
+    list_display = ['room', 'date', 'total_bookings', 'utilization_rate']
 
+# ลงทะเบียนคลาสลูกเผื่อแยกจัดการ
 admin.site.register(RoomFacility)

@@ -73,19 +73,31 @@ class Room(models.Model):
 
 
 # ============================================================
-# 4. ROOM FACILITY
+# 4. FACILITIES (รายการอุปกรณ์ทั้งหมดในระบบ)
 # ============================================================
-class RoomFacility(models.Model):
-    room     = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='facilities')
-    name     = models.CharField(max_length=100)
-    quantity = models.IntegerField(default=1)
+class Facility(models.Model):
+    name = models.CharField(max_length=100, unique=True, verbose_name='ชื่ออุปกรณ์')
+    icon = models.CharField(max_length=50, blank=True, help_text='เช่น fa-wifi, fa-tv')
 
     class Meta:
-        verbose_name = 'อุปกรณ์ในห้อง'
+        verbose_name = 'มาสเตอร์อุปกรณ์'
+        verbose_name_plural = 'มาสเตอร์อุปกรณ์'
 
     def __str__(self):
-        return f"{self.room} — {self.name} x{self.quantity}"
+        return self.name
 
+# ปรับปรุง RoomFacility ให้เชื่อมกับ Facility กลาง
+class RoomFacility(models.Model):
+    room     = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='room_facilities')
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, verbose_name='อุปกรณ์')
+    quantity = models.IntegerField(default=1, verbose_name='จำนวน')
+
+    class Meta:
+        verbose_name = 'อุปกรณ์ประจำห้อง'
+        unique_together = ('room', 'facility') # ป้องกันการเลือกอุปกรณ์ซ้ำในห้องเดียว
+
+    def __str__(self):
+        return f"{self.room.name} — {self.facility.name} ({self.quantity})"
 
 # ============================================================
 # 5. TERM BOOKING — จองทั้งเทอม (Fixed Schedule)

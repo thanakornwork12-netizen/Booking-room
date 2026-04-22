@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CheckCircle, Building2, ChevronRight,
   Search, Clock, Users, Calendar, MapPin, Zap,
-  AlertTriangle, BookOpen, Coffee, Filter,
+  AlertTriangle, BookOpen, Coffee, Filter, X,
 } from 'lucide-react'
 import api from '../api/axios'
 
@@ -90,6 +90,61 @@ const SUMMARY_TIERS = [
   { level: 'low',    label: 'ยังว่างอยู่'         },
 ]
 
+// ─── Equipment Presets ───────────────────────────────────────────────────────
+const EQUIPMENT_PRESETS = [
+  { key: 'projector',   label: 'โปรเจกเตอร์',  icon: '📽️',  keywords: ['โปรเจกเตอร์'] },
+  { key: 'whiteboard',  label: 'ไวท์บอร์ด',    icon: '📋',  keywords: ['ไวท์บอร์ด', 'กระดานไวท์บอร์ด'] },
+  { key: 'sound',       label: 'ระบบเสียง',     icon: '🔊',  keywords: ['ระบบเสียง', 'ลำโพง', 'เสียง'] },
+  { key: 'mic',         label: 'ไมโครโฟน',      icon: '🎤',  keywords: ['ไมโครโฟน', 'ไมค์', 'ไมโคร'] },
+  { key: 'ac',          label: 'แอร์',           icon: '❄️',  keywords: ['ปรับอากาศ', 'แอร์'] },
+  { key: 'tv',          label: 'TV/จอแสดงผล',   icon: '📺',  keywords: ['TV', 'จอแสดงผล', 'จอรับภาพ'] },
+  { key: 'computer',    label: 'คอมพิวเตอร์',   icon: '💻',  keywords: ['คอมพิวเตอร์'] },
+  { key: 'camera',      label: 'กล้องวิดีโอ',   icon: '📹',  keywords: ['กล้อง'] },
+  { key: 'smartboard',  label: 'Smart Board',   icon: '🖊️', keywords: ['Smart Board', 'กระดาน Smart'] },
+  { key: 'wifi',        label: 'WiFi',           icon: '📶',  keywords: ['WiFi', 'wifi'] },
+]
+
+// ─── Facility Icons ──────────────────────────────────────────────────────────
+
+const FAC_ICONS = {
+  'โปรเจกเตอร์':                    '📽️',
+  'จอรับภาพ':                       '🖥️',
+  'ไวท์บอร์ด':                      '📋',
+  'กระดานไวท์บอร์ด':                '📋',
+  'ระบบเสียง':                      '🔊',
+  'ไมโครโฟน':                       '🎤',
+  'ไมโครโฟนไร้สาย':                 '🎤',
+  'เครื่องปรับอากาศ':               '❄️',
+  'WiFi':                           '📶',
+  'เต้าเสียบไฟฟ้า':                 '🔌',
+  'TV / จอแสดงผล':                  '📺',
+  'คอมพิวเตอร์ (สำหรับผู้นำเสนอ)':  '💻',
+  'คอมพิวเตอร์ (สำหรับผู้สอน)':     '💻',
+  'กล้องวิดีโอคอนเฟอเรนซ์':         '📹',
+  'กล้องบันทึกการสอน':              '📹',
+  'กระดาน Smart Board':             '🖊️',
+  'Smart Board':                    '🖊️',
+  'เครื่องพิมพ์เอกสาร':             '🖨️',
+  'ตู้เก็บเอกสาร':                  '🗄️',
+  'ตู้เก็บอุปกรณ์การสอน':           '🗄️',
+  'ม่านบังแสง':                     '🪟',
+  'นาฬิกาแขวน':                     '🕐',
+  'โพเดียม / แท่นบรรยาย':           '🎙️',
+  'จอแสดงผลเสริม (ด้านข้าง)':       '🖥️',
+  'ระบบ LMS (จอควบคุม)':            '🖥️',
+}
+
+const getFacIcon = (name) => {
+  if (FAC_ICONS[name]) return FAC_ICONS[name]
+  if (name.includes('คอมพิวเตอร์')) return '💻'
+  if (name.includes('จอ') || name.includes('TV')) return '🖥️'
+  if (name.includes('กล้อง')) return '📹'
+  if (name.includes('ไมค์') || name.includes('ไมโคร')) return '🎤'
+  if (name.includes('เสียง') || name.includes('ลำโพง')) return '🔊'
+  if (name.includes('ปรับอากาศ')) return '❄️'
+  return '🔧'
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const addHours = (time, hours) => {
@@ -127,6 +182,24 @@ const isClassroomType = room => {
     t.includes('classroom') ||
     t.includes('เรียน')
   )
+}
+
+// ─── Equipment filter helper ──────────────────────────────────────────────────
+// คืน true ถ้าห้องมีอุปกรณ์ที่ผู้ใช้เลือก *อย่างน้อยหนึ่งชื่อ* ต่อหนึ่ง preset key
+// (ห้องสามารถมีอุปกรณ์อื่นๆ ปนมาได้)
+const roomHasEquipments = (room, selectedEquipments) => {
+  if (!selectedEquipments || selectedEquipments.length === 0) return true
+  if (!room.facilities || room.facilities.length === 0) return false
+
+  const facilityNames = room.facilities.map(f => f.name.toLowerCase())
+
+  return selectedEquipments.every(key => {
+    const preset = EQUIPMENT_PRESETS.find(p => p.key === key)
+    if (!preset) return true
+    return preset.keywords.some(kw =>
+      facilityNames.some(fn => fn.includes(kw.toLowerCase()))
+    )
+  })
 }
 
 // ─── Animations ──────────────────────────────────────────────────────────────
@@ -175,6 +248,123 @@ function SectionLabel({ icon: Icon, children }) {
   return (
     <div className="flex items-center gap-1.5 text-blue-600 text-xs font-bold uppercase tracking-widest mb-3">
       {Icon && <Icon size={11} />}{children}
+    </div>
+  )
+}
+
+// ─── EquipmentSelector ────────────────────────────────────────────────────────
+
+function EquipmentSelector({ selected, onChange, compact = false }) {
+  const toggle = (key) => {
+    if (selected.includes(key)) {
+      onChange(selected.filter(k => k !== key))
+    } else {
+      onChange([...selected, key])
+    }
+  }
+
+  return (
+    <div className={`flex flex-wrap ${compact ? 'gap-1.5' : 'gap-2'}`}>
+      {EQUIPMENT_PRESETS.map(eq => {
+        const active = selected.includes(eq.key)
+        return (
+          <button
+            key={eq.key}
+            onClick={() => toggle(eq.key)}
+            className={`inline-flex items-center gap-1.5 rounded-full border-2 font-semibold transition-all duration-150
+              ${compact ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-xs'}
+              ${active
+                ? 'bg-blue-700 border-blue-700 text-white shadow-sm'
+                : 'bg-white border-blue-100 text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+              }`}
+          >
+            <span className="text-sm leading-none">{eq.icon}</span>
+            {eq.label}
+            {active && (
+              <span className="w-3.5 h-3.5 rounded-full bg-white/25 flex items-center justify-center ml-0.5">
+                <X size={8} className="text-white" />
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── FacilityTags ─────────────────────────────────────────────────────────────
+
+function FacilityTags({ facilities = [], compact = true, maxShow = 5, highlight = [] }) {
+  if (!facilities || facilities.length === 0) return null
+
+  // ตรวจว่า facility นี้ตรงกับ highlighted keywords ไหม
+  const isHighlighted = (facilityName) => {
+    if (!highlight || highlight.length === 0) return false
+    const nameLower = facilityName.toLowerCase()
+    return highlight.some(key => {
+      const preset = EQUIPMENT_PRESETS.find(p => p.key === key)
+      if (!preset) return false
+      return preset.keywords.some(kw => nameLower.includes(kw.toLowerCase()))
+    })
+  }
+
+  if (compact) {
+    const shown = facilities.slice(0, maxShow)
+    const rest  = facilities.length - maxShow
+    return (
+      <div className="flex flex-wrap gap-1 mt-2">
+        {shown.map((f, i) => {
+          const hl = isHighlighted(f.name)
+          return (
+            <span
+              key={i}
+              className={`inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 font-medium border transition-all
+                ${hl
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200'
+                  : 'bg-slate-50 border-slate-200 text-slate-600'
+                }`}
+              title={`${f.name} ×${f.quantity}`}
+            >
+              <span className="text-sm leading-none">{getFacIcon(f.name)}</span>
+              {f.name}
+              {f.quantity > 1 && (
+                <span className={`rounded-full px-1 text-xs font-bold ${hl ? 'bg-blue-200 text-blue-600' : 'bg-slate-200 text-slate-500'}`}>×{f.quantity}</span>
+              )}
+            </span>
+          )
+        })}
+        {rest > 0 && (
+          <span className="text-xs text-slate-400 border border-slate-200 rounded-full px-2 py-0.5 bg-white">
+            +{rest} อื่นๆ
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // Full grid สำหรับ Step 3
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      {facilities.map((f, i) => {
+        const hl = isHighlighted(f.name)
+        return (
+          <div
+            key={i}
+            className={`flex items-center gap-2 rounded-xl px-3 py-2 border transition-all
+              ${hl
+                ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-100'
+                : 'bg-slate-50 border-slate-100'
+              }`}
+          >
+            <span className="text-base flex-shrink-0">{getFacIcon(f.name)}</span>
+            <div className="min-w-0">
+              <p className={`text-xs font-semibold truncate leading-tight ${hl ? 'text-blue-700' : 'text-slate-700'}`}>{f.name}</p>
+              <p className="text-xs text-slate-400">จำนวน {f.quantity} ชิ้น</p>
+            </div>
+            {hl && <span className="ml-auto text-blue-400 flex-shrink-0"><CheckCircle size={12} /></span>}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -337,17 +527,19 @@ function SummaryTiles({ rooms, layout = 'vertical' }) {
 
 // ─── RoomCard ─────────────────────────────────────────────────────────────────
 
-function RoomCard({ room, idx, onClick, compact = false, isTermMode = false }) {
+function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, selectedEquipments = [] }) {
   const level = getDemandLevel(room)
   const cfg   = FORECAST_CONFIG[level]
   const isTop = idx === 0 && (level === 'low' || level === 'none')
+
   return (
     <div
       className={`bg-white border border-blue-100 rounded-2xl cursor-pointer
         hover:shadow-lg hover:shadow-blue-100 hover:-translate-y-0.5 transition-all duration-150
         ${compact ? 'px-4 py-4' : 'px-6 py-5'}`}
       style={{ borderLeftWidth: 4, borderLeftColor: cfg.dotColor }}
-      onClick={onClick}>
+      onClick={onClick}
+    >
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {isTop && (
@@ -374,8 +566,15 @@ function RoomCard({ room, idx, onClick, compact = false, isTermMode = false }) {
             <p className="text-xs text-slate-400 mb-1.5 line-clamp-1">{room.description}</p>
           )}
           {level !== 'none' && (
-            <p className={`text-xs font-semibold ${cfg.subCls}`}>{cfg.sub}</p>
+            <p className={`text-xs font-semibold ${cfg.subCls} mb-1`}>{cfg.sub}</p>
           )}
+          {/* อุปกรณ์ — highlight ตัวที่ผู้ใช้เลือก */}
+          <FacilityTags
+            facilities={room.facilities}
+            compact={true}
+            maxShow={compact ? 4 : 6}
+            highlight={selectedEquipments}
+          />
         </div>
         <ChevronRight size={14} className="text-blue-200 flex-shrink-0 mt-1" />
       </div>
@@ -396,6 +595,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
     termStart, setTermStart,
     termEnd, setTermEnd,
     termName, setTermName,
+    selectedEquipments, setSelectedEquipments,
   } = formProps
   const { rooms, setSelectedRoom } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success } = confirmProps
@@ -489,7 +689,6 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
           <div className="grid grid-cols-3 gap-6">
             <div className="col-span-2 space-y-5">
 
-              {/* Booking type */}
               <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au">
                 <SectionLabel>ประเภทการจอง</SectionLabel>
                 <BookingTypeSelector value={bookingType} onChange={v => { setBookingType(v); setDayOfWeek(null) }} />
@@ -499,7 +698,6 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
               </div>
 
               <div className="grid grid-cols-2 gap-5">
-                {/* Attendees */}
                 <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au1">
                   <SectionLabel icon={Users}>จำนวนผู้เข้าร่วม</SectionLabel>
                   <div className="flex items-center gap-4 mb-4">
@@ -518,7 +716,6 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                 </div>
 
                 <div className="space-y-5">
-                  {/* Date or Day of week */}
                   {isTermMode ? (
                     <div className="bg-white border border-indigo-100 rounded-2xl p-6 shadow-sm au2">
                       <SectionLabel icon={Calendar}>วันในสัปดาห์</SectionLabel>
@@ -547,7 +744,6 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                     </div>
                   )}
 
-                  {/* Building */}
                   <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
                     <SectionLabel icon={MapPin}>อาคาร</SectionLabel>
                     <div className="flex flex-wrap gap-1.5">
@@ -557,49 +753,35 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                 </div>
               </div>
 
-              {/* Term info */}
               {isTermMode && (
                 <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
                   <SectionLabel>ข้อมูลเทอม</SectionLabel>
                   <div className="space-y-3">
                     <div>
                       <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
-                      <input
-                        type="text"
-                        value={termName}
-                        onChange={e => setTermName(e.target.value)}
+                      <input type="text" value={termName} onChange={e => setTermName(e.target.value)}
                         placeholder="เช่น ภาคเรียนที่ 1/2568"
                         className="w-full border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                        style={{fontFamily:"inherit"}}
-                      />
+                        style={{fontFamily:"inherit"}} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
-                        <input
-                          type="date"
-                          value={termStart}
-                          onChange={e => setTermStart(e.target.value)}
+                        <input type="date" value={termStart} onChange={e => setTermStart(e.target.value)}
                           className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                          style={{fontFamily:"inherit"}}
-                        />
+                          style={{fontFamily:"inherit"}} />
                       </div>
                       <div>
                         <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
-                        <input
-                          type="date"
-                          value={termEnd}
-                          onChange={e => setTermEnd(e.target.value)}
+                        <input type="date" value={termEnd} onChange={e => setTermEnd(e.target.value)}
                           className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                          style={{fontFamily:"inherit"}}
-                        />
+                          style={{fontFamily:"inherit"}} />
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Time */}
               <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
                 <SectionLabel icon={Clock}>เวลา</SectionLabel>
                 <div className="grid grid-cols-8 gap-2 mb-4">
@@ -628,6 +810,31 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                   )}
                 </div>
               </div>
+
+              {/* ── อุปกรณ์ที่ต้องการ ── */}
+              <div className={`bg-white rounded-2xl p-6 shadow-sm au4 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <SectionLabel>อุปกรณ์ที่ต้องการ</SectionLabel>
+                  {selectedEquipments.length > 0 && (
+                    <button
+                      onClick={() => setSelectedEquipments([])}
+                      className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                    >
+                      <X size={11} />ล้างทั้งหมด
+                    </button>
+                  )}
+                </div>
+                <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} />
+                {selectedEquipments.length > 0 && (
+                  <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                    <Filter size={11} className="text-blue-500 flex-shrink-0" />
+                    <p className="text-xs text-blue-600 font-semibold">
+                      กรองเฉพาะห้องที่มี: {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.label).join(', ')}
+                    </p>
+                  </div>
+                )}
+              </div>
+
             </div>
 
             {/* Summary sidebar */}
@@ -666,6 +873,21 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                   <div className="flex justify-between"><span className="text-slate-500">เวลา</span><span className="font-bold text-slate-800">{startTime ? `${startTime}–${endTime}` : '—'}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">อาคาร</span><span className="font-bold text-slate-800">{BUILDINGS.find(b => b.code === building)?.label || 'ทั้งหมด'}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">ขนาดห้อง</span><span className="font-bold text-slate-800">{attendees}–{attendees + CAPACITY_BUFFER} คน</span></div>
+                  {selectedEquipments.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-slate-500">อุปกรณ์ที่ต้องการ</span>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {selectedEquipments.map(k => {
+                          const eq = EQUIPMENT_PRESETS.find(p => p.key === k)
+                          return (
+                            <span key={k} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full px-2 py-0.5 text-xs font-semibold">
+                              {eq?.icon} {eq?.label}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <button onClick={handleSearch} disabled={loading}
                   className={`w-full ${accentBg} ${accentHov} disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg ${accentShadow} transition-all active:scale-95 disabled:cursor-not-allowed`}>
@@ -700,6 +922,13 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                   <Filter size={10} />ห้องเรียน / Lecture เท่านั้น
                 </span>
               )}
+              {selectedEquipments.length > 0 && (
+                <span className="bg-white/15 text-white text-xs font-bold rounded-full px-2.5 py-1 flex items-center gap-1">
+                  <Filter size={10} />
+                  {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.icon).join(' ')}
+                  {selectedEquipments.length} อุปกรณ์
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1.5">
               <Zap size={11} />AI Forecast
@@ -720,6 +949,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                 </div>
               ) : rooms.map((room, idx) => (
                 <RoomCard key={room.id} room={room} idx={idx} isTermMode={isTermMode}
+                  selectedEquipments={selectedEquipments}
                   onClick={() => { setSelectedRoom(room); setStep(3) }} />
               ))}
             </div>
@@ -748,6 +978,8 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                   <p className="text-xs text-slate-500">{selectedRoom.building_name} · ชั้น {selectedRoom.floor} · {selectedRoom.room_type}</p>
                   {selectedRoom.description && <p className="text-xs text-slate-400 mt-1">{selectedRoom.description}</p>}
                 </div>
+
+                {/* booking detail table */}
                 <div className="border-2 border-blue-50 rounded-xl overflow-hidden mb-4">
                   {[
                     { label: 'ประเภท',      value: isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน' },
@@ -768,6 +1000,25 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                     </div>
                   ))}
                 </div>
+
+                {/* อุปกรณ์ในห้อง — highlight ตามที่เลือก */}
+                {selectedRoom.facilities?.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                      <span>🔧</span>อุปกรณ์ในห้อง
+                      <span className="text-slate-300 font-normal">({selectedRoom.facilities.length} รายการ)</span>
+                      {selectedEquipments.length > 0 && (
+                        <span className="text-blue-500 font-semibold normal-case tracking-normal">· ไฮไลต์อุปกรณ์ที่เลือก</span>
+                      )}
+                    </p>
+                    <FacilityTags
+                      facilities={selectedRoom.facilities}
+                      compact={false}
+                      highlight={selectedEquipments}
+                    />
+                  </div>
+                )}
+
                 {cfg.badge !== '—' && (
                   <div className={`flex items-center gap-2.5 rounded-xl px-4 py-3 ${cfg.pillCls}`}>
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cfg.dotColor }} />
@@ -815,6 +1066,7 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
     termStart, setTermStart,
     termEnd, setTermEnd,
     termName, setTermName,
+    selectedEquipments, setSelectedEquipments,
   } = formProps
   const { rooms, setSelectedRoom } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success } = confirmProps
@@ -947,42 +1199,29 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
               </div>
             )}
 
-            {/* Term dates — mobile */}
             {isTermMode && (
               <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
                 <SectionLabel>ข้อมูลเทอม</SectionLabel>
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
-                    <input
-                      type="text"
-                      value={termName}
-                      onChange={e => setTermName(e.target.value)}
+                    <input type="text" value={termName} onChange={e => setTermName(e.target.value)}
                       placeholder="เช่น ภาคเรียนที่ 1/2568"
                       className="w-full border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                      style={{fontFamily:"inherit"}}
-                    />
+                      style={{fontFamily:"inherit"}} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
-                      <input
-                        type="date"
-                        value={termStart}
-                        onChange={e => setTermStart(e.target.value)}
+                      <input type="date" value={termStart} onChange={e => setTermStart(e.target.value)}
                         className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-all"
-                        style={{fontFamily:"inherit"}}
-                      />
+                        style={{fontFamily:"inherit"}} />
                     </div>
                     <div>
                       <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
-                      <input
-                        type="date"
-                        value={termEnd}
-                        onChange={e => setTermEnd(e.target.value)}
+                      <input type="date" value={termEnd} onChange={e => setTermEnd(e.target.value)}
                         className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-all"
-                        style={{fontFamily:"inherit"}}
-                      />
+                        style={{fontFamily:"inherit"}} />
                     </div>
                   </div>
                 </div>
@@ -1023,6 +1262,30 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
               </div>
             </div>
 
+            {/* ── อุปกรณ์ที่ต้องการ (mobile) ── */}
+            <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
+              <div className="flex items-center justify-between mb-3">
+                <SectionLabel>อุปกรณ์ที่ต้องการ</SectionLabel>
+                {selectedEquipments.length > 0 && (
+                  <button
+                    onClick={() => setSelectedEquipments([])}
+                    className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                  >
+                    <X size={11} />ล้าง
+                  </button>
+                )}
+              </div>
+              <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} compact />
+              {selectedEquipments.length > 0 && (
+                <div className="mt-2.5 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                  <Filter size={10} className="text-blue-500 flex-shrink-0" />
+                  <p className="text-xs text-blue-600 font-semibold">
+                    มี: {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.label).join(', ')}
+                  </p>
+                </div>
+              )}
+            </div>
+
             <button onClick={handleSearch} disabled={loading}
               className={`au4 w-full ${accentBg} ${accentHov} disabled:bg-slate-400 text-white rounded-2xl py-4 text-sm font-bold flex items-center justify-center gap-2.5 shadow-lg ${accentShadow} transition-all active:scale-95 disabled:cursor-not-allowed`}>
               {loading
@@ -1049,15 +1312,19 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                     <Filter size={9} />ห้องเรียน/Lecture
                   </span>
                 )}
+                {selectedEquipments.length > 0 && (
+                  <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2 py-0.5 flex items-center gap-1">
+                    <Filter size={9} />
+                    {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.icon).join('')}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1.5 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1">
                 <Zap size={10} />AI
               </div>
             </div>
 
-            {rooms.length > 0 && (
-              <SummaryTiles rooms={rooms} layout="grid" />
-            )}
+            {rooms.length > 0 && <SummaryTiles rooms={rooms} layout="grid" />}
 
             {rooms.length === 0 ? (
               <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au">
@@ -1070,6 +1337,7 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
               </div>
             ) : rooms.map((room, idx) => (
               <RoomCard key={room.id} room={room} idx={idx} compact isTermMode={isTermMode}
+                selectedEquipments={selectedEquipments}
                 onClick={() => { setSelectedRoom(room); setStep(3) }} />
             ))}
           </>
@@ -1094,6 +1362,8 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                   <p className="text-xs text-slate-500">{selectedRoom.building_name} · ชั้น {selectedRoom.floor} · {selectedRoom.room_type}</p>
                   {selectedRoom.description && <p className="text-xs text-slate-400 mt-1">{selectedRoom.description}</p>}
                 </div>
+
+                {/* booking detail table */}
                 <div className="border-2 border-blue-50 rounded-xl overflow-hidden mb-4">
                   {[
                     { label: 'ประเภท',      value: isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน' },
@@ -1114,6 +1384,22 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                     </div>
                   ))}
                 </div>
+
+                {/* อุปกรณ์ในห้อง */}
+                {selectedRoom.facilities?.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                      <span>🔧</span>อุปกรณ์ในห้อง
+                      <span className="text-slate-300 font-normal">({selectedRoom.facilities.length} รายการ)</span>
+                    </p>
+                    <FacilityTags
+                      facilities={selectedRoom.facilities}
+                      compact={false}
+                      highlight={selectedEquipments}
+                    />
+                  </div>
+                )}
+
                 {cfg.badge !== '—' && (
                   <div className={`flex items-center gap-2 rounded-xl px-4 py-3 ${cfg.pillCls}`}>
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cfg.dotColor }} />
@@ -1152,24 +1438,25 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
 export default function SearchPage() {
   const navigate  = useNavigate()
   const isMobile  = useDevice()
-  const [step, setStep]                     = useState(1)
-  const [bookingType, setBookingType]       = useState('daily')
-  const [attendees, setAttendees]           = useState(5)
-  const [date, setDate]                     = useState(new Date().toISOString().split('T')[0])
-  const [dayOfWeek, setDayOfWeek]           = useState(null)
-  const [startTime, setStartTime]           = useState('')
-  const [duration, setDuration]             = useState(1)
-  const [building, setBuilding]             = useState('')
-  const [rooms, setRooms]                   = useState([])
-  const [selectedRoom, setSelectedRoom]     = useState(null)
-  const [title, setTitle]                   = useState('')
-  const [loading, setLoading]               = useState(false)
-  const [bookingLoading, setBookingLoading] = useState(false)
-  const [success, setSuccess]               = useState(false)
-  const [error, setError]                   = useState('')
-  const [termStart, setTermStart]           = useState('')
-  const [termEnd, setTermEnd]               = useState('')
-  const [termName, setTermName]             = useState('ภาคเรียนที่ 1/2568')
+  const [step, setStep]                           = useState(1)
+  const [bookingType, setBookingType]             = useState('daily')
+  const [attendees, setAttendees]                 = useState(5)
+  const [date, setDate]                           = useState(new Date().toISOString().split('T')[0])
+  const [dayOfWeek, setDayOfWeek]                 = useState(null)
+  const [startTime, setStartTime]                 = useState('')
+  const [duration, setDuration]                   = useState(1)
+  const [building, setBuilding]                   = useState('')
+  const [rooms, setRooms]                         = useState([])
+  const [selectedRoom, setSelectedRoom]           = useState(null)
+  const [title, setTitle]                         = useState('')
+  const [loading, setLoading]                     = useState(false)
+  const [bookingLoading, setBookingLoading]       = useState(false)
+  const [success, setSuccess]                     = useState(false)
+  const [error, setError]                         = useState('')
+  const [termStart, setTermStart]                 = useState('')
+  const [termEnd, setTermEnd]                     = useState('')
+  const [termName, setTermName]                   = useState('ภาคเรียนที่ 1/2568')
+  const [selectedEquipments, setSelectedEquipments] = useState([])   // ← NEW
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
@@ -1208,6 +1495,11 @@ export default function SearchPage() {
         filtered = filtered.filter(r => isClassroomType(r))
       }
 
+      // ── กรองตามอุปกรณ์ที่ผู้ใช้เลือก (ต้องมีครบ ไม่ต้องมีแค่นั้น) ──
+      if (selectedEquipments.length > 0) {
+        filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments))
+      }
+
       setRooms(filtered)
       setStep(2)
     } catch {
@@ -1217,76 +1509,59 @@ export default function SearchPage() {
     }
   }
 
-  // SearchPage.jsx
-
-const handleBook = async () => {
-  console.log('=== handleBook called ===')
-  console.log('bookingType:', bookingType)
-  console.log('selectedRoom:', selectedRoom)
-  console.log('title:', title)
-  console.log('date:', date, 'startTime:', startTime, 'endTime:', endTime)
-
-  if (!selectedRoom) {
-    setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
-    return
-  }
-
-  setBookingLoading(true)
-  setError('')
-
-  try {
-    let response
-
-    if (bookingType === 'term') {
-      const termPayload = {
-        room: selectedRoom.id,
-        subject_name: title,
-        subject_code: 'N/A',
-        attendees: parseInt(attendees),
-        day_of_week: dayOfWeek,
-        start_time: startTime,
-        end_time: endTime,
-        term_start: termStart,
-        term_end: termEnd,
-        term_name: termName,
-        note: '',
-      }
-      console.log('POST /term-bookings/ payload:', termPayload)
-      response = await api.post('term-bookings/', termPayload)
-
-    } else {
-      const dynamicPayload = {
-        room: selectedRoom.id,
-        title: title,
-        attendees: parseInt(attendees),
-        start_time: `${date}T${startTime}:00`,
-        end_time: `${date}T${endTime}:00`,
-        note: '',
-      }
-      console.log('POST /bookings/ payload:', dynamicPayload)
-      response = await api.post('bookings/', dynamicPayload)
+  const handleBook = async () => {
+    if (!selectedRoom) {
+      setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
+      return
     }
 
-    console.log('response status:', response.status)
-    console.log('response data:', response.data)
+    setBookingLoading(true)
+    setError('')
 
-    if (response.status === 201 || response.status === 200) {
-      setSuccess(true)
-    } else {
-      setError('จองไม่สำเร็จ กรุณาลองใหม่')
+    try {
+      let response
+
+      if (bookingType === 'term') {
+        const termPayload = {
+          room: selectedRoom.id,
+          subject_name: title,
+          subject_code: 'N/A',
+          attendees: parseInt(attendees),
+          day_of_week: dayOfWeek,
+          start_time: startTime,
+          end_time: endTime,
+          term_start: termStart,
+          term_end: termEnd,
+          term_name: termName,
+          note: '',
+        }
+        response = await api.post('term-bookings/', termPayload)
+      } else {
+        const dynamicPayload = {
+          room: selectedRoom.id,
+          title: title,
+          attendees: parseInt(attendees),
+          start_time: `${date}T${startTime}:00`,
+          end_time: `${date}T${endTime}:00`,
+          note: '',
+        }
+        response = await api.post('bookings/', dynamicPayload)
+      }
+
+      if (response.status === 201 || response.status === 200) {
+        setSuccess(true)
+      } else {
+        setError('จองไม่สำเร็จ กรุณาลองใหม่')
+      }
+    } catch (err) {
+      const errorData = err.response?.data
+      const msg = errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
+      setError(msg)
+    } finally {
+      setBookingLoading(false)
     }
-
-  } catch (err) {
-    console.error('=== handleBook error ===')
-    console.error('status:', err.response?.status)
-    console.error('data:', err.response?.data)
-    const errorData = err.response?.data
-    const msg = errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
-    setError(msg)
-  } finally {
-    setBookingLoading(false)
   }
-}
+
   const shared = {
     bookingType, setBookingType,
     formProps: {
@@ -1297,6 +1572,7 @@ const handleBook = async () => {
       termStart, setTermStart,
       termEnd, setTermEnd,
       termName, setTermName,
+      selectedEquipments, setSelectedEquipments,   // ← NEW
     },
     resultProps:  { rooms, setSelectedRoom },
     confirmProps: { selectedRoom, title, setTitle, bookingLoading, handleBook, success },
