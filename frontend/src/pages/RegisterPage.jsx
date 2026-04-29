@@ -8,10 +8,13 @@ const FACULTIES = [
   'นิติศาสตร์','แพทยศาสตร์','พยาบาลศาสตร์',
   'เกษตรศาสตร์','ศิลปศาสตร์','สาธารณสุขศาสตร์','เภสัชศาสตร์',
 ]
+
+// เพิ่ม Role: staff และ admin เข้าไป
 const ROLES = [
   {value:'student',  label:'นักศึกษา',    icon:'🎓'},
   {value:'lecturer', label:'อาจารย์',     icon:'👨‍🏫'},
-  
+  {value:'staff',    label:'เจ้าหน้าที่',   icon:'🏢'},
+  {value:'admin',    label:'ผู้ดูแลระบบ',   icon:'🔑'},
 ]
 
 const ANIM = `
@@ -55,10 +58,16 @@ export default function RegisterPage() {
     if (!form.password)                   return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
     if (form.password.length < 6)         return setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัว')
+    
     setLoading(true); setError('')
-    try { await api.post('/auth/register/', form); navigate('/login') }
-    catch { setError('สมัครสมาชิกไม่สำเร็จ กรุณาตรวจสอบข้อมูล') }
-    finally { setLoading(false) }
+    try { 
+      await api.post('/auth/register/', form)
+      navigate('/login') 
+    } catch (err) { 
+      setError('สมัครสมาชิกไม่สำเร็จ อาจมีชื่อผู้ใช้หรืออีเมลนี้ในระบบแล้ว') 
+    } finally { 
+      setLoading(false) 
+    }
   }
 
   return (
@@ -74,13 +83,12 @@ export default function RegisterPage() {
             <UserPlus size={24} color="#fff" />
           </div>
           <h1 className="text-xl font-extrabold text-slate-900">สมัครสมาชิก</h1>
-          <p className="text-slate-500 text-xs mt-1">สร้างบัญชีเพื่อเริ่มจองห้องประชุม</p>
+          <p className="text-slate-500 text-xs mt-1">สร้างบัญชีผู้ใช้งานหรือผู้ดูแลระบบ</p>
         </div>
 
         {/* CARD */}
         <div className="bg-white border border-blue-100 rounded-3xl p-7 shadow-xl shadow-blue-100/60 au1">
-
-          {/* yellow accent */}
+          
           <div className="h-1 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-5" />
 
           {/* STEP INDICATOR */}
@@ -126,22 +134,24 @@ export default function RegisterPage() {
                   value={form.email} onChange={e => set('email', e.target.value)}
                   style={{fontFamily:"inherit"}} />
               </div>
+              
               <div className="au3">
-                <label className="block text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">ประเภทผู้ใช้</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="block text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">ประเภทผู้ใช้ (Role)</label>
+                <div className="grid grid-cols-2 gap-2">
                   {ROLES.map(r => (
                     <button key={r.value} type="button" onClick={() => set('role', r.value)}
-                      className={`py-3 px-2 rounded-xl text-xs font-semibold border-2 transition-all text-center
+                      className={`py-2.5 px-2 rounded-xl text-xs font-semibold border-2 transition-all text-center
                         ${form.role === r.value
                           ? 'border-blue-700 bg-blue-700 text-white shadow-sm'
                           : 'border-blue-100 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50'
                         }`}>
-                      <div className="text-base mb-1">{r.icon}</div>
+                      <div className="text-lg mb-0.5">{r.icon}</div>
                       {r.label}
                     </button>
                   ))}
                 </div>
               </div>
+
               <div className="au4">
                 <label className="block text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">คณะ / หน่วยงาน</label>
                 <select className={inputCls} value={form.faculty}
@@ -163,7 +173,7 @@ export default function RegisterPage() {
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 au2">
                 <p className="font-bold text-slate-800 text-sm">{form.first_name}</p>
-                <p className="text-blue-500 text-xs mt-0.5">{form.email} · {form.faculty || '—'}</p>
+                <p className="text-blue-500 text-xs mt-0.5">{form.role.toUpperCase()} · {form.faculty || '—'}</p>
               </div>
               <div className="au2">
                 <label className="block text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">รหัสผ่าน</label>
@@ -211,9 +221,8 @@ export default function RegisterPage() {
         </div>
 
         <p className="text-center text-sm text-slate-500 mt-5">
-          {step === 1
-            ? <> มีบัญชีแล้ว?{' '}<Link to="/login" className="text-blue-700 font-bold hover:underline">เข้าสู่ระบบ</Link></>
-            : <> มีบัญชีแล้ว?{' '}<Link to="/login" className="text-blue-700 font-bold hover:underline">เข้าสู่ระบบ</Link></>}
+           มีบัญชีอยู่แล้ว?{' '}
+           <Link to="/login" className="text-blue-700 font-bold hover:underline">เข้าสู่ระบบ</Link>
         </p>
       </div>
     </div>

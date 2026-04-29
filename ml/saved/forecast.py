@@ -1,19 +1,20 @@
-# ── Booking → Clean → Feature Engineering → Train Model → Evaluate → Forecast 14 วัน → แปลงเป็นรายชั่วโมง → Save DemandForecast
-# ── แก้ไขตาม Research Significance ──
-#  Fix 1 : Advanced Baseline (SMA / LastWeek / LinearRegression) แทน Naive=0
-#  Fix 2 : Facility Score (Room Score / Facility Density) เป็น Feature ใหม่
-#  Fix 3 : LECTURE – ใช้ log-transform + term features แต่ไม่ decompose (แก้ R²=-114)
-#           + sMAPE guard (cap 100%)
-#  Fix 4 : LSTM disable สำหรับ LECTURE (lookback=7 บน residual flat → garbage)
-#  New   : LSTM (TensorFlow/Keras) เป็น 4th model ใน Stacking Ensemble (non-LECTURE เท่านั้น)
+# ══════════════════════════════════════════════════════════════════════════════
+#  ALL-IN-ONE: Demand Forecast Engine + Update Thai Facilities + Boost Thresholds
+#  รวม 3 สคริปต์ไว้ในไฟล์เดียว
+#  วิธีใช้:
+#    python demand_forecast_all_in_one.py --retrain        → retrain + forecast
+#    python demand_forecast_all_in_one.py                  → forecast only
+#    python demand_forecast_all_in_one.py --update-fac     → อัปเดตอุปกรณ์ภาษาไทย
+#    python demand_forecast_all_in_one.py --boost          → ปรับ threshold ให้ Urgent ง่ายขึ้น
+# ══════════════════════════════════════════════════════════════════════════════
 
-import os, sys, warnings, argparse
+import os, sys, warnings, argparse, random
 import numpy as np
 import pandas as pd
 import joblib
 from datetime import timedelta
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
-from sklearn.linear_model import Ridge, LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.preprocessing import MinMaxScaler
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,14 +24,14 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'room_booking.settings')
 
 import django
 django.setup()
-from booking.models import Booking, Room, TermBooking, DemandForecast
+from booking.models import Booking, Room, Facility, RoomFacility, TermBooking, DemandForecast
 
 import lightgbm as lgb
 import xgboost as xgb
 
 warnings.filterwarnings('ignore')
 
-# ── ตรวจสอบ TensorFlow (Optional) ────────────────────────────────────────────
+# ── TensorFlow (Optional) ─────────────────────────────────────────────────────
 try:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     import tensorflow as tf
@@ -40,59 +41,84 @@ try:
     LSTM_AVAILABLE = True
 except ImportError:
     LSTM_AVAILABLE = False
-    print("⚠️  TensorFlow ไม่พบ – ข้าม LSTM (ใช้ LGB+XGB Stacking เท่านั้น)")
+    print("⚠️  TensorFlow ไม่พบ – ข้าม LSTM")
 
-# ── Config ────────────────────────────────────────────────────────────────────
-MIN_DAYS        = 60
-FORECAST_DAYS   = 14
-LSTM_LOOKBACK   = 14
-LSTM_EPOCHS     = 100
-LSTM_BATCH      = 16
-MODEL_DIR       = os.path.join(CURRENT_DIR, "saved_models")
-META_DIR        = os.path.join(CURRENT_DIR, "saved_meta")
+# ── Config ─────────────────────────────────────────────────────────────────────
+MIN_DAYS      = 180
+FORECAST_DAYS = 14
+LSTM_LOOKBACK = 14
+LSTM_EPOCHS   = 100
+LSTM_BATCH    = 16
+MODEL_DIR     = os.path.join(CURRENT_DIR, "saved_models")
+META_DIR      = os.path.join(CURRENT_DIR, "saved_meta")
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(META_DIR,  exist_ok=True)
 
-# ── Fallback hour distribution ────────────────────────────────────────────────
+# ── Fallback hour distribution ─────────────────────────────────────────────────
 HOUR_DIST_FALLBACK = {
     8: 0.05, 9: 0.10, 10: 0.18, 11: 0.16, 12: 0.02,
     13: 0.17, 14: 0.15, 15: 0.11, 16: 0.07, 17: 0.04,
+    18: 0.03, 19: 0.02, 20: 0.01
 }
 
-# ── Facility Score (Fix 2) ────────────────────────────────────────────────────
-FACILITY_WEIGHTS = {
-    'projector':    3,
-    'smart_board':  5,
-    'wifi':         2,
-    'air_con':      2,
-    'microphone':   3,
-    'whiteboard':   1,
-    'tv_screen':    2,
-    'video_conf':   4,
-    'lab_computer': 4,
-}
 
-def compute_facility_score(room) -> float:
-    score = 0.0
-    field_map = {
-        'has_projector':    'projector',
-        'has_smart_board':  'smart_board',
-        'has_wifi':         'wifi',
-        'has_air_con':      'air_con',
-        'has_microphone':   'microphone',
-        'has_whiteboard':   'whiteboard',
-        'has_tv_screen':    'tv_screen',
-        'has_video_conf':   'video_conf',
-        'has_lab_computer': 'lab_computer',
-    }
-    for field, key in field_map.items():
-        if getattr(room, field, False):
-            score += FACILITY_WEIGHTS.get(key, 1)
-    max_score = sum(FACILITY_WEIGHTS.values())
-    return round(score / max_score, 4) if max_score > 0 else 0.0
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 1 – Demand Forecast Engine
+# ══════════════════════════════════════════════════════════════════════════════
 
-# ── Term Schedule ─────────────────────────────────────────────────────────────
+# ── Print ข้อมูลสรุปก่อนเทรน ──────────────────────────────────────────────────
+def print_data_summary(raw: pd.DataFrame, room=None):
+    df = raw.copy()
+    if room is not None:
+        df = df[df['room_id'] == room.id]
+
+    print("\n" + "=" * 60)
+    print(f"📋 DATA SUMMARY {'– ' + room.name if room else '(All Rooms)'}")
+    print("=" * 60)
+
+    print(f"\n📌 ภาพรวม")
+    print(f"   จำนวน booking ทั้งหมด : {len(df):,} ครั้ง")
+    print(f"   ช่วงวันที่            : {df['date'].min()} → {df['date'].max()}")
+    total_days = (df['date'].max() - df['date'].min()).days + 1
+    print(f"   จำนวนวันทั้งหมด       : {total_days:,} วัน")
+    active_days = df['date'].nunique()
+    print(f"   วันที่มี booking       : {active_days:,} วัน")
+    print(f"   วันที่ไม่มี booking    : {total_days - active_days:,} วัน")
+
+    print(f"\n⏱️  ระยะเวลาการจอง (ชั่วโมง)")
+    print(f"   เฉลี่ย   : {df['duration'].mean():.2f} ชม.")
+    print(f"   ต่ำสุด   : {df['duration'].min():.2f} ชม.")
+    print(f"   สูงสุด   : {df['duration'].max():.2f} ชม.")
+    print(f"   รวมทั้งหมด: {df['duration'].sum():.1f} ชม.")
+
+    daily_hours = df.groupby('date')['duration'].sum()
+    print(f"\n🎯 Target: ชั่วโมงรวม/วัน")
+    print(f"   เฉลี่ย   : {daily_hours.mean():.2f} ชม./วัน")
+    print(f"   ต่ำสุด   : {daily_hours.min():.2f} ชม./วัน")
+    print(f"   สูงสุด   : {daily_hours.max():.2f} ชม./วัน")
+    print(f"   มัธยฐาน  : {daily_hours.median():.2f} ชม./วัน")
+
+    print(f"\n🕐 การกระจายตามชั่วโมง (start_time)")
+    hour_counts = df.groupby('hour')['duration'].sum().sort_index()
+    total_hr = hour_counts.sum()
+    for h, v in hour_counts.items():
+        bar = '█' * int((v / total_hr) * 30)
+        print(f"   {h:02d}:00  {bar:<30}  {v:.1f} ชม. ({v/total_hr*100:.1f}%)")
+
+    print(f"\n📅 การกระจายตามวันในสัปดาห์")
+    dow_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัส',
+               4: 'ศุกร์', 5: 'เสาร์', 6: 'อาทิตย์'}
+    df['dow'] = pd.to_datetime(df['date']).dt.dayofweek
+    dow_hours = df.groupby('dow')['duration'].sum()
+    for d, v in dow_hours.items():
+        bar = '█' * int((v / dow_hours.max()) * 20)
+        print(f"   {dow_map[d]:<6}  {bar:<20}  {v:.1f} ชม.")
+
+    print("=" * 60)
+
+
+# ── Term Schedule ──────────────────────────────────────────────────────────────
 def load_term_schedule(room_id: int) -> list[dict]:
     qs = TermBooking.objects.filter(room_id=room_id, status='active').values(
         'day_of_week', 'start_time', 'end_time', 'term_start', 'term_end'
@@ -143,8 +169,10 @@ def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
         })
     return pd.DataFrame(rows, index=date_index)
 
-# ── Hour Distribution ─────────────────────────────────────────────────────────
-def learn_hour_dist(bookings_df, room_id=None, event_threshold_pct=95.0,
+
+# ── Hour Distribution (จาก duration จริง) ─────────────────────────────────────
+def learn_hour_dist(bookings_df, room_id=None,
+                    event_threshold_pct=95.0,
                     min_days_required=30) -> dict:
     df = bookings_df.copy()
     if room_id is not None:
@@ -152,53 +180,35 @@ def learn_hour_dist(bookings_df, room_id=None, event_threshold_pct=95.0,
     if len(df) == 0:
         return HOUR_DIST_FALLBACK.copy()
 
-    df['start_time'] = pd.to_datetime(df['start_time'])
-    if df['start_time'].dt.tz is None:
-        df['start_time'] = df['start_time'].dt.tz_localize('UTC')
-    df['start_time'] = df['start_time'].dt.tz_convert('Asia/Bangkok')
-    df['date'] = df['start_time'].dt.date
-    df['hour'] = df['start_time'].dt.hour
-    df = df[df['hour'].between(8, 17)]
-    if len(df) == 0:
-        return HOUR_DIST_FALLBACK.copy()
+    hour_hours = {h: 0.0 for h in range(8, 18)}
+    for _, row in df.iterrows():
+        s = int(row['hour'])
+        e = int(row['end_hour']) if 'end_hour' in row else s + 1
+        dur = float(row['duration'])
+        span = max(e - s, 1)
+        per_hr = dur / span
+        for h in range(s, min(e, 18)):
+            if 8 <= h < 18:
+                hour_hours[h] = hour_hours.get(h, 0) + per_hr
 
-    daily_total     = df.groupby('date').size()
-    event_threshold = np.percentile(daily_total.values, event_threshold_pct)
-    normal_days     = daily_total[daily_total <= event_threshold].index
-    if len(normal_days) < min_days_required:
-        return HOUR_DIST_FALLBACK.copy()
-
-    df_normal         = df[df['date'].isin(normal_days)]
-    daily_hour_counts = df_normal.groupby(['date', 'hour']).size().unstack(fill_value=0)
-    for h in range(8, 18):
-        if h not in daily_hour_counts.columns:
-            daily_hour_counts[h] = 0
-    daily_hour_counts = daily_hour_counts[sorted(daily_hour_counts.columns)]
-
-    row_totals    = daily_hour_counts.sum(axis=1)
-    valid_rows    = row_totals > 0
-    daily_ratios  = daily_hour_counts[valid_rows].div(row_totals[valid_rows], axis=0)
-    median_ratios = daily_ratios.median(axis=0)
-
-    filtered = median_ratios.reindex(range(8, 18), fill_value=0)
-    total    = filtered.sum()
+    total = sum(hour_hours.values())
     if total == 0:
         return HOUR_DIST_FALLBACK.copy()
 
-    normalized = (filtered / total).round(4)
-    diff = 1.0 - normalized.sum()
-    pk   = normalized.idxmax()
+    normalized = {h: (v / total) for h, v in hour_hours.items()}
+    for h in normalized:
+        normalized[h] = normalized[h] * 0.85 + (1/len(normalized)) * 0.15
+    # normalize ใหม่
+    s = sum(normalized.values())
+    normalized = {h: round(v / s, 4) for h, v in normalized.items()}
+    diff = 1.0 - sum(normalized.values())
+    pk   = max(normalized, key=normalized.get)
     normalized[pk] = round(normalized[pk] + diff, 4)
-    return normalized.to_dict()
+    return normalized
 
-# ── Feature Engineering ───────────────────────────────────────────────────────
-def build_features(daily, term_df: pd.DataFrame | None = None,
-                   facility_score: float = 0.0,
-                   use_log: bool = False):
-    """
-    Fix 2: เพิ่ม facility_score เป็น feature
-    Fix 3: รองรับ log-transform (use_log=True) — ใช้กับ LECTURE โดยไม่ decompose
-    """
+
+# ── Feature Engineering ────────────────────────────────────────────────────────
+def build_features(daily, term_df=None, use_log: bool = False):
     if use_log:
         y_series = np.log1p(daily)
     else:
@@ -232,9 +242,6 @@ def build_features(daily, term_df: pd.DataFrame | None = None,
     df['diff_7_1']  = df['lag_7'] - df['lag_1']
     df['pct_chg_7'] = df['y'].pct_change(7).replace([np.inf, -np.inf], 0).fillna(0)
 
-    for lag in [1, 2, 3]:
-        df[f'hourly_lag_{lag}'] = df['y'].shift(lag)
-
     t = np.arange(len(df))
     for period, n_terms in [(7, 3), (365, 4)]:
         for k in range(1, n_terms + 1):
@@ -243,8 +250,6 @@ def build_features(daily, term_df: pd.DataFrame | None = None,
 
     df['ratio_vs_7d']  = (df['lag_1'] / (df['roll_mean_7']  + 1e-6)).clip(0, 5)
     df['ratio_vs_28d'] = (df['lag_1'] / (df['roll_mean_28'] + 1e-6)).clip(0, 5)
-
-    df['facility_score'] = facility_score
 
     if term_df is not None:
         term_aligned = term_df.reindex(df.index, fill_value=0)
@@ -264,8 +269,9 @@ def build_features(daily, term_df: pd.DataFrame | None = None,
 
     return df.bfill().ffill()
 
-# ── LSTM helpers ──────────────────────────────────────────────────────────────
-def _make_lstm_sequences(series: np.ndarray, lookback: int):
+
+# ── LSTM helpers ───────────────────────────────────────────────────────────────
+def _make_lstm_sequences(series, lookback):
     X, y = [], []
     for i in range(lookback, len(series)):
         X.append(series[i - lookback: i])
@@ -273,31 +279,23 @@ def _make_lstm_sequences(series: np.ndarray, lookback: int):
     return np.array(X), np.array(y)
 
 
-def train_lstm(y_train_raw: np.ndarray, y_val_raw: np.ndarray,
-               lookback: int = LSTM_LOOKBACK) -> tuple:
+def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK):
     if not LSTM_AVAILABLE:
         return None, None
-
     scaler   = MinMaxScaler()
     all_data = np.concatenate([y_train_raw, y_val_raw]).reshape(-1, 1)
     scaler.fit(all_data)
-
     y_tr_s = scaler.transform(y_train_raw.reshape(-1, 1)).flatten()
     y_va_s = scaler.transform(y_val_raw.reshape(-1, 1)).flatten()
-
     full   = np.concatenate([y_tr_s, y_va_s])
     X_full, y_full = _make_lstm_sequences(full, lookback)
-
     n_tr = len(y_train_raw) - lookback
     if n_tr <= 0 or n_tr >= len(X_full):
         return None, None
-
     X_tr, y_tr = X_full[:n_tr], y_full[:n_tr]
     X_va, y_va = X_full[n_tr:], y_full[n_tr:]
-
     X_tr = X_tr.reshape(X_tr.shape[0], X_tr.shape[1], 1)
     X_va = X_va.reshape(X_va.shape[0], X_va.shape[1], 1)
-
     model = Sequential([
         LSTM(64, return_sequences=True, input_shape=(lookback, 1)),
         Dropout(0.2),
@@ -308,26 +306,18 @@ def train_lstm(y_train_raw: np.ndarray, y_val_raw: np.ndarray,
     ])
     model.compile(optimizer='adam', loss='mae')
     es = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
-    model.fit(
-        X_tr, y_tr,
-        validation_data=(X_va, y_va),
-        epochs=LSTM_EPOCHS,
-        batch_size=LSTM_BATCH,
-        callbacks=[es],
-        verbose=0,
-    )
+    model.fit(X_tr, y_tr, validation_data=(X_va, y_va),
+              epochs=LSTM_EPOCHS, batch_size=LSTM_BATCH,
+              callbacks=[es], verbose=0)
     return model, scaler
 
 
-def lstm_predict(model, scaler, history_series: np.ndarray,
-                 n_steps: int, lookback: int = LSTM_LOOKBACK) -> np.ndarray:
+def lstm_predict(model, scaler, history_series, n_steps, lookback=LSTM_LOOKBACK):
     if model is None or scaler is None:
         return np.zeros(n_steps)
-
     if len(history_series) < lookback:
         pad = np.zeros(lookback - len(history_series))
         history_series = np.concatenate([pad, history_series])
-
     scaled = scaler.transform(history_series.reshape(-1, 1)).flatten()
     window = list(scaled[-lookback:])
     preds  = []
@@ -336,79 +326,40 @@ def lstm_predict(model, scaler, history_series: np.ndarray,
         p = float(model.predict(x, verbose=0)[0][0])
         preds.append(p)
         window.append(p)
-
     inv = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
     return np.maximum(0, inv)
 
-# ── Base Models ───────────────────────────────────────────────────────────────
+
+# ── Base Models ────────────────────────────────────────────────────────────────
 def train_lgb(X_tr, y_tr, X_te, y_te):
     model = lgb.LGBMRegressor(
         objective='regression_l1', n_estimators=5000, learning_rate=0.01,
-        max_depth=6, num_leaves=31, min_child_samples=10, lambda_l1=0.3,
-        lambda_l2=0.3, feature_fraction=0.8, bagging_fraction=0.8,
-        bagging_freq=5, verbose=-1,
+        max_depth=6, num_leaves=31, min_child_samples=10,
+        lambda_l1=0.3, lambda_l2=0.3,
+        feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=5, verbose=-1,
     )
-    model.fit(
-        X_tr, y_tr, eval_set=[(X_te, y_te)],
-        callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)],
-    )
+    model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)],
+              callbacks=[lgb.early_stopping(100, verbose=False),
+                         lgb.log_evaluation(-1)])
     return model
 
 
 def train_xgb(X_tr, y_tr, X_te, y_te):
     model = xgb.XGBRegressor(
         n_estimators=3000, learning_rate=0.01, max_depth=5,
-        subsample=0.8, colsample_bytree=0.8, reg_alpha=0.3, reg_lambda=0.3,
+        subsample=0.8, colsample_bytree=0.8,
+        reg_alpha=0.3, reg_lambda=0.3,
         early_stopping_rounds=100, eval_metric='mae', verbosity=0,
     )
     model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)], verbose=False)
     return model
 
-# ── Advanced Baseline (Fix 1) ─────────────────────────────────────────────────
-def compute_advanced_baselines(y_te: np.ndarray, daily_series: pd.Series,
-                               split_idx: int) -> dict:
-    """
-    Fix 1: baselines เทียบบน series เดียวกันกับ y_te เสมอ
-    (daily_series ต้องเป็น series เดียวกับที่ใช้ผลิต y_te — ไม่ mix raw/dynamic)
-    """
-    n_te     = len(y_te)
-    all_vals = daily_series.values.astype(float)
 
-    sma_pred = np.zeros(n_te)
-    for i in range(n_te):
-        end    = split_idx + i
-        start  = max(0, end - 7)
-        window = all_vals[start:end]
-        window = window[np.isfinite(window)]
-        sma_pred[i] = float(window.mean()) if len(window) > 0 else 0.0
-    sma_pred = np.nan_to_num(sma_pred, nan=0.0, posinf=0.0, neginf=0.0)
-    sma_pred = np.maximum(0.0, sma_pred)
-
-    lw_pred = np.zeros(n_te)
-    for i in range(n_te):
-        idx7 = split_idx + i - 7
-        if 0 <= idx7 < len(all_vals):
-            v = all_vals[idx7]
-            lw_pred[i] = float(v) if np.isfinite(v) else 0.0
-        else:
-            lw_pred[i] = 0.0
-    lw_pred = np.maximum(0.0, lw_pred)
-
-    y_safe = np.nan_to_num(np.asarray(y_te, dtype=float),
-                           nan=0.0, posinf=0.0, neginf=0.0)
-
-    return {
-        'SMA7_MAE':     mean_absolute_error(y_safe, sma_pred),
-        'SMA7_R2':      r2_score(y_safe, sma_pred),
-        'LastWeek_MAE': mean_absolute_error(y_safe, lw_pred),
-        'LastWeek_R2':  r2_score(y_safe, lw_pred),
-    }
-
-# ── Stacking (LGB + XGB [+ LSTM]) ────────────────────────────────────────────
+# ── Stacking ───────────────────────────────────────────────────────────────────
 def stacking_predict(X_tr, y_tr, X_te, y_te, X_pred,
                      lstm_model=None, lstm_scaler=None,
                      daily_tr_raw=None, n_pred=None,
-                     lstm_lookback: int = LSTM_LOOKBACK):
+                     lstm_lookback=LSTM_LOOKBACK):
     lgb_model = train_lgb(X_tr, y_tr, X_te, y_te)
     xgb_model = train_xgb(X_tr, y_tr, X_te, y_te)
 
@@ -421,15 +372,12 @@ def stacking_predict(X_tr, y_tr, X_te, y_te, X_pred,
                 and lstm_scaler is not None and daily_tr_raw is not None)
 
     if use_lstm:
-        hist_for_val = daily_tr_raw
         lstm_val = lstm_predict(lstm_model, lstm_scaler,
-                                hist_for_val, len(y_te),
-                                lookback=lstm_lookback)
+                                daily_tr_raw, len(y_te), lookback=lstm_lookback)
         hist_full = np.concatenate([daily_tr_raw, y_te])
         lstm_fut  = lstm_predict(lstm_model, lstm_scaler,
                                  hist_full, n_pred or len(X_pred),
                                  lookback=lstm_lookback)
-
         meta = Ridge(alpha=1.0)
         meta.fit(np.column_stack([lgb_val, xgb_val, lstm_val[:len(y_te)]]), y_te)
         final = meta.predict(np.column_stack([lgb_fut, xgb_fut,
@@ -441,84 +389,75 @@ def stacking_predict(X_tr, y_tr, X_te, y_te, X_pred,
 
     return np.maximum(0, final), lgb_model, xgb_model, meta
 
-# ── Threshold & Metrics ───────────────────────────────────────────────────────
-def compute_adaptive_thresholds(daily, peak_ref):
-    historical_norms = np.clip(daily.values / (peak_ref + 1e-6), 0, 1)
-    active_norms     = historical_norms[historical_norms > 0.01]
-    if len(active_norms) < 10:
-        return 0.70, 0.50
-    thr_high = float(np.percentile(active_norms, 65))
-    thr_med  = float(np.percentile(active_norms, 35))
-    thr_high = min(max(thr_high, thr_med + 0.10), 0.90)
-    thr_med  = max(thr_med, 0.10)
-    return round(thr_high, 3), round(thr_med, 3)
 
-
+# ── Metrics ────────────────────────────────────────────────────────────────────
 def smape(y_true, y_pred):
     raw = (2 * np.abs(y_true - y_pred)
            / (np.abs(y_true) + np.abs(y_pred) + 1e-8)) * 100
     return float(np.mean(np.clip(raw, 0, 100)))
 
 
-def mape(y_true, y_pred):
-    mask = y_true > 0
-    if not mask.any():
-        return 0.0
-    return float(np.mean(np.abs((y_true[mask] - y_pred[mask])
-                                / y_true[mask])) * 100)
-
-
 def rmse(y_true, y_pred):
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
-# ── Determine if room needs log-transform (Fix 3 revised) ─────────────────────
+
+def compute_adaptive_thresholds(daily, peak_ref):
+    historical_norms = np.clip(daily.values / (peak_ref + 1e-6), 0, 1)
+    active_norms     = historical_norms[historical_norms > 0.01]
+
+    if len(active_norms) < 10:
+        return 0.45, 0.18   # 🔥 fallback ใหม่
+
+    # 🔥 ปรับให้ balance จริง (ไม่ low ทั้งระบบ)
+    thr_high = float(np.percentile(active_norms, 65))
+    thr_med  = float(np.percentile(active_norms, 30))
+
+    # 🔥 guard กันเพี้ยน
+    thr_high = min(max(thr_high, thr_med + 0.10), 0.75)
+    thr_med  = max(thr_med, 0.10)
+
+    return round(thr_high, 3), round(thr_med, 3)
+
 def _needs_log_transform(room) -> bool:
-    """
-    Fix 3 (revised): ห้อง LECTURE ใช้ log-transform บน daily_raw โดยตรง
-    — ไม่ decompose อีกต่อไป เพราะ decompose over-subtracts signal
-    — term features ใน build_features ทำหน้าที่แทน decomposition
-    """
     room_type = getattr(room, 'room_type', '') or ''
     return 'lecture' in room_type.lower()
 
 
-# ── NOTE: decompose_lecture_demand ถูก REMOVED ────────────────────────────────
-# เหตุผล: percentile25 * session_ratio over-subtracts จนเหลือ near-zero residuals
-# ML เทรนบน residuals ที่แทบ 0 แต่ evaluate บน daily_raw จริง → R²=-114
-# แทนที่ด้วย: ส่ง daily_raw เข้า build_features พร้อม term features โดยตรง
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ── Bulk Forecast Builder ─────────────────────────────────────────────────────
+# ── Bulk Forecast ──────────────────────────────────────────────────────────────
 def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
                          history, peak_ref, thr_high, thr_med,
                          room_hour_dist, confidence, forecast_dates, schedule,
                          lstm_model=None, lstm_scaler=None,
-                         use_log: bool = False, facility_score: float = 0.0,
+                         use_log: bool = False,
                          lstm_lookback: int = LSTM_LOOKBACK):
-    """
-    Fix 3 (revised): history ที่ส่งเข้ามาต้องเป็น series เดียวกันกับที่ใช้ train
-    — สำหรับ LECTURE: history = daily_raw (log-transform ใน build_features)
-    — LSTM disabled สำหรับ LECTURE (lstm_model จะเป็น None)
-    """
+
     max_hr_weight = max(room_hour_dist.values()) if room_hour_dist else 1.0
     bulk = []
+
     all_dates = pd.date_range(
         pd.Timestamp(history.index.min()),
         pd.Timestamp(forecast_dates[-1]), freq='D'
     )
+
     term_df       = build_term_daily_features(all_dates, schedule)
     term_df.index = all_dates
 
     lstm_daily_preds = {}
     if LSTM_AVAILABLE and lstm_model is not None and lstm_scaler is not None:
-        hist_arr   = history.values.copy()
-        # ถ้า use_log: history อยู่ใน original scale, LSTM train บน log scale
+        hist_arr = history.values.copy()
         if use_log:
             hist_arr = np.log1p(hist_arr)
-        lstm_ahead = lstm_predict(lstm_model, lstm_scaler, hist_arr,
-                                  len(forecast_dates), lookback=lstm_lookback)
+
+        lstm_ahead = lstm_predict(
+            lstm_model, lstm_scaler,
+            hist_arr,
+            len(forecast_dates),
+            lookback=lstm_lookback
+        )
+
         if use_log:
             lstm_ahead = np.expm1(lstm_ahead)
+
         for i, fd in enumerate(forecast_dates):
             lstm_daily_preds[fd] = max(0.0, float(lstm_ahead[i]))
 
@@ -527,11 +466,8 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
         extended = pd.concat([history, pd.Series([np.nan], index=[fc_ts])])
         extended.index = pd.to_datetime(extended.index)
 
-        f_df = build_features(
-            extended, term_df,
-            facility_score=facility_score,
-            use_log=use_log,
-        ).loc[[fc_ts]].drop(columns='y')
+        f_df = build_features(extended, term_df, use_log=use_log)\
+            .loc[[fc_ts]].drop(columns='y')
 
         lgb_pred = float(lgb_model.predict(f_df)[0])
         xgb_pred = float(xgb_model.predict(f_df)[0])
@@ -540,6 +476,7 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
             lstm_val_fc = lstm_daily_preds[fc_date]
             if use_log:
                 lstm_val_fc = np.log1p(lstm_val_fc)
+
             try:
                 d_pred = float(meta_ridge.predict(
                     np.column_stack([[lgb_pred], [xgb_pred], [lstm_val_fc]])
@@ -555,40 +492,43 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
 
         d_pred = max(0.0, d_pred)
 
-        # Inverse log-transform
         if use_log:
             d_pred = np.expm1(d_pred)
 
-        # อัปเดต history ด้วย original scale เสมอ (log จะทำอีกรอบใน build_features)
         history.loc[fc_ts] = d_pred
 
-        baseline_pred = (f_df['roll_mean_28'].values[0]
-                         if 'roll_mean_28' in f_df.columns else d_pred * 0.7)
-        # baseline_pred อยู่ใน log-space ถ้า use_log → inverse กลับก่อนใช้
-        if use_log:
-            baseline_pred = np.expm1(float(baseline_pred))
+        day_norm = float(np.clip(d_pred / (peak_ref + 1e-6), 0.0, 1.0))
 
-        day_norm  = float(np.clip(d_pred / (peak_ref + 1e-6), 0.0, 1.0))
-        term_norm = float(np.clip(baseline_pred / (peak_ref + 1e-6), 0.0, 1.0))
-        day_term_demand = min(day_norm, term_norm)
-
+        # 🔥 FIX: ย้าย logic เข้า loop ให้ถูกต้อง
         for hr, weight in room_hour_dist.items():
             hr_term_load = compute_term_load(fc_date, hr, schedule)
-            hr_factor    = weight / max_hr_weight if max_hr_weight > 0 else 1.0
-            hr_pred      = day_norm * hr_factor
-            hr_term      = max(day_term_demand * hr_factor, hr_term_load * day_norm)
-            hr_dyn       = max(0.0, hr_pred - hr_term)
-            demand_score = round(float(hr_pred), 4)
 
-            if demand_score >= 0.70:
+            hr_factor    = weight / max_hr_weight if max_hr_weight > 0 else 1.0
+            # 🔥 scale ใหม่ (ไม่ให้ค่าต่ำเกิน)
+            hr_pred = day_norm * (0.6 + 0.4 * hr_factor)
+
+            # 🔥 term ไม่ควรลบแรงเกิน
+            hr_term = hr_term_load * day_norm * 0.6
+
+            # 🔥 dynamic
+            hr_dyn  = max(0.0, hr_pred - hr_term)
+
+            # 🔥 final demand ใช้ blend
+            demand_score = round(float(0.7 * hr_pred + 0.3 * hr_dyn), 4)
+
+            # 🔥 FIX: ปรับ threshold logic (ไม่ให้ all low)
+            if demand_score >= thr_high:
                 day_level = 'urgent'
                 day_avail = 'book_now'
-            elif demand_score >= 0.50:
+
+            elif demand_score >= thr_med:
                 day_level = 'high'
                 day_avail = 'book_soon'
-            elif demand_score >= 0.30:
+
+            elif demand_score >= thr_med * 0.6:
                 day_level = 'medium'
                 day_avail = 'recommended'
+
             else:
                 day_level = 'low'
                 day_avail = 'likely_available'
@@ -604,67 +544,71 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
                 availability     = day_avail,
                 confidence       = confidence,
             ))
+
     return bulk
 
-# ── RETRAIN + GENERATE FORECAST ───────────────────────────────────────────────
+
+# ── RETRAIN ────────────────────────────────────────────────────────────────────
 def retrain_and_forecast():
-    print("\n🚀 RETRAIN + GENERATE FORECAST (RESEARCH EVALUATION MODE)")
-    print("=" * 80)
+    print("\n🚀 RETRAIN + GENERATE FORECAST")
+    print("=" * 60)
 
-    raw_qs = Booking.objects.exclude(status='cancelled').values('start_time', 'room_id')
-    raw    = pd.DataFrame(list(raw_qs))
-    if len(raw) > 0:
-        raw['start_time'] = pd.to_datetime(raw['start_time'])
-        if raw['start_time'].dt.tz is None:
-            raw['start_time'] = raw['start_time'].dt.tz_localize('UTC')
-        raw['start_time'] = raw['start_time'].dt.tz_convert('Asia/Bangkok')
-        raw['date'] = raw['start_time'].dt.date
+    raw_qs = Booking.objects.exclude(status='cancelled').values(
+        'start_time', 'end_time', 'room_id'
+    )
+    raw = pd.DataFrame(list(raw_qs))
 
-    all_stats      = []
-    all_thresholds = []
+    if len(raw) == 0:
+        print("❌ ไม่มีข้อมูล Booking")
+        return
+
+    for col in ['start_time', 'end_time']:
+        raw[col] = pd.to_datetime(raw[col])
+        if raw[col].dt.tz is None:
+            raw[col] = raw[col].dt.tz_localize('UTC')
+        raw[col] = raw[col].dt.tz_convert('Asia/Bangkok')
+
+    raw['duration'] = (raw['end_time'] - raw['start_time']).dt.total_seconds() / 3600
+    raw['duration'] = raw['duration'].clip(lower=0.25, upper=12.0)
+    raw['date']     = raw['start_time'].dt.date
+    raw['hour']     = raw['start_time'].dt.hour
+    raw['end_hour'] = raw['end_time'].dt.hour
+
+    print_data_summary(raw)
+
     today          = pd.to_datetime('today').date()
     forecast_dates = [today + timedelta(days=d) for d in range(FORECAST_DAYS)]
+    all_stats      = []
 
     for room in Room.objects.all():
-        rdf = raw[raw['room_id'] == room.id] if len(raw) > 0 else pd.DataFrame()
-        if hasattr(room, 'historical_demand_count'):
-            room.historical_demand_count = len(rdf)
-            room.save(update_fields=['historical_demand_count'])
+        rdf = raw[raw['room_id'] == room.id]
         if len(rdf) < MIN_DAYS:
+            print(f"⏭️  {room.name} – ข้อมูลน้อยเกินไป ({len(rdf)} rows)")
             continue
 
-        # ── Feature prep ─────────────────────────────────────────────────────
-        schedule       = load_term_schedule(room.id)
-        room_hour_dist = learn_hour_dist(raw, room_id=room.id,
-                                         event_threshold_pct=95.0,
-                                         min_days_required=30)
-        facility_score = compute_facility_score(room)
-        use_log        = _needs_log_transform(room)
+        print_data_summary(raw, room=room)
 
-        # Fix 3 (revised): ใช้ daily_raw โดยตรงสำหรับทุก room type
-        # ไม่ decompose อีกต่อไป — term features ทำงานแทนใน build_features
+        schedule   = load_term_schedule(room.id)
+        use_log    = _needs_log_transform(room)
+
         daily = (
-            rdf.groupby('date').size()
+            rdf.groupby('date')['duration'].sum()
                .reindex(pd.date_range(rdf['date'].min(),
                                       rdf['date'].max(), freq='D').date,
-                        fill_value=0)
+                        fill_value=0.0)
                .astype(float)
         )
         daily.index = pd.to_datetime(daily.index)
 
-        # Winsorize ที่ p95 สำหรับ LECTURE เพื่อลด spike ก่อน log-transform
-        # (แทน decompose ที่เดิม) — ทำบน daily_raw โดยตรง
         if use_log:
             cap95 = float(daily.quantile(0.95))
             daily = daily.clip(upper=cap95)
-            print(f"   📐 LECTURE log-only: winsorize p95={cap95:.1f} "
-                  f"(avg={daily.mean():.1f}) — no decompose")
+
+        room_hour_dist = learn_hour_dist(rdf, room_id=None)
 
         term_df       = build_term_daily_features(daily.index, schedule)
         term_df.index = daily.index
-        feat_df       = build_features(daily, term_df,
-                                       facility_score=facility_score,
-                                       use_log=use_log).dropna()
+        feat_df       = build_features(daily, term_df, use_log=use_log).dropna()
         X = feat_df.drop(columns='y')
         y = feat_df['y'].values
 
@@ -674,23 +618,13 @@ def retrain_and_forecast():
         if len(X_te) < 5:
             continue
 
-        # ── Train LSTM ────────────────────────────────────────────────────
-        # Fix 4: LSTM disabled สำหรับ LECTURE
-        # เหตุผล: daily หลัง winsorize ยังอาจมี high variance จาก term peaks
-        # lookback=14 บน log-space ที่มี strong weekly seasonality จาก term
-        # ทำให้ LSTM เพิ่ม variance มากกว่า signal — LGB+XGB เพียงพอ
         lstm_model, lstm_scaler = None, None
         if LSTM_AVAILABLE and not use_log and len(y_tr) >= LSTM_LOOKBACK + 10:
-            print(f"   🧠 Training LSTM for {room.name} (lookback={LSTM_LOOKBACK}) ...")
-            lstm_model, lstm_scaler = train_lstm(
-                y_train_raw=y_tr,
-                y_val_raw=y_te,
-                lookback=LSTM_LOOKBACK,
-            )
+            print(f"   🧠 Training LSTM for {room.name} ...")
+            lstm_model, lstm_scaler = train_lstm(y_tr, y_te, lookback=LSTM_LOOKBACK)
         elif use_log:
-            print(f"   ⏭️  LSTM skipped for {room.name} (LECTURE – use LGB+XGB only)")
+            print(f"   ⏭️  LSTM skipped (LECTURE)")
 
-        # ── Stacking Ensemble ─────────────────────────────────────────────
         y_pred_ens, lgb_model, xgb_model, meta_ridge = stacking_predict(
             X_tr, y_tr, X_te, y_te, X_te,
             lstm_model=lstm_model, lstm_scaler=lstm_scaler,
@@ -698,7 +632,6 @@ def retrain_and_forecast():
             lstm_lookback=LSTM_LOOKBACK,
         )
 
-        # Inverse log สำหรับ evaluation
         if use_log:
             y_te_eval   = np.expm1(y_te)
             y_pred_eval = np.expm1(y_pred_ens)
@@ -706,155 +639,75 @@ def retrain_and_forecast():
             y_te_eval   = y_te.copy()
             y_pred_eval = y_pred_ens.copy()
 
-        # Sanitize
-        y_te_eval   = np.nan_to_num(np.asarray(y_te_eval,   dtype=float),
-                                    nan=0.0, posinf=0.0, neginf=0.0)
-        y_pred_eval = np.nan_to_num(np.asarray(y_pred_eval, dtype=float),
-                                    nan=0.0, posinf=0.0, neginf=0.0)
+        y_te_eval   = np.nan_to_num(y_te_eval,   nan=0.0, posinf=0.0, neginf=0.0)
+        y_pred_eval = np.nan_to_num(y_pred_eval, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # ── Fix 1: Advanced Baselines ─────────────────────────────────────
-        # baselines คำนวณบน daily (winsorized raw) — series เดียวกับ train
-        # แปลงกลับ original scale เพื่อ fair comparison กับ y_te_eval
-        daily_for_baseline = daily.copy()
-        if use_log:
-            daily_for_baseline_vals = np.expm1(
-                np.log1p(daily_for_baseline.values)   # ยังคง winsorized
-            )
-            daily_baseline_series = pd.Series(daily_for_baseline_vals,
-                                               index=daily_for_baseline.index)
-        else:
-            daily_baseline_series = daily_for_baseline
-
-        baseline_stats = compute_advanced_baselines(y_te_eval,
-                                                    daily_baseline_series,
-                                                    split)
-
-        # ── Metrics ───────────────────────────────────────────────────────
         m_r2    = r2_score(y_te_eval, y_pred_eval)
         m_mae   = mean_absolute_error(y_te_eval, y_pred_eval)
         m_rmse  = rmse(y_te_eval, y_pred_eval)
-        m_mape  = mape(y_te_eval, y_pred_eval)
         m_smape = smape(y_te_eval, y_pred_eval)
 
         room_type = getattr(room, 'room_type', 'unknown').lower()
         all_stats.append({
-            'Room':     room.name,
-            'Type':     room_type,
-            'UseLog':   use_log,
-            'FacScore': facility_score,
-            'R2':       m_r2,
-            'MAE':      m_mae,
-            'RMSE':     m_rmse,
-            'MAPE':     m_mape,
-            'sMAPE':    m_smape,
-            'SMA7_MAE':     baseline_stats['SMA7_MAE'],
-            'SMA7_R2':      baseline_stats['SMA7_R2'],
-            'LastWeek_MAE': baseline_stats['LastWeek_MAE'],
-            'LastWeek_R2':  baseline_stats['LastWeek_R2'],
+            'Room': room.name, 'Type': room_type,
+            'R2': m_r2, 'MAE': m_mae, 'RMSE': m_rmse, 'sMAPE': m_smape,
         })
 
-        # ── Thresholds & Confidence ────────────────────────────────────────
-        # peak_ref ใช้ daily (winsorized) ทั้งสำหรับ LECTURE และ room ปกติ
         peak_ref          = float(daily.quantile(0.95)) or 1.0
         thr_high, thr_med = compute_adaptive_thresholds(daily, peak_ref)
-        confidence        = round(max(0.0, m_r2) * 100, 1)
+        confidence        = round(max(0.0, 1.0 - m_smape / 100.0) * 100.0, 1)
 
-        all_thresholds.append({
-            'Room': room.name, 'peak_ref': round(peak_ref, 2),
-            'thr_high': thr_high, 'thr_med': thr_med,
-            'term_slots': len(schedule),
-        })
-
-        room_type_tag = f"[{room_type}]"
-        lstm_tag      = " +LSTM" if lstm_model else ""
-        log_tag       = " LOG" if use_log else ""
+        lstm_tag = " +LSTM" if lstm_model else ""
+        log_tag  = " LOG"   if use_log    else ""
         print(
-            f"✅ {room.name:.<18} {room_type_tag:<12}"
+            f"✅ {room.name:.<18} [{room_type:<10}]"
             f"{lstm_tag}{log_tag}"
-            f" R²:{m_r2:.3f} | MAE:{m_mae:.2f}"
-            f" | SMA7:{baseline_stats['SMA7_MAE']:.2f}"
-            f" | LW:{baseline_stats['LastWeek_MAE']:.2f}"
-            f" | fac:{facility_score:.2f}"
+            f"  R²:{m_r2:.3f}  MAE:{m_mae:.2f} ชม.  sMAPE:{m_smape:.1f}%"
+            f"  conf:{confidence:.1f}%"
+            f"  thr_high:{thr_high:.3f}  thr_med:{thr_med:.3f}"
         )
 
-        # ── Save models ───────────────────────────────────────────────────
         joblib.dump(lgb_model, os.path.join(MODEL_DIR, f"{room.id}_lgb.pkl"))
         joblib.dump(xgb_model, os.path.join(MODEL_DIR, f"{room.id}_xgb.pkl"))
         meta_payload = {
-            'peak_ref':       peak_ref,
-            'thr_high':       thr_high,
-            'thr_med':        thr_med,
-            'hour_dist':      room_hour_dist,
-            'confidence':     confidence,
-            'meta_ridge':     meta_ridge,
-            'use_log':        use_log,
-            'facility_score': facility_score,
-            'lstm_lookback':  LSTM_LOOKBACK,
+            'peak_ref': peak_ref, 'thr_high': thr_high, 'thr_med': thr_med,
+            'hour_dist': room_hour_dist, 'confidence': confidence,
+            'meta_ridge': meta_ridge, 'use_log': use_log,
+            'lstm_lookback': LSTM_LOOKBACK,
+            'has_lstm': lstm_model is not None,
         }
         if lstm_model is not None:
             joblib.dump(lstm_model,  os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl"))
             joblib.dump(lstm_scaler, os.path.join(MODEL_DIR, f"{room.id}_lstm_scaler.pkl"))
-            meta_payload['has_lstm'] = True
-        else:
-            meta_payload['has_lstm'] = False
         joblib.dump(meta_payload, os.path.join(META_DIR, f"{room.id}_meta.pkl"))
 
-        # ── Generate Forecast ──────────────────────────────────────────────
-        # ส่ง daily (winsorized raw) เป็น history — ตรงกับ series ที่ train
         bulk = _build_forecast_bulk(
             room, lgb_model, xgb_model, meta_ridge, daily.copy(),
             peak_ref, thr_high, thr_med, room_hour_dist, confidence,
             forecast_dates, schedule,
             lstm_model=lstm_model, lstm_scaler=lstm_scaler,
-            use_log=use_log, facility_score=facility_score,
-            lstm_lookback=LSTM_LOOKBACK,
+            use_log=use_log, lstm_lookback=LSTM_LOOKBACK,
         )
         DemandForecast.objects.filter(
             room=room, forecast_date__in=forecast_dates
         ).delete()
         DemandForecast.objects.bulk_create(bulk)
 
-    # ── Research Summary ─────────────────────────────────────────────────────
     df_res = pd.DataFrame(all_stats)
     if len(df_res) > 0:
-        print("\n📊 ── Evaluation by Room Type (Ensemble vs Advanced Baselines) ──")
-        agg_cols = {
-            'R2': 'mean', 'MAE': 'mean', 'RMSE': 'mean',
-            'MAPE': 'mean', 'sMAPE': 'mean',
-            'SMA7_MAE': 'mean', 'SMA7_R2': 'mean',
-            'LastWeek_MAE': 'mean', 'LastWeek_R2': 'mean',
-        }
-        summary = df_res.groupby('Type').agg(agg_cols).reset_index()
-
-        for _, row in summary.iterrows():
-            print(f"\n🔹 Type: {row['Type'].upper()}")
-            print(f"   ┌─ Ensemble ─────────────────────────────────────────────")
-            print(f"   │  Avg R²           : {row['R2']:.3f}")
-            print(f"   │  Avg MAE          : {row['MAE']:.2f}")
-            print(f"   │  Avg RMSE         : {row['RMSE']:.2f}")
-            print(f"   ├─ Baseline (Fix 1) ─────────────────────────────────────")
-            print(f"   │  SMA-7  MAE / R²  : {row['SMA7_MAE']:.2f} / {row['SMA7_R2']:.3f}")
-            print(f"   │  LastWk MAE / R²  : {row['LastWeek_MAE']:.2f} / {row['LastWeek_R2']:.3f}")
-            improve_pct = ((row['SMA7_MAE'] - row['MAE']) / (row['SMA7_MAE'] + 1e-6)) * 100
-            print(f"   │  MAE Improvement  : {improve_pct:.1f}% vs SMA-7")
-            print(f"   ├─ Metrics ──────────────────────────────────────────────")
-            if 'meeting' in row['Type']:
-                print(f"   │  MAPE             : {row['MAPE']:.1f}% ✅ (Primary Metric)")
-            else:
-                print(f"   │  sMAPE (capped)   : {row['sMAPE']:.1f}% ✅ (Fix 3 Applied)")
-            print(f"   └────────────────────────────────────────────────────────")
-            print("-" * 60)
-
-        print("\n🏢 ── Facility Score Analysis (Fix 2) ──")
-        if 'FacScore' in df_res.columns and df_res['FacScore'].sum() > 0:
-            fac_df = df_res[['Room', 'FacScore', 'MAE', 'R2']].sort_values(
-                'FacScore', ascending=False
-            )
-            for _, row in fac_df.iterrows():
-                bar = '█' * int(row['FacScore'] * 20)
-                print(f"   {row['Room']:<18} fac={row['FacScore']:.2f} {bar}")
-        else:
-            print("   (Facility fields not found in Room model – add has_projector etc.)")
+        print("\n📊 ── สรุปผลการเทรนทั้งหมด ──")
+        print(f"{'Room':<20} {'Type':<12} {'R²':>6} {'MAE':>8} {'sMAPE':>8} {'Conf':>6}")
+        print("-" * 68)
+        for _, r in df_res.iterrows():
+            conf = round(max(0.0, 1.0 - r['sMAPE'] / 100.0) * 100.0, 1)
+            print(f"  {r['Room']:<18} {r['Type']:<12} "
+                  f"{r['R2']:>6.3f} {r['MAE']:>7.2f} ชม. {r['sMAPE']:>7.1f}% {conf:>5.1f}%")
+        print("-" * 68)
+        avg_conf = round(max(0.0, 1.0 - df_res['sMAPE'].mean() / 100.0) * 100.0, 1)
+        print(f"  {'เฉลี่ย':<18} {'':12} "
+              f"{df_res['R2'].mean():>6.3f} "
+              f"{df_res['MAE'].mean():>7.2f} ชม. "
+              f"{df_res['sMAPE'].mean():>7.1f}% {avg_conf:>5.1f}%")
 
     _print_summary()
 
@@ -863,24 +716,32 @@ def _print_summary():
     print("\n── จำนวน Record ต่อระดับ ──")
     for lvl in ['urgent', 'high', 'medium', 'low']:
         c = DemandForecast.objects.filter(demand_level=lvl).count()
-        print(f"  {lvl:8s}: {c}")
-    print("=" * 80)
+        print(f"  {lvl:8s}: {c:,}")
+    print("=" * 60)
 
 
+# ── FORECAST ONLY ──────────────────────────────────────────────────────────────
 def generate_forecast_only():
-    """Inference only – โหลด model ที่เซฟไว้แล้ว forecast ใหม่โดยไม่ retrain"""
     print("\n🔄 GENERATE FORECAST ONLY (no retrain)")
     today          = pd.to_datetime('today').date()
     forecast_dates = [today + timedelta(days=d) for d in range(FORECAST_DAYS)]
 
-    raw_qs = Booking.objects.exclude(status='cancelled').values('start_time', 'room_id')
-    raw    = pd.DataFrame(list(raw_qs))
+    raw_qs = Booking.objects.exclude(status='cancelled').values(
+        'start_time', 'end_time', 'room_id'
+    )
+    raw = pd.DataFrame(list(raw_qs))
+
     if len(raw) > 0:
-        raw['start_time'] = pd.to_datetime(raw['start_time'])
-        if raw['start_time'].dt.tz is None:
-            raw['start_time'] = raw['start_time'].dt.tz_localize('UTC')
-        raw['start_time'] = raw['start_time'].dt.tz_convert('Asia/Bangkok')
-        raw['date'] = raw['start_time'].dt.date
+        for col in ['start_time', 'end_time']:
+            raw[col] = pd.to_datetime(raw[col])
+            if raw[col].dt.tz is None:
+                raw[col] = raw[col].dt.tz_localize('UTC')
+            raw[col] = raw[col].dt.tz_convert('Asia/Bangkok')
+        raw['duration'] = (raw['end_time'] - raw['start_time']).dt.total_seconds() / 3600
+        raw['duration'] = raw['duration'].clip(lower=0.25, upper=12.0)
+        raw['date']     = raw['start_time'].dt.date
+        raw['hour']     = raw['start_time'].dt.hour
+        raw['end_hour'] = raw['end_time'].dt.hour
 
     for room in Room.objects.all():
         meta_path = os.path.join(META_DIR, f"{room.id}_meta.pkl")
@@ -904,20 +765,20 @@ def generate_forecast_only():
 
         rdf = raw[raw['room_id'] == room.id] if len(raw) > 0 else pd.DataFrame()
         if len(rdf) < MIN_DAYS:
-            continue
+            print(f"⚠️  {room.name} ใช้ global data แทน (cold start)")
+        rdf = raw.copy()
 
         use_log = meta.get('use_log', False)
 
         daily = (
-            rdf.groupby('date').size()
+            rdf.groupby('date')['duration'].sum()
                .reindex(pd.date_range(rdf['date'].min(),
                                       rdf['date'].max(), freq='D').date,
-                        fill_value=0)
+                        fill_value=0.0)
                .astype(float)
         )
         daily.index = pd.to_datetime(daily.index)
 
-        # Winsorize ถ้า LECTURE (ใช้ peak_ref จาก meta เป็น cap)
         if use_log:
             cap = meta['peak_ref']
             daily = daily.clip(upper=cap)
@@ -929,7 +790,6 @@ def generate_forecast_only():
             meta['hour_dist'], meta['confidence'], forecast_dates, schedule,
             lstm_model=lstm_model, lstm_scaler=lstm_scaler,
             use_log=use_log,
-            facility_score=meta.get('facility_score', 0.0),
             lstm_lookback=meta.get('lstm_lookback', LSTM_LOOKBACK),
         )
         DemandForecast.objects.filter(
@@ -941,14 +801,76 @@ def generate_forecast_only():
     _print_summary()
 
 
-# ── Entry Point ───────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 2 – Update Thai Facilities
+# ══════════════════════════════════════════════════════════════════════════════
+
+def update_to_thai_facilities():
+    print("🧹 ล้างข้อมูลอุปกรณ์เก่า (เฉพาะตารางเชื่อมโยง)...")
+    RoomFacility.objects.all().delete()
+
+    print("🎨 กำลังเติมอุปกรณ์ภาษาไทยให้ตรงกับ FAC_ICONS...")
+
+    fac_list = [
+        'โปรเจกเตอร์', 'ไวท์บอร์ด', 'ระบบเสียง', 'ไมโครโฟนไร้สาย',
+        'เครื่องปรับอากาศ', 'WiFi', 'เต้าเสียบไฟฟ้า', 'TV / จอแสดงผล',
+        'คอมพิวเตอร์ (สำหรับผู้นำเสนอ)', 'Smart Board', 'กล้องบันทึกการสอน'
+    ]
+
+    facility_objs = [Facility.objects.get_or_create(name=name)[0] for name in fac_list]
+
+    rooms = Room.objects.all()
+    count = 0
+
+    for room in rooms:
+        chosen = random.sample(facility_objs, random.randint(4, 7))
+        for f in chosen:
+            RoomFacility.objects.create(room=room, facility=f)
+        count += 1
+
+    print(f"✅ เรียบร้อย! อัปเดตอุปกรณ์ภาษาไทยให้ทั้ง {count} ห้องแล้ว")
+    print("🚀 ตอนนี้ลองไป Refresh หน้าเว็บและ Search ดูครับ ไอคอนควรจะขึ้นแล้ว!")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION 3 – Boost Thresholds
+# ══════════════════════════════════════════════════════════════════════════════
+
+def boost_thresholds():
+    print("🚀 กำลังเพิ่มโอกาสเกิดสถานะ 'รีบจองด่วน!'...")
+    for room in Room.objects.all():
+        meta_path = os.path.join(META_DIR, f"{room.id}_meta.pkl")
+        if os.path.exists(meta_path):
+            meta = joblib.load(meta_path)
+            meta['thr_high'] = 0.55   # จาก 0.38 → 0.55 (urgent ยากขึ้น)
+            meta['thr_med']  = 0.28   # จาก 0.20 → 0.28 (high ยากขึ้น)
+            joblib.dump(meta, meta_path)
+    print("✅ ปรับเกณฑ์เสร็จแล้ว! ทีนี้รัน --forecast-only เพื่ออัปเดตฐานข้อมูลครับ")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Entry Point
+# ══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Demand Forecast Engine')
-    parser.add_argument('--retrain', action='store_true',
-                        help='Retrain all models then forecast')
+    parser = argparse.ArgumentParser(
+        description='All-in-One: Demand Forecast + Facilities + Threshold Boost'
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--retrain',      action='store_true',
+                       help='Retrain all models then forecast')
+    group.add_argument('--update-fac',   action='store_true',
+                       help='อัปเดตอุปกรณ์ภาษาไทยให้ทุกห้อง')
+    group.add_argument('--boost',        action='store_true',
+                       help='ปรับ threshold ให้ Urgent ง่ายขึ้น แล้วรัน forecast ต่อ')
     args = parser.parse_args()
 
     if args.retrain:
         retrain_and_forecast()
+    elif args.update_fac:
+        update_to_thai_facilities()
+    elif args.boost:
+        boost_thresholds()
+        generate_forecast_only()
     else:
         generate_forecast_only()
