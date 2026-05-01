@@ -115,7 +115,9 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         available = Room.objects.filter(
             is_active=True, status='available',
             capacity__gte=d['attendees'],
-        ).exclude(id__in=blocked).select_related('building').prefetch_related('room_facilities__facility')
+        ).exclude(id__in=blocked)\
+        .select_related('building')\
+        .prefetch_related('room_facilities__facility', 'forecasts')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -153,10 +155,13 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         available = Room.objects.filter(
             is_active=True, status='available',
             capacity__gte=d['attendees'],
-        ).exclude(id__in=booked_term).select_related('building').prefetch_related('room_facilities__facility')
+        ).exclude(id__in=booked_term)\
+        .select_related('building')\
+        .prefetch_related('room_facilities__facility', 'forecasts')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
+
         if d.get('building_code'):
             preferred = list(available.filter(building__code=d['building_code']).order_by('capacity'))
             others    = list(available.exclude(building__code=d['building_code']).order_by('capacity'))
@@ -202,18 +207,20 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         level_order = {'low': 0, 'medium': 1, 'high': 2, 'urgent': 3}
 
         for room in rooms:
-            forecasts = room.forecasts.filter(
-                forecast_date=target_date,
-                hour__gte=start_hour,
-                hour__lt=check_end_hour
-            )
+            # ใช้ prefetch cache แทนการ query ใหม่
+            all_forecasts = list(room.forecasts.all())
+            forecasts = [
+                f for f in all_forecasts
+                if f.forecast_date == target_date
+                and start_hour <= f.hour < check_end_hour
+            ]
 
             room_data = RoomSerializer(room, context={'request': request}).data
             room_data['building_name'] = room.building.name if room.building else "ไม่ระบุอาคาร"
             room_data['historical_demand_count'] = getattr(room, 'historical_demand_count', 0)
             room_data['booking_type'] = booking_type
 
-            if forecasts.exists():
+            if forecasts:
                 count    = len(forecasts)
                 avg_pred = sum(f.predicted_demand for f in forecasts) / count
                 avg_term = sum(f.term_demand for f in forecasts) / count

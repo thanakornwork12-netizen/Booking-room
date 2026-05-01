@@ -5,5 +5,6 @@ class BookingConfig(AppConfig):
     name = 'booking'
 
     def ready(self):
+        import booking.signals  # ✅ เพิ่มบรรทัดนี้
         from .scheduler import start
         start()

@@ -3,6 +3,7 @@
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.core.mail import send_mail
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
@@ -31,6 +32,14 @@ def broadcast_booking_update(sender, instance, created, **kwargs):
         }
     )
 
+    # ส่งอีเมลเฉพาะตอนสร้างการจองใหม่
+    if created:
+        send_booking_confirmation_email(instance)
+
+    # ส่งอีเมลเมื่อสถานะเปลี่ยน (ยกเลิก)
+    elif instance.status == 'cancelled':
+        send_booking_cancelled_email(instance)
+
 
 @receiver(post_save, sender=Notification)
 def push_notification(sender, instance, created, **kwargs):
@@ -54,3 +63,79 @@ def push_notification(sender, instance, created, **kwargs):
             'booking_id': instance.booking.id if instance.booking else None,
         }
     )
+
+
+# ─── Email Functions ───────────────────────────────────────────
+
+def send_booking_confirmation_email(instance):
+    """ส่งอีเมลยืนยันเมื่อจองสำเร็จ"""
+    user_email = instance.user.email
+    if not user_email:
+        return
+
+    try:
+        send_mail(
+            subject=f'✅ ยืนยันการจองห้อง {instance.room.name}',
+            message=f'''
+สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
+
+การจองห้องของคุณสำเร็จแล้ว 🎉
+
+รายละเอียดการจอง
+─────────────────────────
+ห้อง      : {instance.room.name}
+อาคาร     : {instance.room.building.name}
+หัวข้อ    : {instance.title}
+วันที่     : {instance.start_time.strftime("%d/%m/%Y")}
+เวลาเริ่ม  : {instance.start_time.strftime("%H:%M")} น.
+เวลาสิ้นสุด: {instance.end_time.strftime("%H:%M")} น.
+ผู้เข้าร่วม: {instance.attendees} คน
+─────────────────────────
+
+หากไม่สามารถมาใช้งานได้ กรุณายกเลิกการจองในระบบ
+เพื่อให้ผู้อื่นสามารถใช้ห้องได้
+
+ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+            ''',
+            from_email='nookkup47@gmail.com',
+            recipient_list=[user_email],
+            fail_silently=True,  # ถ้าส่งไม่ได้ไม่ให้ระบบพัง
+        )
+    except Exception as e:
+        print(f'❌ ส่งอีเมลยืนยันไม่สำเร็จ: {e}')
+
+
+def send_booking_cancelled_email(instance):
+    """ส่งอีเมลเมื่อการจองถูกยกเลิก"""
+    user_email = instance.user.email
+    if not user_email:
+        return
+
+    try:
+        send_mail(
+            subject=f'❌ การจองห้อง {instance.room.name} ถูกยกเลิกแล้ว',
+            message=f'''
+สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
+
+การจองห้องของคุณถูกยกเลิกแล้ว
+
+รายละเอียดการจองที่ถูกยกเลิก
+─────────────────────────
+ห้อง      : {instance.room.name}
+อาคาร     : {instance.room.building.name}
+หัวข้อ    : {instance.title}
+วันที่     : {instance.start_time.strftime("%d/%m/%Y")}
+เวลาเริ่ม  : {instance.start_time.strftime("%H:%M")} น.
+เวลาสิ้นสุด: {instance.end_time.strftime("%H:%M")} น.
+─────────────────────────
+
+หากต้องการจองใหม่ สามารถเข้าระบบได้เลย
+
+ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+            ''',
+            from_email='nookkup47@gmail.com',
+            recipient_list=[user_email],
+            fail_silently=True,
+        )
+    except Exception as e:
+        print(f'❌ ส่งอีเมลยกเลิกไม่สำเร็จ: {e}')

@@ -92,16 +92,16 @@ const SUMMARY_TIERS = [
 
 // ─── Equipment Presets ───────────────────────────────────────────────────────
 const EQUIPMENT_PRESETS = [
-  { key: 'projector',   label: 'โปรเจกเตอร์',  icon: '📽️',  keywords: ['โปรเจกเตอร์'] },
-  { key: 'whiteboard',  label: 'ไวท์บอร์ด',    icon: '📋',  keywords: ['ไวท์บอร์ด', 'กระดานไวท์บอร์ด'] },
-  { key: 'sound',       label: 'ระบบเสียง',     icon: '🔊',  keywords: ['ระบบเสียง', 'ลำโพง', 'เสียง'] },
-  { key: 'mic',         label: 'ไมโครโฟน',      icon: '🎤',  keywords: ['ไมโครโฟน', 'ไมค์', 'ไมโคร'] },
-  { key: 'ac',          label: 'แอร์',           icon: '❄️',  keywords: ['ปรับอากาศ', 'แอร์'] },
-  { key: 'tv',          label: 'TV/จอแสดงผล',   icon: '📺',  keywords: ['TV', 'จอแสดงผล', 'จอรับภาพ'] },
-  { key: 'computer',    label: 'คอมพิวเตอร์',   icon: '💻',  keywords: ['คอมพิวเตอร์'] },
-  { key: 'camera',      label: 'กล้องวิดีโอ',   icon: '📹',  keywords: ['กล้อง'] },
-  { key: 'smartboard',  label: 'Smart Board',   icon: '🖊️', keywords: ['Smart Board', 'กระดาน Smart'] },
-  { key: 'wifi',        label: 'WiFi',           icon: '📶',  keywords: ['WiFi', 'wifi'] },
+  { key: 'projector',   label: 'โปรเจกเตอร์',  icon: '📽️', keywords: ['โปรเจกเตอร์'] },
+  { key: 'whiteboard',  label: 'ไวท์บอร์ด',    icon: '📋', keywords: ['ไวท์บอร์ด', 'กระดานไวท์บอร์ด'] },
+  { key: 'sound',       label: 'ระบบเสียง',     icon: '🔊', keywords: ['ระบบเสียง', 'ลำโพง', 'เสียง'] },
+  { key: 'mic',         label: 'ไมโครโฟน',      icon: '🎤', keywords: ['ไมโครโฟน', 'ไมค์', 'ไมโคร', 'ไมโครโฟนไร้สาย'] },
+  { key: 'ac',          label: 'แอร์',           icon: '❄️', keywords: ['ปรับอากาศ', 'แอร์', 'เครื่องปรับอากาศ'] },
+  { key: 'tv',          label: 'TV/จอแสดงผล',   icon: '📺', keywords: ['TV', 'จอแสดงผล', 'จอรับภาพ', 'TV / จอแสดงผล'] },
+  { key: 'computer',    label: 'คอมพิวเตอร์',   icon: '💻', keywords: ['คอมพิวเตอร์'] },
+  { key: 'camera',      label: 'กล้องวิดีโอ',   icon: '📹', keywords: ['กล้อง', 'กล้องบันทึกการสอน', 'กล้องวิดีโอคอนเฟอเรนซ์'] },
+  { key: 'smartboard',  label: 'Smart Board',   icon: '🖊️', keywords: ['Smart Board', 'กระดาน Smart', 'Smart'] },
+  { key: 'wifi',        label: 'WiFi',           icon: '📶', keywords: ['WiFi', 'wifi'] },
 ]
 
 // ─── Facility Icons ──────────────────────────────────────────────────────────
@@ -447,32 +447,15 @@ function CheckInReminder({ startTime, compact = false }) {
           <AlertTriangle size={18} color="#fff" strokeWidth={2.5} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-amber-900 font-extrabold text-sm leading-snug mb-1">⚠️ อย่าลืม Check-in ก่อนเริ่ม!</p>
+          <p className="text-amber-900 font-extrabold text-sm leading-snug mb-1">⚠️ ในกรณีที่ไม่สามารถเข้าใช้งานห้องตามเวลาที่จองไว้ ขอความกรุณาดำเนินการยกเลิกการจองล่วงหน้า เพื่อให้ผู้อื่นสามารถใช้บริการต่อได้ ขอบคุณค่ะ/ครับ!</p>
           <p className="text-amber-800 text-xs leading-relaxed">
-            กดปุ่ม <span className="font-bold bg-amber-200 px-1.5 py-0.5 rounded-md">Check-in</span> ภายใน{' '}
-            <span className="font-bold text-orange-700">15 นาที</span> หลังเวลา{' '}
-            <span className="font-bold text-orange-700">{startTime} น.</span> มิฉะนั้น
-            ระบบจะ <span className="font-bold text-red-600">ยกเลิกการจองอัตโนมัติ</span>
+            
           </p>
-          <div className={`mt-2.5 flex items-center gap-3 text-xs text-amber-700 font-semibold flex-wrap`}>
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-4 rounded-full bg-green-500 inline-flex items-center justify-center text-white" style={{fontSize:9}}>✓</span>
-              จองสำเร็จ
-            </span>
-            <span className="text-amber-300">→</span>
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-4 rounded-full bg-amber-400 inline-flex items-center justify-center text-white" style={{fontSize:9}}>!</span>
-              Check-in ภายใน 15 นาที
-            </span>
-            <span className="text-amber-300">→</span>
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-4 rounded-full bg-blue-600 inline-flex items-center justify-center text-white" style={{fontSize:9}}>✓</span>
-              ใช้ห้องได้เลย
-            </span>
+          
           </div>
         </div>
       </div>
-    </div>
+   
   )
 }
 
@@ -1460,107 +1443,113 @@ export default function SearchPage() {
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
-  const handleSearch = async () => {
-    if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
-    if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
-    if (bookingType === 'term' && !termStart) { setError('กรุณาเลือกวันเริ่มเทอม'); return }
-    if (bookingType === 'term' && !termEnd) { setError('กรุณาเลือกวันสิ้นสุดเทอม'); return }
-    if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
+ const handleSearch = async () => {
+  if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
+  if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
+  if (bookingType === 'term' && !termStart) { setError('กรุณาเลือกวันเริ่มเทอม'); return }
+  if (bookingType === 'term' && !termEnd) { setError('กรุณาเลือกวันสิ้นสุดเทอม'); return }
+  if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
 
-    setError(''); setLoading(true)
-    try {
-      const payload = {
-        attendees,
+  setError(''); setLoading(true)
+  try {
+    const payload = {
+      attendees,
+      start_time: startTime,
+      end_time: endTime,
+      building_code: building || undefined,
+      booking_type: bookingType === 'term' ? 'term' : 'dynamic',
+      ...(bookingType === 'term'
+        ? {
+            day_of_week: dayOfWeek,
+            term_start: termStart,
+            term_end: termEnd,
+            term_name: termName || 'ภาคเรียนที่ 1/2568',
+          }
+        : { date }
+      ),
+    }
+
+    const res = await api.post('/rooms/search/', payload)
+    console.log('ห้องแรกเต็มๆ:', JSON.stringify(res.data[0], null, 2))
+    console.log('ผลลัพธ์:', res.data)
+    console.log('facilities ห้องแรก:', res.data[0]?.facilities)
+    console.log('จำนวนห้องก่อนกรอง:', res.data.length)
+
+    let filtered = res.data.filter(r =>
+      r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER
+    )
+
+    if (bookingType === 'term') {
+      filtered = filtered.filter(r => isClassroomType(r))
+    }
+
+    if (selectedEquipments.length > 0) {
+      filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments))
+    }
+
+    setRooms(filtered)
+    setStep(2)
+  } catch (err) {
+    console.log('error full:', err)
+    console.log('error message:', err.message)
+    setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+  } finally {
+    setLoading(false)
+  }
+}
+
+const handleBook = async () => {
+  if (!selectedRoom) {
+    setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
+    return
+  }
+
+  setBookingLoading(true)
+  setError('')
+
+  try {
+    let response
+
+    if (bookingType === 'term') {
+      const termPayload = {
+        room: selectedRoom.id,
+        subject_name: title,
+        subject_code: 'N/A',
+        attendees: parseInt(attendees),
+        day_of_week: dayOfWeek,
         start_time: startTime,
         end_time: endTime,
-        building_code: building || undefined,
-        booking_type: bookingType === 'term' ? 'term' : 'dynamic',
-        ...(bookingType === 'term'
-          ? {
-              day_of_week: dayOfWeek,
-              term_start: termStart,
-              term_end: termEnd,
-              term_name: termName || 'ภาคเรียนที่ 1/2568',
-            }
-          : { date }
-        ),
+        term_start: termStart,
+        term_end: termEnd,
+        term_name: termName,
+        note: '',
       }
-      const res = await api.post('/rooms/search/', payload)
-
-      let filtered = res.data.filter(r =>
-        r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER
-      )
-
-      if (bookingType === 'term') {
-        filtered = filtered.filter(r => isClassroomType(r))
+      response = await api.post('term-bookings/', termPayload)
+    } else {
+      const dynamicPayload = {
+        room: selectedRoom.id,
+        title: title,
+        attendees: parseInt(attendees),
+        start_time: `${date}T${startTime}:00`,
+        end_time: `${date}T${endTime}:00`,
+        note: '',
       }
-
-      // ── กรองตามอุปกรณ์ที่ผู้ใช้เลือก (ต้องมีครบ ไม่ต้องมีแค่นั้น) ──
-      if (selectedEquipments.length > 0) {
-        filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments))
-      }
-
-      setRooms(filtered)
-      setStep(2)
-    } catch {
-      setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
-    } finally {
-      setLoading(false)
+      response = await api.post('bookings/', dynamicPayload)
     }
+
+    if (response.status === 201 || response.status === 200) {
+      setSuccess(true)
+    } else {
+      setError('จองไม่สำเร็จ กรุณาลองใหม่')
+    }
+  } catch (err) {
+    const errorData = err.response?.data
+    const msg = errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
+    setError(msg)
+  } finally {
+    setBookingLoading(false)
   }
-
-  const handleBook = async () => {
-    if (!selectedRoom) {
-      setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
-      return
-    }
-
-    setBookingLoading(true)
-    setError('')
-
-    try {
-      let response
-
-      if (bookingType === 'term') {
-        const termPayload = {
-          room: selectedRoom.id,
-          subject_name: title,
-          subject_code: 'N/A',
-          attendees: parseInt(attendees),
-          day_of_week: dayOfWeek,
-          start_time: startTime,
-          end_time: endTime,
-          term_start: termStart,
-          term_end: termEnd,
-          term_name: termName,
-          note: '',
-        }
-        response = await api.post('term-bookings/', termPayload)
-      } else {
-        const dynamicPayload = {
-          room: selectedRoom.id,
-          title: title,
-          attendees: parseInt(attendees),
-          start_time: `${date}T${startTime}:00`,
-          end_time: `${date}T${endTime}:00`,
-          note: '',
-        }
-        response = await api.post('bookings/', dynamicPayload)
-      }
-
-      if (response.status === 201 || response.status === 200) {
-        setSuccess(true)
-      } else {
-        setError('จองไม่สำเร็จ กรุณาลองใหม่')
-      }
-    } catch (err) {
-      const errorData = err.response?.data
-      const msg = errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
-      setError(msg)
-    } finally {
-      setBookingLoading(false)
-    }
-  }
+}
 
   const shared = {
     bookingType, setBookingType,
