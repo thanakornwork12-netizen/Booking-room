@@ -11,7 +11,8 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-@top1u7dv$mxn%
 
 # จะ True เมื่อรันในเครื่อง (localhost) และเป็น False เมื่อรันบน Server (Render)
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
-
+TIME_ZONE = 'Asia/Bangkok'
+USE_TZ    = True
 # ระบุ Domain ที่อนุญาตให้เข้าถึง
 ALLOWED_HOSTS = ['room-booking-1-7u7e.onrender.com', 'localhost', '127.0.0.1', '*']
 
@@ -23,7 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
+    'django_extensions', 
     # third party
     'rest_framework',
     'rest_framework_simplejwt',

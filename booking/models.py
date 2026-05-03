@@ -1,5 +1,6 @@
 # booking/models.py
 
+import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
@@ -73,7 +74,7 @@ class Room(models.Model):
 
 
 # ============================================================
-# 4. FACILITIES (รายการอุปกรณ์ทั้งหมดในระบบ)
+# 4. FACILITIES
 # ============================================================
 class Facility(models.Model):
     name = models.CharField(max_length=100, unique=True, verbose_name='ชื่ออุปกรณ์')
@@ -86,7 +87,7 @@ class Facility(models.Model):
     def __str__(self):
         return self.name
 
-# ปรับปรุง RoomFacility ให้เชื่อมกับ Facility กลาง
+
 class RoomFacility(models.Model):
     room     = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='room_facilities')
     facility = models.ForeignKey(Facility, on_delete=models.CASCADE, verbose_name='อุปกรณ์')
@@ -94,16 +95,14 @@ class RoomFacility(models.Model):
 
     class Meta:
         verbose_name = 'อุปกรณ์ประจำห้อง'
-        unique_together = ('room', 'facility') # ป้องกันการเลือกอุปกรณ์ซ้ำในห้องเดียว
+        unique_together = ('room', 'facility')
 
     def __str__(self):
         return f"{self.room.name} — {self.facility.name} ({self.quantity})"
 
+
 # ============================================================
-# 5. TERM BOOKING — จองทั้งเทอม (Fixed Schedule)
-# ============================================================
-# ============================================================
-# 5. TERM BOOKING — จองทั้งเทอม (Fixed Schedule)
+# 5. TERM BOOKING
 # ============================================================
 class TermBooking(models.Model):
     STATUS_CHOICES = [
@@ -111,7 +110,6 @@ class TermBooking(models.Model):
         ('cancelled', 'ยกเลิกแล้ว'),
         ('ended',     'หมดเทอมแล้ว'),
     ]
-
     DAY_CHOICES = [
         (0, 'จันทร์'),
         (1, 'อังคาร'),
@@ -146,13 +144,10 @@ class TermBooking(models.Model):
         verbose_name = 'การจองทั้งเทอม'
         ordering = ['day_of_week', 'start_time']
 
-    # --- ฟังก์ชันที่เพิ่มเข้าไปเพื่อแก้ Error 500 ---
     def get_weekly_slots(self):
-        """คำนวณรายการวันที่ต้องเข้าใช้งานทั้งหมดในช่วงเทอมตามวันในสัปดาห์ที่ระบุ"""
         from datetime import timedelta
         slots = []
         curr = self.term_start
-        # วนลูปตั้งแต่วันเริ่มเทอมจนถึงวันสิ้นสุดเทอม
         while curr <= self.term_end:
             if curr.weekday() == self.day_of_week:
                 slots.append(curr)
@@ -161,9 +156,7 @@ class TermBooking(models.Model):
 
     @property
     def total_weeks(self):
-        """ส่งกลับจำนวนสัปดาห์ทั้งหมดที่มีการจอง"""
         return len(self.get_weekly_slots())
-    # -------------------------------------------
 
     def __str__(self):
         days = ['จ','อ','พ','พฤ','ศ','ส','อา']
@@ -171,31 +164,34 @@ class TermBooking(models.Model):
 
 
 # ============================================================
-# 6. BOOKING — จองรายวัน (Dynamic Booking)
+# 6. BOOKING — จองรายวัน
 # ============================================================
 class Booking(models.Model):
     STATUS_CHOICES = [
-        ('pending',   'รอยืนยัน'),
-        ('approved',  'อนุมัติแล้ว'),
-        ('rejected',  'ปฏิเสธ'),
-        ('cancelled', 'ยกเลิก'),
-        ('completed', 'เสร็จสิ้น'),
-        ('no_show',   'ไม่มาใช้งาน'),
+        ('pending',    'รอยืนยัน'),
+        ('approved',   'อนุมัติแล้ว'),
+        ('rejected',   'ปฏิเสธ'),
+        ('cancelled',  'ยกเลิก'),
+        ('completed',  'เสร็จสิ้น'),
+        ('no_show',    'ไม่มาใช้งาน'),
+        ('checked_in', 'เช็คอินแล้ว'),  # ✅ เพิ่ม
     ]
 
-    user        = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
-    room        = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='bookings')
-    title       = models.CharField(max_length=200, verbose_name='ชื่อกิจกรรม/วัตถุประสงค์')
-    attendees   = models.IntegerField()
-    start_time  = models.DateTimeField()
-    end_time    = models.DateTimeField()
-    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    note        = models.TextField(blank=True)
-    checked_in  = models.BooleanField(default=False)
-    reminded    = models.BooleanField(default=False)
-    created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
-    approved_by = models.ForeignKey(
+    user           = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
+    room           = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='bookings')
+    title          = models.CharField(max_length=200, verbose_name='ชื่อกิจกรรม/วัตถุประสงค์')
+    attendees      = models.IntegerField()
+    start_time     = models.DateTimeField()
+    end_time       = models.DateTimeField()
+    status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    note           = models.TextField(blank=True)
+    checked_in     = models.BooleanField(default=False)
+    checked_in_at  = models.DateTimeField(null=True, blank=True)   # ✅ เพิ่ม
+    checkin_token  = models.UUIDField(default=uuid.uuid4, editable=False)  # ✅ เพิ่ม
+    reminded       = models.BooleanField(default=False)
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+    approved_by    = models.ForeignKey(
         User, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='approved_bookings'
     )
@@ -203,6 +199,9 @@ class Booking(models.Model):
     class Meta:
         verbose_name = 'การจองรายวัน'
         ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} | {self.room} | {self.start_time:%d/%m/%Y %H:%M}"
 
 
 # ============================================================
@@ -219,18 +218,15 @@ class BookingLog(models.Model):
 
 
 # ============================================================
-# 8. DEMAND FORECAST — ผลพยากรณ์
+# 8. DEMAND FORECAST
 # ============================================================
 class DemandForecast(models.Model):
-    # แก้ไขตามตารางสรุป Label ใหม่
     DEMAND_LEVEL_CHOICES = [
         ('low',    'ต่ำ'),
         ('medium', 'ปานกลาง'),
         ('high',   'สูง'),
         ('urgent', 'เร่งด่วน'),
     ]
-    
-    # แก้ไขตาม Label และสีที่คุณต้องการ
     AVAILABILITY_CHOICES = [
         ('likely_available', '🟢 ยังว่าง'),
         ('recommended',      '🟡 ควรจอง'),
@@ -241,11 +237,10 @@ class DemandForecast(models.Model):
     room             = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='forecasts')
     forecast_date    = models.DateField()
     hour             = models.IntegerField()
-    predicted_demand = models.FloatField(help_text='0.0 – 1.0') # Score ที่ใช้เทียบกับตาราง
+    predicted_demand = models.FloatField(help_text='0.0 – 1.0')
     demand_level     = models.CharField(max_length=10, choices=DEMAND_LEVEL_CHOICES, default='low')
     availability     = models.CharField(max_length=20, choices=AVAILABILITY_CHOICES, default='likely_available')
     confidence       = models.FloatField(default=0.0)
-
     term_demand      = models.FloatField(default=0.0)
     dynamic_demand   = models.FloatField(default=0.0)
     created_at       = models.DateTimeField(auto_now_add=True)
@@ -272,14 +267,14 @@ class Notification(models.Model):
         ('demand_alert',      'แจ้งเตือนความต้องการสูง'),
         ('system',            'ระบบ'),
     ]
-    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
-    booking    = models.ForeignKey(Booking, null=True, blank=True, on_delete=models.SET_NULL)
+    user         = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    booking      = models.ForeignKey(Booking, null=True, blank=True, on_delete=models.SET_NULL)
     term_booking = models.ForeignKey(TermBooking, null=True, blank=True, on_delete=models.SET_NULL)
-    type       = models.CharField(max_length=30, choices=TYPE_CHOICES)
-    title      = models.CharField(max_length=200)
-    message    = models.TextField()
-    is_read    = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    type         = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    title        = models.CharField(max_length=200)
+    message      = models.TextField()
+    is_read      = models.BooleanField(default=False)
+    created_at   = models.DateTimeField(auto_now_add=True)
 
 
 # ============================================================

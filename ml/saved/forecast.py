@@ -13,7 +13,11 @@ import numpy as np
 import pandas as pd
 import joblib
 from datetime import timedelta
-from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
+from sklearn.metrics import (
+    mean_absolute_error, r2_score, mean_squared_error,
+    accuracy_score, f1_score, recall_score, precision_score,
+    classification_report
+)
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import MinMaxScaler
 
@@ -64,10 +68,97 @@ HOUR_DIST_FALLBACK = {
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  CLASSIFICATION METRICS HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def demand_score_to_label(score: float, thr_high: float, thr_med: float) -> str:
+    """แปลง demand score เป็น label สำหรับวัด classification metrics"""
+    if score >= thr_high:
+        return 'urgent'
+    elif score >= thr_med:
+        return 'high'
+    elif score >= thr_med * 0.6:
+        return 'medium'
+    else:
+        return 'low'
+
+
+def compute_classification_metrics(
+    y_true_scores: np.ndarray,
+    y_pred_scores: np.ndarray,
+    thr_high: float,
+    thr_med: float,
+    peak_ref: float,
+) -> dict:
+    """
+    คำนวณ Accuracy, F1, Recall, Precision, Loss
+    โดยแปลง regression scores → demand labels ก่อน
+    """
+    # normalize scores ก่อนแปลงเป็น label
+    y_true_norm = np.clip(y_true_scores / (peak_ref + 1e-6), 0, 1)
+    y_pred_norm = np.clip(y_pred_scores / (peak_ref + 1e-6), 0, 1)
+
+    y_true_labels = [demand_score_to_label(s, thr_high, thr_med) for s in y_true_norm]
+    y_pred_labels = [demand_score_to_label(s, thr_high, thr_med) for s in y_pred_norm]
+
+    labels = ['low', 'medium', 'high', 'urgent']
+
+    acc       = accuracy_score(y_true_labels, y_pred_labels)
+    f1        = f1_score(y_true_labels, y_pred_labels,
+                         labels=labels, average='weighted', zero_division=0)
+    recall    = recall_score(y_true_labels, y_pred_labels,
+                             labels=labels, average='weighted', zero_division=0)
+    precision = precision_score(y_true_labels, y_pred_labels,
+                                labels=labels, average='weighted', zero_division=0)
+
+    # Cross-entropy loss (approximated)
+    label_map  = {'low': 0, 'medium': 1, 'high': 2, 'urgent': 3}
+    n_classes  = len(labels)
+    ce_loss    = 0.0
+    for true_l, pred_l in zip(y_true_labels, y_pred_labels):
+        true_idx = label_map[true_l]
+        pred_idx = label_map[pred_l]
+        # soft probability approximation
+        probs     = np.full(n_classes, 0.05)
+        probs[pred_idx] = 0.85
+        probs    /= probs.sum()
+        ce_loss  -= np.log(probs[true_idx] + 1e-8)
+    ce_loss /= max(len(y_true_labels), 1)
+
+    report = classification_report(
+        y_true_labels, y_pred_labels,
+        labels=labels, zero_division=0
+    )
+
+    return {
+        'accuracy':  round(acc,       4),
+        'f1':        round(f1,        4),
+        'recall':    round(recall,    4),
+        'precision': round(precision, 4),
+        'loss':      round(ce_loss,   4),
+        'report':    report,
+    }
+
+
+def print_classification_metrics(metrics: dict, room_name: str):
+    """พิมพ์ classification metrics สวยงาม"""
+    print(f"\n  📊 Classification Metrics – {room_name}")
+    print(f"  {'─' * 50}")
+    print(f"  Accuracy  : {metrics['accuracy']:.4f}  ({metrics['accuracy']*100:.1f}%)")
+    print(f"  F1 Score  : {metrics['f1']:.4f}  (weighted avg)")
+    print(f"  Recall    : {metrics['recall']:.4f}  (weighted avg)")
+    print(f"  Precision : {metrics['precision']:.4f}  (weighted avg)")
+    print(f"  CE Loss   : {metrics['loss']:.4f}")
+    print(f"\n  📋 Classification Report:")
+    for line in metrics['report'].split('\n'):
+        print(f"     {line}")
+    print(f"  {'─' * 50}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  SECTION 1 – Demand Forecast Engine
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Print ข้อมูลสรุปก่อนเทรน ──────────────────────────────────────────────────
 def print_data_summary(raw: pd.DataFrame, room=None):
     df = raw.copy()
     if room is not None:
@@ -80,16 +171,16 @@ def print_data_summary(raw: pd.DataFrame, room=None):
     print(f"\n📌 ภาพรวม")
     print(f"   จำนวน booking ทั้งหมด : {len(df):,} ครั้ง")
     print(f"   ช่วงวันที่            : {df['date'].min()} → {df['date'].max()}")
-    total_days = (df['date'].max() - df['date'].min()).days + 1
-    print(f"   จำนวนวันทั้งหมด       : {total_days:,} วัน")
+    total_days  = (df['date'].max() - df['date'].min()).days + 1
     active_days = df['date'].nunique()
+    print(f"   จำนวนวันทั้งหมด       : {total_days:,} วัน")
     print(f"   วันที่มี booking       : {active_days:,} วัน")
     print(f"   วันที่ไม่มี booking    : {total_days - active_days:,} วัน")
 
     print(f"\n⏱️  ระยะเวลาการจอง (ชั่วโมง)")
-    print(f"   เฉลี่ย   : {df['duration'].mean():.2f} ชม.")
-    print(f"   ต่ำสุด   : {df['duration'].min():.2f} ชม.")
-    print(f"   สูงสุด   : {df['duration'].max():.2f} ชม.")
+    print(f"   เฉลี่ย    : {df['duration'].mean():.2f} ชม.")
+    print(f"   ต่ำสุด    : {df['duration'].min():.2f} ชม.")
+    print(f"   สูงสุด    : {df['duration'].max():.2f} ชม.")
     print(f"   รวมทั้งหมด: {df['duration'].sum():.1f} ชม.")
 
     daily_hours = df.groupby('date')['duration'].sum()
@@ -101,7 +192,7 @@ def print_data_summary(raw: pd.DataFrame, room=None):
 
     print(f"\n🕐 การกระจายตามชั่วโมง (start_time)")
     hour_counts = df.groupby('hour')['duration'].sum().sort_index()
-    total_hr = hour_counts.sum()
+    total_hr    = hour_counts.sum()
     for h, v in hour_counts.items():
         bar = '█' * int((v / total_hr) * 30)
         print(f"   {h:02d}:00  {bar:<30}  {v:.1f} ชม. ({v/total_hr*100:.1f}%)")
@@ -109,8 +200,8 @@ def print_data_summary(raw: pd.DataFrame, room=None):
     print(f"\n📅 การกระจายตามวันในสัปดาห์")
     dow_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัส',
                4: 'ศุกร์', 5: 'เสาร์', 6: 'อาทิตย์'}
-    df['dow'] = pd.to_datetime(df['date']).dt.dayofweek
-    dow_hours = df.groupby('dow')['duration'].sum()
+    df['dow']  = pd.to_datetime(df['date']).dt.dayofweek
+    dow_hours  = df.groupby('dow')['duration'].sum()
     for d, v in dow_hours.items():
         bar = '█' * int((v / dow_hours.max()) * 20)
         print(f"   {dow_map[d]:<6}  {bar:<20}  {v:.1f} ชม.")
@@ -118,7 +209,6 @@ def print_data_summary(raw: pd.DataFrame, room=None):
     print("=" * 60)
 
 
-# ── Term Schedule ──────────────────────────────────────────────────────────────
 def load_term_schedule(room_id: int) -> list[dict]:
     qs = TermBooking.objects.filter(room_id=room_id, status='active').values(
         'day_of_week', 'start_time', 'end_time', 'term_start', 'term_end'
@@ -152,8 +242,8 @@ def compute_term_load(d, hour: int, schedule: list[dict]) -> float:
 def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
     rows = []
     for d in date_index:
-        d_date  = d.date() if hasattr(d, 'date') else d
-        dow     = d.weekday() if hasattr(d, 'weekday') else pd.Timestamp(d).weekday()
+        d_date   = d.date() if hasattr(d, 'date') else d
+        dow      = d.weekday() if hasattr(d, 'weekday') else pd.Timestamp(d).weekday()
         sessions, hours, in_term = 0, 0, 0
         for tb in schedule:
             if not (tb['term_start'] <= d_date <= tb['term_end']):
@@ -170,10 +260,7 @@ def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows, index=date_index)
 
 
-# ── Hour Distribution (จาก duration จริง) ─────────────────────────────────────
-def learn_hour_dist(bookings_df, room_id=None,
-                    event_threshold_pct=95.0,
-                    min_days_required=30) -> dict:
+def learn_hour_dist(bookings_df, room_id=None) -> dict:
     df = bookings_df.copy()
     if room_id is not None:
         df = df[df['room_id'] == room_id]
@@ -182,9 +269,9 @@ def learn_hour_dist(bookings_df, room_id=None,
 
     hour_hours = {h: 0.0 for h in range(8, 18)}
     for _, row in df.iterrows():
-        s = int(row['hour'])
-        e = int(row['end_hour']) if 'end_hour' in row else s + 1
-        dur = float(row['duration'])
+        s    = int(row['hour'])
+        e    = int(row['end_hour']) if 'end_hour' in row else s + 1
+        dur  = float(row['duration'])
         span = max(e - s, 1)
         per_hr = dur / span
         for h in range(s, min(e, 18)):
@@ -197,9 +284,8 @@ def learn_hour_dist(bookings_df, room_id=None,
 
     normalized = {h: (v / total) for h, v in hour_hours.items()}
     for h in normalized:
-        normalized[h] = normalized[h] * 0.85 + (1/len(normalized)) * 0.15
-    # normalize ใหม่
-    s = sum(normalized.values())
+        normalized[h] = normalized[h] * 0.85 + (1 / len(normalized)) * 0.15
+    s    = sum(normalized.values())
     normalized = {h: round(v / s, 4) for h, v in normalized.items()}
     diff = 1.0 - sum(normalized.values())
     pk   = max(normalized, key=normalized.get)
@@ -207,7 +293,6 @@ def learn_hour_dist(bookings_df, room_id=None,
     return normalized
 
 
-# ── Feature Engineering ────────────────────────────────────────────────────────
 def build_features(daily, term_df=None, use_log: bool = False):
     if use_log:
         y_series = np.log1p(daily)
@@ -252,7 +337,7 @@ def build_features(daily, term_df=None, use_log: bool = False):
     df['ratio_vs_28d'] = (df['lag_1'] / (df['roll_mean_28'] + 1e-6)).clip(0, 5)
 
     if term_df is not None:
-        term_aligned = term_df.reindex(df.index, fill_value=0)
+        term_aligned         = term_df.reindex(df.index, fill_value=0)
         df['term_hours_day'] = term_aligned['term_hours_day'].values
         df['term_sessions']  = term_aligned['term_sessions'].values
         df['in_term']        = term_aligned['in_term'].values
@@ -270,7 +355,6 @@ def build_features(daily, term_df=None, use_log: bool = False):
     return df.bfill().ffill()
 
 
-# ── LSTM helpers ───────────────────────────────────────────────────────────────
 def _make_lstm_sequences(series, lookback):
     X, y = [], []
     for i in range(lookback, len(series)):
@@ -330,7 +414,6 @@ def lstm_predict(model, scaler, history_series, n_steps, lookback=LSTM_LOOKBACK)
     return np.maximum(0, inv)
 
 
-# ── Base Models ────────────────────────────────────────────────────────────────
 def train_lgb(X_tr, y_tr, X_te, y_te):
     model = lgb.LGBMRegressor(
         objective='regression_l1', n_estimators=5000, learning_rate=0.01,
@@ -355,7 +438,6 @@ def train_xgb(X_tr, y_tr, X_te, y_te):
     return model
 
 
-# ── Stacking ───────────────────────────────────────────────────────────────────
 def stacking_predict(X_tr, y_tr, X_te, y_te, X_pred,
                      lstm_model=None, lstm_scaler=None,
                      daily_tr_raw=None, n_pred=None,
@@ -390,7 +472,6 @@ def stacking_predict(X_tr, y_tr, X_te, y_te, X_pred,
     return np.maximum(0, final), lgb_model, xgb_model, meta
 
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
 def smape(y_true, y_pred):
     raw = (2 * np.abs(y_true - y_pred)
            / (np.abs(y_true) + np.abs(y_pred) + 1e-8)) * 100
@@ -406,24 +487,21 @@ def compute_adaptive_thresholds(daily, peak_ref):
     active_norms     = historical_norms[historical_norms > 0.01]
 
     if len(active_norms) < 10:
-        return 0.45, 0.18   # 🔥 fallback ใหม่
+        return 0.45, 0.18
 
-    # 🔥 ปรับให้ balance จริง (ไม่ low ทั้งระบบ)
     thr_high = float(np.percentile(active_norms, 65))
     thr_med  = float(np.percentile(active_norms, 30))
-
-    # 🔥 guard กันเพี้ยน
     thr_high = min(max(thr_high, thr_med + 0.10), 0.75)
     thr_med  = max(thr_med, 0.10)
 
     return round(thr_high, 3), round(thr_med, 3)
+
 
 def _needs_log_transform(room) -> bool:
     room_type = getattr(room, 'room_type', '') or ''
     return 'lecture' in room_type.lower()
 
 
-# ── Bulk Forecast ──────────────────────────────────────────────────────────────
 def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
                          history, peak_ref, thr_high, thr_med,
                          room_hour_dist, confidence, forecast_dates, schedule,
@@ -447,17 +525,10 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
         hist_arr = history.values.copy()
         if use_log:
             hist_arr = np.log1p(hist_arr)
-
-        lstm_ahead = lstm_predict(
-            lstm_model, lstm_scaler,
-            hist_arr,
-            len(forecast_dates),
-            lookback=lstm_lookback
-        )
-
+        lstm_ahead = lstm_predict(lstm_model, lstm_scaler, hist_arr,
+                                  len(forecast_dates), lookback=lstm_lookback)
         if use_log:
             lstm_ahead = np.expm1(lstm_ahead)
-
         for i, fd in enumerate(forecast_dates):
             lstm_daily_preds[fd] = max(0.0, float(lstm_ahead[i]))
 
@@ -476,7 +547,6 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
             lstm_val_fc = lstm_daily_preds[fc_date]
             if use_log:
                 lstm_val_fc = np.log1p(lstm_val_fc)
-
             try:
                 d_pred = float(meta_ridge.predict(
                     np.column_stack([[lgb_pred], [xgb_pred], [lstm_val_fc]])
@@ -491,44 +561,29 @@ def _build_forecast_bulk(room, lgb_model, xgb_model, meta_ridge,
             )[0])
 
         d_pred = max(0.0, d_pred)
-
         if use_log:
             d_pred = np.expm1(d_pred)
-
         history.loc[fc_ts] = d_pred
 
         day_norm = float(np.clip(d_pred / (peak_ref + 1e-6), 0.0, 1.0))
 
-        # 🔥 FIX: ย้าย logic เข้า loop ให้ถูกต้อง
         for hr, weight in room_hour_dist.items():
             hr_term_load = compute_term_load(fc_date, hr, schedule)
-
             hr_factor    = weight / max_hr_weight if max_hr_weight > 0 else 1.0
-            # 🔥 scale ใหม่ (ไม่ให้ค่าต่ำเกิน)
-            hr_pred = day_norm * (0.6 + 0.4 * hr_factor)
-
-            # 🔥 term ไม่ควรลบแรงเกิน
-            hr_term = hr_term_load * day_norm * 0.6
-
-            # 🔥 dynamic
-            hr_dyn  = max(0.0, hr_pred - hr_term)
-
-            # 🔥 final demand ใช้ blend
+            hr_pred      = day_norm * (0.6 + 0.4 * hr_factor)
+            hr_term      = hr_term_load * day_norm * 0.6
+            hr_dyn       = max(0.0, hr_pred - hr_term)
             demand_score = round(float(0.7 * hr_pred + 0.3 * hr_dyn), 4)
 
-            # 🔥 FIX: ปรับ threshold logic (ไม่ให้ all low)
             if demand_score >= thr_high:
                 day_level = 'urgent'
                 day_avail = 'book_now'
-
             elif demand_score >= thr_med:
                 day_level = 'high'
                 day_avail = 'book_soon'
-
             elif demand_score >= thr_med * 0.6:
                 day_level = 'medium'
                 day_avail = 'recommended'
-
             else:
                 day_level = 'low'
                 day_avail = 'likely_available'
@@ -588,8 +643,8 @@ def retrain_and_forecast():
 
         print_data_summary(raw, room=room)
 
-        schedule   = load_term_schedule(room.id)
-        use_log    = _needs_log_transform(room)
+        schedule = load_term_schedule(room.id)
+        use_log  = _needs_log_transform(room)
 
         daily = (
             rdf.groupby('date')['duration'].sum()
@@ -642,20 +697,36 @@ def retrain_and_forecast():
         y_te_eval   = np.nan_to_num(y_te_eval,   nan=0.0, posinf=0.0, neginf=0.0)
         y_pred_eval = np.nan_to_num(y_pred_eval, nan=0.0, posinf=0.0, neginf=0.0)
 
+        # ── Regression Metrics ────────────────────────────────────────────────
         m_r2    = r2_score(y_te_eval, y_pred_eval)
         m_mae   = mean_absolute_error(y_te_eval, y_pred_eval)
         m_rmse  = rmse(y_te_eval, y_pred_eval)
         m_smape = smape(y_te_eval, y_pred_eval)
 
-        room_type = getattr(room, 'room_type', 'unknown').lower()
-        all_stats.append({
-            'Room': room.name, 'Type': room_type,
-            'R2': m_r2, 'MAE': m_mae, 'RMSE': m_rmse, 'sMAPE': m_smape,
-        })
-
         peak_ref          = float(daily.quantile(0.95)) or 1.0
         thr_high, thr_med = compute_adaptive_thresholds(daily, peak_ref)
         confidence        = round(max(0.0, 1.0 - m_smape / 100.0) * 100.0, 1)
+
+        # ── Classification Metrics ────────────────────────────────────────────
+        cls_metrics = compute_classification_metrics(
+            y_te_eval, y_pred_eval, thr_high, thr_med, peak_ref
+        )
+        print_classification_metrics(cls_metrics, room.name)
+
+        room_type = getattr(room, 'room_type', 'unknown').lower()
+        all_stats.append({
+            'Room':      room.name,
+            'Type':      room_type,
+            'R2':        m_r2,
+            'MAE':       m_mae,
+            'RMSE':      m_rmse,
+            'sMAPE':     m_smape,
+            'Accuracy':  cls_metrics['accuracy'],
+            'F1':        cls_metrics['f1'],
+            'Recall':    cls_metrics['recall'],
+            'Precision': cls_metrics['precision'],
+            'Loss':      cls_metrics['loss'],
+        })
 
         lstm_tag = " +LSTM" if lstm_model else ""
         log_tag  = " LOG"   if use_log    else ""
@@ -663,6 +734,9 @@ def retrain_and_forecast():
             f"✅ {room.name:.<18} [{room_type:<10}]"
             f"{lstm_tag}{log_tag}"
             f"  R²:{m_r2:.3f}  MAE:{m_mae:.2f} ชม.  sMAPE:{m_smape:.1f}%"
+            f"  Acc:{cls_metrics['accuracy']:.3f}"
+            f"  F1:{cls_metrics['f1']:.3f}"
+            f"  Loss:{cls_metrics['loss']:.4f}"
             f"  conf:{confidence:.1f}%"
             f"  thr_high:{thr_high:.3f}  thr_med:{thr_med:.3f}"
         )
@@ -670,12 +744,24 @@ def retrain_and_forecast():
         joblib.dump(lgb_model, os.path.join(MODEL_DIR, f"{room.id}_lgb.pkl"))
         joblib.dump(xgb_model, os.path.join(MODEL_DIR, f"{room.id}_xgb.pkl"))
         meta_payload = {
-            'peak_ref': peak_ref, 'thr_high': thr_high, 'thr_med': thr_med,
-            'hour_dist': room_hour_dist, 'confidence': confidence,
-            'meta_ridge': meta_ridge, 'use_log': use_log,
-            'lstm_lookback': LSTM_LOOKBACK,
-            'has_lstm': lstm_model is not None,
-        }
+    'peak_ref':   peak_ref,
+    'thr_high':   thr_high,
+    'thr_med':    thr_med,
+    'hour_dist':  room_hour_dist,
+    'confidence': confidence,
+    'meta_ridge': meta_ridge,
+    'use_log':    use_log,
+    'lstm_lookback': LSTM_LOOKBACK,
+    'has_lstm':   lstm_model is not None,
+    'cls_metrics': cls_metrics,
+    # ── เพิ่มตรงนี้ ──────────────────────────────
+    'reg_metrics': {
+        'r2':    round(m_r2,    4),
+        'mae':   round(m_mae,   4),
+        'rmse':  round(m_rmse,  4),
+        'smape': round(m_smape, 4),
+    },
+}
         if lstm_model is not None:
             joblib.dump(lstm_model,  os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl"))
             joblib.dump(lstm_scaler, os.path.join(MODEL_DIR, f"{room.id}_lstm_scaler.pkl"))
@@ -693,21 +779,36 @@ def retrain_and_forecast():
         ).delete()
         DemandForecast.objects.bulk_create(bulk)
 
+    # ── สรุปผลรวม ─────────────────────────────────────────────────────────────
     df_res = pd.DataFrame(all_stats)
     if len(df_res) > 0:
         print("\n📊 ── สรุปผลการเทรนทั้งหมด ──")
-        print(f"{'Room':<20} {'Type':<12} {'R²':>6} {'MAE':>8} {'sMAPE':>8} {'Conf':>6}")
-        print("-" * 68)
+        print(f"{'Room':<20} {'Type':<12} {'R²':>6} {'MAE':>7} {'sMAPE':>7} "
+              f"{'Acc':>6} {'F1':>6} {'Recall':>7} {'Prec':>7} {'Loss':>7} {'Conf':>6}")
+        print("-" * 100)
         for _, r in df_res.iterrows():
             conf = round(max(0.0, 1.0 - r['sMAPE'] / 100.0) * 100.0, 1)
-            print(f"  {r['Room']:<18} {r['Type']:<12} "
-                  f"{r['R2']:>6.3f} {r['MAE']:>7.2f} ชม. {r['sMAPE']:>7.1f}% {conf:>5.1f}%")
-        print("-" * 68)
+            print(
+                f"  {r['Room']:<18} {r['Type']:<12} "
+                f"{r['R2']:>6.3f} {r['MAE']:>6.2f}ชม {r['sMAPE']:>6.1f}% "
+                f"{r['Accuracy']:>6.3f} {r['F1']:>6.3f} "
+                f"{r['Recall']:>7.3f} {r['Precision']:>7.3f} "
+                f"{r['Loss']:>7.4f} {conf:>5.1f}%"
+            )
+        print("-" * 100)
         avg_conf = round(max(0.0, 1.0 - df_res['sMAPE'].mean() / 100.0) * 100.0, 1)
-        print(f"  {'เฉลี่ย':<18} {'':12} "
-              f"{df_res['R2'].mean():>6.3f} "
-              f"{df_res['MAE'].mean():>7.2f} ชม. "
-              f"{df_res['sMAPE'].mean():>7.1f}% {avg_conf:>5.1f}%")
+        print(
+            f"  {'เฉลี่ย':<18} {'':12} "
+            f"{df_res['R2'].mean():>6.3f} "
+            f"{df_res['MAE'].mean():>6.2f}ชม "
+            f"{df_res['sMAPE'].mean():>6.1f}% "
+            f"{df_res['Accuracy'].mean():>6.3f} "
+            f"{df_res['F1'].mean():>6.3f} "
+            f"{df_res['Recall'].mean():>7.3f} "
+            f"{df_res['Precision'].mean():>7.3f} "
+            f"{df_res['Loss'].mean():>7.4f} "
+            f"{avg_conf:>5.1f}%"
+        )
 
     _print_summary()
 
@@ -720,7 +821,6 @@ def _print_summary():
     print("=" * 60)
 
 
-# ── FORECAST ONLY ──────────────────────────────────────────────────────────────
 def generate_forecast_only():
     print("\n🔄 GENERATE FORECAST ONLY (no retrain)")
     today          = pd.to_datetime('today').date()
@@ -754,6 +854,10 @@ def generate_forecast_only():
         lgb_model  = joblib.load(lgb_path)
         xgb_model  = joblib.load(xgb_path)
         meta_ridge = meta['meta_ridge']
+
+        # แสดง classification metrics ที่บันทึกไว้จากการ retrain ครั้งล่าสุด
+        if 'cls_metrics' in meta:
+            print_classification_metrics(meta['cls_metrics'], room.name)
 
         lstm_model, lstm_scaler = None, None
         if meta.get('has_lstm', False) and LSTM_AVAILABLE:
@@ -821,7 +925,6 @@ def update_to_thai_facilities():
 
     rooms = Room.objects.all()
     count = 0
-
     for room in rooms:
         chosen = random.sample(facility_objs, random.randint(4, 7))
         for f in chosen:
@@ -842,15 +945,101 @@ def boost_thresholds():
         meta_path = os.path.join(META_DIR, f"{room.id}_meta.pkl")
         if os.path.exists(meta_path):
             meta = joblib.load(meta_path)
-            meta['thr_high'] = 0.55   # จาก 0.38 → 0.55 (urgent ยากขึ้น)
-            meta['thr_med']  = 0.28   # จาก 0.20 → 0.28 (high ยากขึ้น)
+            meta['thr_high'] = 0.55
+            meta['thr_med']  = 0.28
             joblib.dump(meta, meta_path)
     print("✅ ปรับเกณฑ์เสร็จแล้ว! ทีนี้รัน --forecast-only เพื่ออัปเดตฐานข้อมูลครับ")
 
+def show_saved_metrics():
+    """แสดง metrics ภาพรวมทุกห้อง โดยไม่ต้อง retrain"""
+    print("\n📊 METRICS ภาพรวมทั้งหมด – ผลการเทรนครั้งล่าสุด")
+    print("=" * 70)
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  Entry Point
-# ══════════════════════════════════════════════════════════════════════════════
+    all_stats = []
+
+    for room in Room.objects.all():
+        meta_path = os.path.join(META_DIR, f"{room.id}_meta.pkl")
+        if not os.path.exists(meta_path):
+            continue
+
+        meta = joblib.load(meta_path)
+        reg  = meta.get('reg_metrics')
+        cls  = meta.get('cls_metrics')
+
+        if reg and cls:
+            all_stats.append({
+                'Room':      room.name,
+                'R2':        reg['r2'],
+                'MAE':       reg['mae'],
+                'RMSE':      reg['rmse'],
+                'sMAPE':     reg['smape'],
+                'Accuracy':  cls['accuracy'],
+                'F1':        cls['f1'],
+                'Recall':    cls['recall'],
+                'Precision': cls['precision'],
+                'Loss':      cls['loss'],
+                'Conf':      meta.get('confidence', 0),
+            })
+
+    if not all_stats:
+        print("❌ ไม่พบข้อมูล กรุณารัน --retrain ก่อนครับ")
+        return
+
+    df = pd.DataFrame(all_stats)
+
+    # ── ตารางรวมทุกห้อง ───────────────────────────────────────────────────
+    print(f"\n{'Room':<20} {'R²':>6} {'MAE':>7} {'RMSE':>7} {'sMAPE':>7} "
+          f"{'Acc':>6} {'F1':>6} {'Recall':>7} {'Prec':>7} {'Loss':>7} {'Conf':>6}")
+    print("-" * 105)
+    for _, r in df.iterrows():
+        print(
+            f"  {r['Room']:<18} "
+            f"{r['R2']:>6.3f} "
+            f"{r['MAE']:>6.3f}ชม "
+            f"{r['RMSE']:>6.3f}ชม "
+            f"{r['sMAPE']:>6.1f}% "
+            f"{r['Accuracy']:>6.3f} "
+            f"{r['F1']:>6.3f} "
+            f"{r['Recall']:>7.3f} "
+            f"{r['Precision']:>7.3f} "
+            f"{r['Loss']:>7.4f} "
+            f"{r['Conf']:>5.1f}%"
+        )
+    print("-" * 105)
+
+    # ── แถวเฉลี่ย ─────────────────────────────────────────────────────────
+    print(
+        f"  {'📊 เฉลี่ย':<18} "
+        f"{df['R2'].mean():>6.3f} "
+        f"{df['MAE'].mean():>6.3f}ชม "
+        f"{df['RMSE'].mean():>6.3f}ชม "
+        f"{df['sMAPE'].mean():>6.1f}% "
+        f"{df['Accuracy'].mean():>6.3f} "
+        f"{df['F1'].mean():>6.3f} "
+        f"{df['Recall'].mean():>7.3f} "
+        f"{df['Precision'].mean():>7.3f} "
+        f"{df['Loss'].mean():>7.4f} "
+        f"{df['Conf'].mean():>5.1f}%"
+    )
+    print("=" * 105)
+
+    # ── สรุปไฮไลต์ ────────────────────────────────────────────────────────
+    print(f"\n🏆 R² ดีที่สุด    : {df.loc[df['R2'].idxmax(),       'Room']}  ({df['R2'].max():.4f})")
+    print(f"⚠️  R² ต่ำที่สุด   : {df.loc[df['R2'].idxmin(),       'Room']}  ({df['R2'].min():.4f})")
+    print(f"🏆 Accuracy สูงสุด: {df.loc[df['Accuracy'].idxmax(), 'Room']}  ({df['Accuracy'].max():.4f})")
+    print(f"🏆 Loss ต่ำสุด    : {df.loc[df['Loss'].idxmin(),     'Room']}  ({df['Loss'].min():.4f})")
+    print(f"⚠️  Loss สูงสุด    : {df.loc[df['Loss'].idxmax(),     'Room']}  ({df['Loss'].max():.4f})")
+
+    # ── ประเมินภาพรวม ─────────────────────────────────────────────────────
+    avg_r2  = df['R2'].mean()
+    avg_acc = df['Accuracy'].mean()
+    avg_f1  = df['F1'].mean()
+
+    print(f"\n📋 ประเมินภาพรวมโมเดล")
+    print(f"   R²       : {'✅ ดีมาก' if avg_r2  >= 0.8 else '⚠️  พอใช้' if avg_r2  >= 0.5 else '❌ ต่ำ'} ({avg_r2:.3f})")
+    print(f"   Accuracy : {'✅ ดีมาก' if avg_acc >= 0.8 else '⚠️  พอใช้' if avg_acc >= 0.6 else '❌ ต่ำ'} ({avg_acc:.3f})")
+    print(f"   F1 Score : {'✅ ดีมาก' if avg_f1  >= 0.8 else '⚠️  พอใช้' if avg_f1  >= 0.6 else '❌ ต่ำ'} ({avg_f1:.3f})")
+    print("=" * 70)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -863,6 +1052,8 @@ if __name__ == '__main__':
                        help='อัปเดตอุปกรณ์ภาษาไทยให้ทุกห้อง')
     group.add_argument('--boost',        action='store_true',
                        help='ปรับ threshold ให้ Urgent ง่ายขึ้น แล้วรัน forecast ต่อ')
+    group.add_argument('--show-metrics', action='store_true',
+                       help='แสดง metrics ที่บันทึกไว้โดยไม่ต้อง retrain')  # ← ใหม่
     args = parser.parse_args()
 
     if args.retrain:
@@ -872,5 +1063,7 @@ if __name__ == '__main__':
     elif args.boost:
         boost_thresholds()
         generate_forecast_only()
+    elif args.show_metrics:                # ← ใหม่
+        show_saved_metrics()
     else:
         generate_forecast_only()

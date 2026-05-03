@@ -99,7 +99,7 @@ const EQUIPMENT_PRESETS = [
   { key: 'ac',          label: 'แอร์',           icon: '❄️', keywords: ['ปรับอากาศ', 'แอร์', 'เครื่องปรับอากาศ'] },
   { key: 'tv',          label: 'TV/จอแสดงผล',   icon: '📺', keywords: ['TV', 'จอแสดงผล', 'จอรับภาพ', 'TV / จอแสดงผล'] },
   { key: 'computer',    label: 'คอมพิวเตอร์',   icon: '💻', keywords: ['คอมพิวเตอร์'] },
-  { key: 'camera',      label: 'กล้องวิดีโอ',   icon: '📹', keywords: ['กล้อง', 'กล้องบันทึกการสอน', 'กล้องวิดีโอคอนเฟอเรนซ์'] },
+ 
   { key: 'smartboard',  label: 'Smart Board',   icon: '🖊️', keywords: ['Smart Board', 'กระดาน Smart', 'Smart'] },
   { key: 'wifi',        label: 'WiFi',           icon: '📶', keywords: ['WiFi', 'wifi'] },
 ]
@@ -120,8 +120,7 @@ const FAC_ICONS = {
   'TV / จอแสดงผล':                  '📺',
   'คอมพิวเตอร์ (สำหรับผู้นำเสนอ)':  '💻',
   'คอมพิวเตอร์ (สำหรับผู้สอน)':     '💻',
-  'กล้องวิดีโอคอนเฟอเรนซ์':         '📹',
-  'กล้องบันทึกการสอน':              '📹',
+  
   'กระดาน Smart Board':             '🖊️',
   'Smart Board':                    '🖊️',
   'เครื่องพิมพ์เอกสาร':             '🖨️',
@@ -138,7 +137,7 @@ const getFacIcon = (name) => {
   if (FAC_ICONS[name]) return FAC_ICONS[name]
   if (name.includes('คอมพิวเตอร์')) return '💻'
   if (name.includes('จอ') || name.includes('TV')) return '🖥️'
-  if (name.includes('กล้อง')) return '📹'
+  
   if (name.includes('ไมค์') || name.includes('ไมโคร')) return '🎤'
   if (name.includes('เสียง') || name.includes('ลำโพง')) return '🔊'
   if (name.includes('ปรับอากาศ')) return '❄️'
