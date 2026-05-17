@@ -90,12 +90,12 @@ const SUMMARY_TIERS = [
   { level: 'low',    label: 'ยังว่างอยู่'         },
 ]
 
-// ─── Equipment Presets ───────────────────────────────────────────────────────
+
 const EQUIPMENT_PRESETS = [
   { key: 'projector',   label: 'โปรเจกเตอร์',  icon: '📽️', keywords: ['โปรเจกเตอร์'] },
   { key: 'whiteboard',  label: 'ไวท์บอร์ด',    icon: '📋', keywords: ['ไวท์บอร์ด', 'กระดานไวท์บอร์ด'] },
   { key: 'sound',       label: 'ระบบเสียง',     icon: '🔊', keywords: ['ระบบเสียง', 'ลำโพง', 'เสียง'] },
-  { key: 'mic',         label: 'ไมโครโฟน',      icon: '🎤', keywords: ['ไมโครโฟน', 'ไมค์', 'ไมโคร', 'ไมโครโฟนไร้สาย'] },
+  
   { key: 'ac',          label: 'แอร์',           icon: '❄️', keywords: ['ปรับอากาศ', 'แอร์', 'เครื่องปรับอากาศ'] },
   { key: 'tv',          label: 'TV/จอแสดงผล',   icon: '📺', keywords: ['TV', 'จอแสดงผล', 'จอรับภาพ', 'TV / จอแสดงผล'] },
   { key: 'computer',    label: 'คอมพิวเตอร์',   icon: '💻', keywords: ['คอมพิวเตอร์'] },
@@ -104,7 +104,7 @@ const EQUIPMENT_PRESETS = [
   { key: 'wifi',        label: 'WiFi',           icon: '📶', keywords: ['WiFi', 'wifi'] },
 ]
 
-// ─── Facility Icons ──────────────────────────────────────────────────────────
+//  Facility Icons
 
 const FAC_ICONS = {
   'โปรเจกเตอร์':                    '📽️',
@@ -113,7 +113,7 @@ const FAC_ICONS = {
   'กระดานไวท์บอร์ด':                '📋',
   'ระบบเสียง':                      '🔊',
   'ไมโครโฟน':                       '🎤',
-  'ไมโครโฟนไร้สาย':                 '🎤',
+  
   'เครื่องปรับอากาศ':               '❄️',
   'WiFi':                           '📶',
   'เต้าเสียบไฟฟ้า':                 '🔌',
@@ -138,7 +138,7 @@ const getFacIcon = (name) => {
   if (name.includes('คอมพิวเตอร์')) return '💻'
   if (name.includes('จอ') || name.includes('TV')) return '🖥️'
   
-  if (name.includes('ไมค์') || name.includes('ไมโคร')) return '🎤'
+  
   if (name.includes('เสียง') || name.includes('ลำโพง')) return '🔊'
   if (name.includes('ปรับอากาศ')) return '❄️'
   return '🔧'
