@@ -332,7 +332,9 @@ function DesktopHome(props) {
       <div className="bg-blue-700 shadow-lg shadow-blue-900/20">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-6">
           <div>
-            <span className="text-white font-bold text-sm">สวัสดี, {user?.first_name || user?.username}</span>
+            <span className="text-white font-bold text-sm">
+  สวัสดี, {user?.email}
+</span>
             <span className="text-blue-200 text-xs ml-3">{user?.faculty || 'ระบบจองห้องประชุม'}</span>
           </div>
           <div className="flex items-center gap-2">

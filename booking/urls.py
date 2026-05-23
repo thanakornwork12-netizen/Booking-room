@@ -3,14 +3,27 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .serializers import LDAPTokenObtainPairSerializer
 from .views import (
     RegisterView, ProfileView,
     BuildingViewSet, RoomViewSet,
     TermBookingViewSet, BookingViewSet,
     NotificationViewSet, DemandForecastViewSet,
-    DashboardView,ExportExcelView,
+    DashboardView, ExportExcelView,
 )
 
+
+# ── Override TokenObtainPairView ให้ใช้ LDAP serializer ──────────────────────
+class LDAPTokenObtainPairView(TokenObtainPairView):
+    """
+    POST /api/auth/login/
+    Body: { "username": "66114640275", "password": "..." }
+    ตรวจสอบกับ LDAP มหาวิทยาลัย แทน database
+    """
+    serializer_class = LDAPTokenObtainPairSerializer
+
+
+# ── Router ────────────────────────────────────────────────────────────────────
 router = DefaultRouter()
 router.register('buildings',     BuildingViewSet,       basename='building')
 router.register('rooms',         RoomViewSet,           basename='room')
@@ -21,14 +34,14 @@ router.register('forecasts',     DemandForecastViewSet, basename='forecast')
 
 urlpatterns = [
     # Auth
-    path('auth/register/', RegisterView.as_view(),        name='register'),
-    path('auth/login/',    TokenObtainPairView.as_view(),  name='login'),
-    path('auth/refresh/',  TokenRefreshView.as_view(),     name='token_refresh'),
-    path('auth/profile/',  ProfileView.as_view(),          name='profile'),
+    path('auth/register/', RegisterView.as_view(),           name='register'),
+    path('auth/login/',    LDAPTokenObtainPairView.as_view(), name='login'),    # ← เปลี่ยนตรงนี้
+    path('auth/refresh/',  TokenRefreshView.as_view(),        name='token_refresh'),
+    path('auth/profile/',  ProfileView.as_view(),             name='profile'),
 
     # Dashboard + Export
-    path('dashboard/',     DashboardView.as_view(),        name='dashboard'),
-    path('export/excel/',  ExportExcelView.as_view(),      name='export_excel'),
+    path('dashboard/',     DashboardView.as_view(),           name='dashboard'),
+    path('export/excel/',  ExportExcelView.as_view(),         name='export_excel'),
 
     # ViewSets
     path('', include(router.urls)),

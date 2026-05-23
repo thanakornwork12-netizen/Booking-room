@@ -178,7 +178,6 @@ class TermBookingSerializer(serializers.ModelSerializer):
         if t_start >= t_end:
             raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
 
-        # ตรวจซ้อนกับ TermBooking อื่น
         overlap = TermBooking.objects.filter(
             room=room,
             day_of_week=dow,
@@ -285,8 +284,8 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             )
 
         # ── ชั้นที่ 2: ตรวจ TermBooking (ห้องถูกล็อกตลอดเทอม) ──
-        target_date = start_time.date()
-        target_dow  = target_date.weekday()
+        target_date  = start_time.date()
+        target_dow   = target_date.weekday()
         overlap_term = TermBooking.objects.filter(
             room=room,
             day_of_week=target_dow,
@@ -393,3 +392,227 @@ class RoomUsageStatSerializer(serializers.ModelSerializer):
         fields = ['id', 'room', 'room_name', 'date',
                   'total_bookings', 'term_bookings', 'dynamic_bookings',
                   'utilization_rate']
+
+
+# ============================================================
+# LDAP JWT AUTH
+# เพิ่มตรงนี้ — ไม่แตะโค้ดเก่าด้านบนเลย
+# ============================================================
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from .ldap_auth import authenticate_ldap
+
+
+class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    แทนที่ default JWT serializer
+    ใช้ LDAP ของมหาวิทยาลัยตรวจสอบ credential แทน database
+    username = รหัสนักศึกษา เช่น 66114640275
+    password = รหัสผ่านที่ user กรอกจากหน้า login โดยตรง
+    """
+
+    def validate(self, attrs):
+        username = attrs.get(self.username_field, '').strip()
+        password = attrs.get('password', '')
+
+        # ── ส่ง credential ที่รับมาจาก login form ไปตรวจกับ LDAP ──
+        ldap_user = authenticate_ldap(username, password)
+
+        if not ldap_user:
+            raise serializers.ValidationError(
+                {'detail': 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'}
+            )
+
+        # ── สร้างหรืออัปเดต Django user (ไม่เก็บ password ใน DB) ──
+        user, created = User.objects.get_or_create(username=username)
+
+        # อัปเดตข้อมูลจาก LDAP ทุกครั้งที่ login
+        full_name  = ldap_user.get('full_name', '')
+        name_parts = full_name.split(' ', 1)
+        user.first_name = name_parts[0] if name_parts else ''
+        user.last_name  = name_parts[1] if len(name_parts) > 1 else ''
+        user.email      = ldap_user.get('email', '')
+        user.faculty    = ldap_user.get('department', '')
+        user.set_unusable_password()   # ไม่เก็บ password ใน database
+        user.save()
+
+        # ── สร้าง JWT token ──
+        refresh = RefreshToken.for_user(user)
+
+        return {
+            'access':     str(refresh.access_token),
+            'refresh':    str(refresh),
+            'username':   username,
+            'name':       full_name,
+            'email':      user.email,
+            'faculty':    user.faculty,
+            'role':       getattr(user, 'role', 'student'),
+            'is_new':     created,
+        }
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework import serializers
+
+from .ldap_auth import authenticate_ldap
+from .models import User
+
+
+class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Login ด้วย LDAP มหาวิทยาลัย
+
+    Frontend ส่ง:
+    {
+        "username": "6612345678",
+        "password": "xxxx"
+    }
+
+    ระบบจะ:
+    1. ตรวจสอบ credential กับ LDAP
+    2. ถ้าถูก -> สร้าง/อัปเดต Django User
+    3. สร้าง JWT access + refresh token
+    """
+
+    def validate(self, attrs):
+
+        # =====================================================
+        # รับค่าจาก frontend
+        # =====================================================
+
+        username = attrs.get('username', '').strip()
+        password = attrs.get('password', '')
+
+        if not username:
+            raise serializers.ValidationError({
+                'detail': 'กรุณากรอกรหัสนักศึกษา'
+            })
+
+        if not password:
+            raise serializers.ValidationError({
+                'detail': 'กรุณากรอกรหัสผ่าน'
+            })
+
+        # =====================================================
+        # รองรับกรอกทั้ง:
+        # 6612345678
+        # และ
+        # 6612345678@ubu.ac.th
+        # =====================================================
+
+        pure_username = username
+
+        if '@' in username:
+            pure_username = username.split('@')[0]
+
+        # =====================================================
+        # LDAP AUTH
+        # =====================================================
+
+        ldap_user = authenticate_ldap(
+            pure_username,
+            password
+        )
+
+        # login ไม่ผ่าน
+        if not ldap_user:
+
+            raise serializers.ValidationError({
+                'detail': 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'
+            })
+
+        # =====================================================
+        # CREATE / UPDATE DJANGO USER
+        # =====================================================
+
+        user, created = User.objects.get_or_create(
+            username=pure_username
+        )
+
+        # =====================================================
+        # UPDATE USER INFO FROM LDAP
+        # =====================================================
+
+        full_name = ldap_user.get('full_name', '')
+
+        # แยกชื่อ นามสกุล
+        name_parts = full_name.split(' ', 1)
+
+        first_name = ''
+        last_name = ''
+
+        if len(name_parts) >= 1:
+            first_name = name_parts[0]
+
+        if len(name_parts) >= 2:
+            last_name = name_parts[1]
+
+        user.first_name = first_name
+        user.last_name = last_name
+
+        user.email = ldap_user.get(
+            'email',
+            f'{pure_username}@ubu.ac.th'
+        )
+
+        user.faculty = ldap_user.get(
+            'department',
+            ''
+        )
+
+        # default role
+        if not user.role:
+            user.role = 'student'
+
+        # IMPORTANT:
+        # ไม่เก็บ password ใน database
+        user.set_unusable_password()
+
+        user.save()
+
+        # =====================================================
+        # GENERATE JWT TOKEN
+        # =====================================================
+
+        refresh = RefreshToken.for_user(user)
+
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        # =====================================================
+        # RESPONSE
+        # =====================================================
+
+        return {
+
+            # JWT
+            'access': access_token,
+            'refresh': refresh_token,
+
+            # USER INFO
+            'user': {
+
+                'id': user.id,
+
+                'username': user.username,
+
+                'first_name': user.first_name,
+
+                'last_name': user.last_name,
+
+                'full_name': f'{user.first_name} {user.last_name}'.strip(),
+
+                'email': user.email,
+
+                'faculty': user.faculty,
+
+                'role': user.role,
+
+                'avatar': (
+                    user.avatar.url
+                    if getattr(user, 'avatar', None)
+                    else None
+                ),
+
+                'is_new_user': created,
+            }
+        }

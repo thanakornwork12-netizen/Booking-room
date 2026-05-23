@@ -9,7 +9,10 @@ from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-
+from django.contrib.auth import login
+from django.contrib.auth.models import User
+from django.shortcuts import redirect, render
+from .ldap_auth import authenticate_ldap
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
@@ -652,3 +655,27 @@ class ExportExcelView(APIView):
             import traceback
             traceback.print_exc()
             return JsonResponse({'error': str(e)}, status=400)
+        
+def login_view(request):
+    if request.method == 'POST':
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+
+        # ส่ง credential ที่ user กรอกไป verify กับ LDAP
+        ldap_user = authenticate_ldap(username, password)
+
+        if ldap_user:
+            # สร้าง/อัปเดต Django user
+            user, _ = User.objects.get_or_create(username=username)
+            user.first_name = ldap_user['full_name']
+            user.email      = ldap_user['email']
+            user.save()
+
+            login(request, user,
+                  backend='django.contrib.auth.backends.ModelBackend')
+            return redirect('home')
+
+        return render(request, 'login.html',
+                      {'error': 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'})
+
+    return render(request, 'login.html')

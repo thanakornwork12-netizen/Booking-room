@@ -165,3 +165,6 @@ EMAIL_HOST_USER = 'nookkup47@gmail.com'
 
 EMAIL_HOST_PASSWORD = 'yubm xsqs ndrp sucb'
 
+AUTH_LDAP_SERVER_URI = 'ldaps://202.28.50.28:636'
+AUTH_LDAP_DOMAIN     = 'UBU'
+AUTH_LDAP_BASE_OU    = 'OU=STD,OU=SCI,DC=UBU,DC=AC,DC=TH'
