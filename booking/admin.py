@@ -6,7 +6,7 @@ from import_export.admin import ImportExportModelAdmin
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     Booking, BookingLog, DemandForecast,
-    Notification, RoomUsageStat, TermBooking
+    Notification, RoomUsageStat, TermBooking, MaintenanceBlock,
 )
 
 # --- Custom Action Function ---
@@ -106,6 +106,12 @@ class NotificationAdmin(admin.ModelAdmin):
 class RoomUsageStatAdmin(ImportExportModelAdmin):
     list_display = ['room', 'date', 'total_bookings', 'utilization_rate']
     list_filter = ['date']
+
+@admin.register(MaintenanceBlock)
+class MaintenanceBlockAdmin(admin.ModelAdmin):
+    list_display = ['room', 'start_time', 'end_time', 'status', 'predicted_demand_avg']
+    list_filter  = ['status', 'room__building']
+
 
 @admin.register(RoomFacility)
 class RoomFacilityAdmin(ImportExportModelAdmin):

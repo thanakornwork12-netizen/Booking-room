@@ -25,7 +25,7 @@ export default function LoginPage() {
 
   const onSubmit = async () => {
     if (!form.username.trim() || !form.password) {
-      setError('กรุณากรอกรหัสนักศึกษาและรหัสผ่าน')
+      setError('กรุณากรอกชื่อผู้ใช้หรือรหัสนักศึกษาและรหัสผ่าน')
       return
     }
 
@@ -81,11 +81,11 @@ export default function LoginPage() {
           <div className="space-y-4">
             <div className="au2">
               <label className="block text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">
-                รหัสนักศึกษา
+                ชื่อผู้ใช้ / รหัสนักศึกษา
               </label>
               <input
                 type="text"
-                placeholder="เช่น 66114640275"
+                placeholder="เช่น somchai123 หรือ 66114640275"
                 value={form.username}
                 onChange={e => setForm({ ...form, username: e.target.value })}
                 onKeyDown={e => e.key === 'Enter' && onSubmit()}

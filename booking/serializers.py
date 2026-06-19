@@ -6,7 +6,7 @@ from datetime import datetime
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
-    DemandForecast, Notification, RoomUsageStat
+    DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
 
 
@@ -38,6 +38,14 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
+
+        # Normalize username so users who register with an email
+        # (e.g. '6611234567@ubu.ac.th') will have the same username
+        # as LDAP logins that use the bare student id '6611234567'.
+        username = validated_data.get('username', '')
+        if isinstance(username, str) and '@' in username:
+            validated_data['username'] = username.split('@')[0]
+
         user = User(**validated_data)
         user.set_password(password)
         user.save()
@@ -505,7 +513,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
             pure_username = username.split('@')[0]
 
         # =====================================================
-        # LDAP AUTH
+        # LDAP AUTH ก่อน แล้ว fallback ไปบัญชี local ที่สมัครผ่านระบบ
         # =====================================================
 
         ldap_user = authenticate_ldap(
@@ -513,12 +521,39 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
             password
         )
 
-        # login ไม่ผ่าน
         if not ldap_user:
+            user = (
+                User.objects.filter(username=username).first()
+                or User.objects.filter(username=pure_username).first()
+            )
 
-            raise serializers.ValidationError({
-                'detail': 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'
-            })
+            if not user or not user.check_password(password):
+                raise serializers.ValidationError({
+                    'detail': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
+                })
+
+            refresh = RefreshToken.for_user(user)
+            return {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'full_name': f'{user.first_name} {user.last_name}'.strip(),
+                    'email': user.email,
+                    'faculty': user.faculty,
+                    'role': user.role,
+                    'avatar': (
+                        user.avatar.url
+                        if getattr(user, 'avatar', None)
+                        else None
+                    ),
+                    'is_new_user': False,
+                }
+            }
+
 
         # =====================================================
         # CREATE / UPDATE DJANGO USER
@@ -549,10 +584,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         user.first_name = first_name
         user.last_name = last_name
 
-        user.email = ldap_user.get(
-            'email',
-            f'{pure_username}@ubu.ac.th'
-        )
+        user.email = ldap_user.get('email') or f'{pure_username}@ubu.ac.th'
 
         user.faculty = ldap_user.get(
             'department',
@@ -616,3 +648,44 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'is_new_user': created,
             }
         }
+
+
+# ============================================================
+# MAINTENANCE BLOCK
+# ============================================================
+class MaintenanceBlockSerializer(serializers.ModelSerializer):
+    room_name     = serializers.CharField(source='room.name', read_only=True)
+    building_name = serializers.CharField(source='room.building.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+
+    class Meta:
+        model  = MaintenanceBlock
+        fields = [
+            'id', 'room', 'room_name', 'building_name',
+            'start_time', 'end_time', 'reason', 'note', 'status',
+            'predicted_demand_avg', 'created_by', 'created_by_name', 'created_at',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at']
+
+
+class MaintenanceBlockCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = MaintenanceBlock
+        fields = ['room', 'start_time', 'end_time', 'reason', 'note', 'predicted_demand_avg']
+
+    def validate(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+        return data
+
+
+class AdminRoomStatusSerializer(serializers.Serializer):
+    id          = serializers.IntegerField()
+    name        = serializers.CharField()
+    code        = serializers.CharField()
+    building    = serializers.CharField()
+    capacity    = serializers.IntegerField()
+    room_type   = serializers.CharField()
+    status      = serializers.CharField()
+    util_rate   = serializers.FloatField(required=False)
+    booking_count = serializers.IntegerField(required=False)

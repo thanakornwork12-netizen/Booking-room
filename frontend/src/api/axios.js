@@ -2,6 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: 'http://127.0.0.1:8000/api/',
+  timeout: 15000,
 })
 
 // ── Request: แนบ token ทุก request ยกเว้น auth endpoints ──────────────────
@@ -65,15 +66,16 @@ function _clearAndRedirect() {
 // ── Helper: login แล้วเก็บ token อัตโนมัติ ────────────────────────────────
 export async function loginWithLDAP(username, password) {
   const res = await api.post('auth/login/', { username, password })
+  const user = res.data.user || res.data
 
   localStorage.setItem('access_token',  res.data.access)
   localStorage.setItem('refresh_token', res.data.refresh)
   localStorage.setItem('user', JSON.stringify({
-    username: res.data.username,
-    name:     res.data.name,
-    email:    res.data.email,
-    faculty:  res.data.faculty,
-    role:     res.data.role,
+    username: user.username,
+    name:     user.full_name || user.name,
+    email:    user.email,
+    faculty:  user.faculty,
+    role:     user.role,
   }))
 
   return res.data

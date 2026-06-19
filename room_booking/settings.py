@@ -153,17 +153,20 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
 }
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 
-EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 
-EMAIL_PORT = 587
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 
-EMAIL_USE_TLS = True
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False') == 'True'
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
 
-EMAIL_HOST_USER = 'nookkup47@gmail.com'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'nookkup47@gmail.com')
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-EMAIL_HOST_PASSWORD = 'yubm xsqs ndrp sucb'
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'yubm xsqs ndrp sucb')
 
 AUTH_LDAP_SERVER_URI = 'ldaps://202.28.50.28:636'
 AUTH_LDAP_DOMAIN     = 'UBU'

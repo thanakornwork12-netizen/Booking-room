@@ -611,10 +611,12 @@ export default function HomePage() {
   const handleCheckIn = async (id) => {
     try {
       await api.post(`/bookings/${id}/check_in/`)
-      setBookings(prev => prev.map(b => b.id === id ? {...b, checked_in: true} : b))
-      if (selectedBooking?.id === id) setSelectedBooking(prev => ({...prev, checked_in: true}))
+      setBookings(prev => prev.map(b => b.id === id ? {...b, checked_in: true, status: 'checked_in'} : b))
+      if (selectedBooking?.id === id) setSelectedBooking(prev => ({...prev, checked_in: true, status: 'checked_in'}))
       alert('✅ Check-in สำเร็จ!')
-    } catch { alert('ไม่สามารถ Check-in ได้ในขณะนี้') }
+    } catch (err) {
+      alert(err.response?.data?.error || 'ไม่สามารถ Check-in ได้ในขณะนี้')
+    }
   }
 
   const fmtDate     = dt => new Date(dt).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})

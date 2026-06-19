@@ -4,7 +4,7 @@ import {
   ArrowLeft, Clock, BarChart2, TrendingUp, Calendar, X,
   Building2, AlertTriangle, Zap, UserX,
   Download, ChevronDown, FileSpreadsheet, Check, LayoutGrid,
-  BookOpen
+  BookOpen, Wrench, Loader2
 } from 'lucide-react'
 import api from '../api/axios'
 
@@ -21,107 +21,7 @@ const ANIM = `
 .pulse{animation:pulse 2s ease-in-out infinite}
 `
 
-// ── ข้อมูลห้องทั้งหมด (static fallback + enrichment) ──────────
-const ALL_ROOMS_DATA = [
-  // --- Engineering (EN) ---
-  { code: 'EN-S03', capacity: 4, util: 0.62, peak: 0.34, building: 'วิศวกรรม' },
-  { code: 'EN-S02', capacity: 8, util: 0.63, peak: 0.35, building: 'วิศวกรรม' },
-  { code: 'EN-S01', capacity: 4, util: 0.58, peak: 0.33, building: 'วิศวกรรม' },
-  { code: 'EN-C10', capacity: 60, util: 0.64, peak: 0.36, building: 'วิศวกรรม' },
-  { code: 'EN-C09', capacity: 30, util: 0.60, peak: 0.33, building: 'วิศวกรรม' },
-  { code: 'EN-C08', capacity: 100, util: 0.62, peak: 0.31, building: 'วิศวกรรม' },
-  { code: 'EN-C07', capacity: 30, util: 0.62, peak: 0.31, building: 'วิศวกรรม' },
-  { code: 'EN-C06', capacity: 60, util: 0.57, peak: 0.35, building: 'วิศวกรรม' },
-  { code: 'EN-C05', capacity: 30, util: 0.65, peak: 0.35, building: 'วิศวกรรม' },
-  { code: 'EN-C04', capacity: 30, util: 0.59, peak: 0.29, building: 'วิศวกรรม' },
-  { code: 'EN-C03', capacity: 30, util: 0.62, peak: 0.34, building: 'วิศวกรรม' },
-  { code: 'EN-C02', capacity: 100, util: 0.64, peak: 0.35, building: 'วิศวกรรม' },
-  { code: 'EN-C01', capacity: 60, util: 0.58, peak: 0.29, building: 'วิศวกรรม' },
-  { code: 'EN-L05', capacity: 30, util: 0.61, peak: 0.32, building: 'วิศวกรรม' },
-  { code: 'EN-L04', capacity: 100, util: 0.66, peak: 0.33, building: 'วิศวกรรม' },
-  { code: 'EN-L03', capacity: 100, util: 0.60, peak: 0.30, building: 'วิศวกรรม' },
-  { code: 'EN-L02', capacity: 100, util: 0.59, peak: 0.31, building: 'วิศวกรรม' },
-  { code: 'EN-L01', capacity: 30, util: 0.62, peak: 0.37, building: 'วิศวกรรม' },
-  { code: 'EN-M05', capacity: 15, util: 0.63, peak: 0.31, building: 'วิศวกรรม' },
-  { code: 'EN-M04', capacity: 15, util: 0.58, peak: 0.35, building: 'วิศวกรรม' },
-  { code: 'EN-M03', capacity: 15, util: 0.60, peak: 0.33, building: 'วิศวกรรม' },
-  { code: 'EN-M02', capacity: 15, util: 0.64, peak: 0.35, building: 'วิศวกรรม' },
-  { code: 'EN-M01', capacity: 15, util: 0.61, peak: 0.27, building: 'วิศวกรรม' },
-
-  // --- Science (SC) ---
-  { code: 'SC-S03', capacity: 8, util: 0.58, peak: 0.33, building: 'วิทยาศาสตร์' },
-  { code: 'SC-S02', capacity: 8, util: 0.59, peak: 0.29, building: 'วิทยาศาสตร์' },
-  { code: 'SC-S01', capacity: 6, util: 0.58, peak: 0.35, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C10', capacity: 60, util: 0.63, peak: 0.32, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C09', capacity: 30, util: 0.53, peak: 0.33, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C08', capacity: 60, util: 0.62, peak: 0.37, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C07', capacity: 30, util: 0.62, peak: 0.37, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C06', capacity: 30, util: 0.66, peak: 0.33, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C05', capacity: 60, util: 0.62, peak: 0.37, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C04', capacity: 100, util: 0.63, peak: 0.31, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C03', capacity: 100, util: 0.66, peak: 0.33, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C02', capacity: 60, util: 0.61, peak: 0.38, building: 'วิทยาศาสตร์' },
-  { code: 'SC-C01', capacity: 100, util: 0.63, peak: 0.31, building: 'วิทยาศาสตร์' },
-  { code: 'SC-L05', capacity: 30, util: 0.60, peak: 0.35, building: 'วิทยาศาสตร์' },
-  { code: 'SC-L04', capacity: 100, util: 0.61, peak: 0.32, building: 'วิทยาศาสตร์' },
-  { code: 'SC-L03', capacity: 60, util: 0.59, peak: 0.31, building: 'วิทยาศาสตร์' },
-  { code: 'SC-L02', capacity: 60, util: 0.66, peak: 0.33, building: 'วิทยาศาสตร์' },
-  { code: 'SC-L01', capacity: 30, util: 0.62, peak: 0.37, building: 'วิทยาศาสตร์' },
-  { code: 'SC-M05', capacity: 15, util: 0.58, peak: 0.35, building: 'วิทยาศาสตร์' },
-  { code: 'SC-M04', capacity: 15, util: 0.63, peak: 0.31, building: 'วิทยาศาสตร์' },
-  { code: 'SC-M03', capacity: 15, util: 0.60, peak: 0.33, building: 'วิทยาศาสตร์' },
-  { code: 'SC-M02', capacity: 15, util: 0.64, peak: 0.35, building: 'วิทยาศาสตร์' },
-  { code: 'SC-M01', capacity: 15, util: 0.61, peak: 0.27, building: 'วิทยาศาสตร์' },
-
-  // --- Library (LIB) ---
-  { code: 'LIB-S05', capacity: 8, util: 0.66, peak: 0.28, building: 'ห้องสมุด' },
-  { code: 'LIB-S04', capacity: 4, util: 0.64, peak: 0.35, building: 'ห้องสมุด' },
-  { code: 'LIB-S03', capacity: 4, util: 0.62, peak: 0.31, building: 'ห้องสมุด' },
-  { code: 'LIB-S02', capacity: 4, util: 0.58, peak: 0.35, building: 'ห้องสมุด' },
-  { code: 'LIB-S01', capacity: 8, util: 0.61, peak: 0.27, building: 'ห้องสมุด' },
-  { code: 'LIB-C05', capacity: 30, util: 0.60, peak: 0.35, building: 'ห้องสมุด' },
-  { code: 'LIB-C04', capacity: 60, util: 0.62, peak: 0.37, building: 'ห้องสมุด' },
-  { code: 'LIB-C03', capacity: 60, util: 0.60, peak: 0.33, building: 'ห้องสมุด' },
-  { code: 'LIB-C02', capacity: 60, util: 0.61, peak: 0.30, building: 'ห้องสมุด' },
-  { code: 'LIB-C01', capacity: 30, util: 0.61, peak: 0.30, building: 'ห้องสมุด' },
-  { code: 'LIB-L05', capacity: 30, util: 0.66, peak: 0.33, building: 'ห้องสมุด' },
-  { code: 'LIB-L04', capacity: 100, util: 0.59, peak: 0.31, building: 'ห้องสมุด' },
-  { code: 'LIB-L03', capacity: 30, util: 0.62, peak: 0.37, building: 'ห้องสมุด' },
-  { code: 'LIB-L02', capacity: 30, util: 0.66, peak: 0.33, building: 'ห้องสมุด' },
-  { code: 'LIB-L01', capacity: 60, util: 0.59, peak: 0.31, building: 'ห้องสมุด' },
-  { code: 'LIB-M10', capacity: 15, util: 0.60, peak: 0.35, building: 'ห้องสมุด' },
-  { code: 'LIB-M09', capacity: 15, util: 0.62, peak: 0.37, building: 'ห้องสมุด' },
-  { code: 'LIB-M08', capacity: 15, util: 0.61, peak: 0.32, building: 'ห้องสมุด' },
-  { code: 'LIB-M07', capacity: 15, util: 0.59, peak: 0.31, building: 'ห้องสมุด' },
-  { code: 'LIB-M06', capacity: 15, util: 0.63, peak: 0.31, building: 'ห้องสมุด' },
-  { code: 'LIB-M05', capacity: 15, util: 0.60, peak: 0.33, building: 'ห้องสมุด' },
-  { code: 'LIB-M04', capacity: 15, util: 0.64, peak: 0.35, building: 'ห้องสมุด' },
-  { code: 'LIB-M03', capacity: 15, util: 0.58, peak: 0.35, building: 'ห้องสมุด' },
-  { code: 'LIB-M02', capacity: 15, util: 0.61, peak: 0.27, building: 'ห้องสมุด' },
-  { code: 'LIB-M01', capacity: 50, util: 0.60, peak: 0.36, building: 'ห้องสมุด' },
-
-  // --- Main Building (ROOM-xx) ---
-  { code: 'ROOM-20', capacity: 50, util: 0.60, peak: 0.36, building: 'อาคารหลัก' },
-  { code: 'ROOM-19', capacity: 50, util: 0.63, peak: 0.36, building: 'อาคารหลัก' },
-  { code: 'ROOM-18', capacity: 50, util: 0.60, peak: 0.30, building: 'อาคารหลัก' },
-  { code: 'ROOM-17', capacity: 50, util: 0.66, peak: 0.33, building: 'อาคารหลัก' },
-  { code: 'ROOM-16', capacity: 50, util: 0.62, peak: 0.37, building: 'อาคารหลัก' },
-  { code: 'ROOM-15', capacity: 50, util: 0.59, peak: 0.31, building: 'อาคารหลัก' },
-  { code: 'ROOM-14', capacity: 50, util: 0.62, peak: 0.31, building: 'อาคารหลัก' },
-  { code: 'ROOM-13', capacity: 50, util: 0.61, peak: 0.30, building: 'อาคารหลัก' },
-  { code: 'ROOM-12', capacity: 50, util: 0.60, peak: 0.36, building: 'อาคารหลัก' },
-  { code: 'ROOM-11', capacity: 50, util: 0.63, peak: 0.36, building: 'อาคารหลัก' },
-  { code: 'ROOM-10', capacity: 50, util: 0.60, peak: 0.30, building: 'อาคารหลัก' },
-  { code: 'ROOM-09', capacity: 50, util: 0.66, peak: 0.33, building: 'อาคารหลัก' },
-  { code: 'ROOM-08', capacity: 50, util: 0.62, peak: 0.37, building: 'อาคารหลัก' },
-  { code: 'ROOM-07', capacity: 50, util: 0.59, peak: 0.31, building: 'อาคารหลัก' },
-  { code: 'ROOM-06', capacity: 50, util: 0.62, peak: 0.31, building: 'อาคารหลัก' },
-  { code: 'ROOM-05', capacity: 50, util: 0.61, peak: 0.30, building: 'อาคารหลัก' },
-  { code: 'ROOM-04', capacity: 50, util: 0.66, peak: 0.33, building: 'อาคารหลัก' },
-  { code: 'ROOM-03', capacity: 50, util: 0.60, peak: 0.30, building: 'อาคารหลัก' },
-  { code: 'ROOM-02', capacity: 50, util: 0.63, peak: 0.36, building: 'อาคารหลัก' },
-  { code: 'ROOM-01', capacity: 50, util: 0.60, peak: 0.36, building: 'อาคารหลัก' }
-];
+// ข้อมูลห้องดึงจาก API จริง (rooms/admin-status/) — ไม่ใช้ mock
 // ── DOW map ───────────────────────────────────────────────────
 const DOW_TH = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์']
 
@@ -180,9 +80,8 @@ const getTermsThisWeek = (roomId, termBookings) => {
   )
 }
 
-// ── helper: ค้นหาข้อมูล static ของห้อง ──
-const getRoomData = (name) =>
-  ALL_ROOMS_DATA.find(r => name?.includes(r.code)) || null
+const getRoomData = (name, adminRooms) =>
+  adminRooms?.find(r => name?.includes(r.code) || r.name === name) || null
 
 // ── ตรวจว่าเลยเวลาสิ้นสุดแล้วหรือยัง ──────────────────────
 const isPast = (endTime) => new Date() > new Date(endTime)
@@ -264,24 +163,31 @@ const getRoomStatus = (roomName, roomId, bookings, termBookings) => {
   return { state, label, color, bg, border, allBookings: sorted, termsToday, termNow }
 }
 
-// ── รวม bookings + ALL_ROOMS_DATA ─────────────────────────────
-const extractRooms = (bookings) => {
+const extractRooms = (bookings, adminRooms = []) => {
   const map = {}
-  ALL_ROOMS_DATA.forEach(r => { map[r.code] = { name:r.code, roomId:null, ...r } })
+  adminRooms.forEach(r => {
+    map[r.code || r.name] = {
+      name: r.name,
+      roomId: r.id,
+      code: r.code || r.name,
+      building: r.building || 'อาคาร ODL',
+      capacity: r.capacity,
+      util: r.util_rate,
+      peak: null,
+    }
+  })
   bookings.forEach(b => {
     const bname = b.room_name || `ห้อง #${b.room}`
     if (!map[bname]) {
-      map[bname] = { name:bname, roomId:b.room, code:bname, building:'อื่นๆ', capacity:null, util:null, peak:null }
+      map[bname] = { name: bname, roomId: b.room, code: bname, building: 'อื่นๆ', capacity: null, util: null, peak: null }
     } else {
       map[bname].roomId = b.room
     }
-    const rd = getRoomData(bname)
-    if (rd && map[rd.code]) map[rd.code].roomId = b.room
   })
-  return Object.values(map).sort((a,b) => a.name.localeCompare(b.name, 'th'))
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name, 'th'))
 }
 
-const BUILDING_ORDER = ['ห้องสมุด','วิทยาศาสตร์','วิศวกรรม','อาคารหลัก','อื่นๆ']
+const BUILDING_ORDER = ['อาคาร ODL (Online Digital Learning)', 'อาคาร ODL', 'อื่นๆ']
 
 // ============================================================
 // EXPORT BUTTON
@@ -589,7 +495,7 @@ function TermSchedulePopup({ termsToday, termNow, roomName }) {
 // ============================================================
 // ROOM STATUS GRID
 // ============================================================
-function RoomStatusGrid({ bookings, termBookings, fmtTime, isMobile = false }) {
+function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile = false }) {
   const [tick, setTick] = useState(0)
   const [filterBuilding, setFilterBuilding] = useState('ทั้งหมด')
   const [selectedRoom, setSelectedRoom] = useState(null)
@@ -599,7 +505,7 @@ function RoomStatusGrid({ bookings, termBookings, fmtTime, isMobile = false }) {
     return () => clearInterval(t)
   }, [])
 
-  const rooms = extractRooms(bookings)
+  const rooms = extractRooms(bookings, adminRooms)
 
   const buildings = ['ทั้งหมด', ...BUILDING_ORDER.filter(b => rooms.some(r => r.building === b))]
   const filtered = filterBuilding === 'ทั้งหมด'
@@ -620,11 +526,9 @@ function RoomStatusGrid({ bookings, termBookings, fmtTime, isMobile = false }) {
   const freeCount        = roomStatuses.filter(s => s.state === 'free').length
 
   const BUILDING_ICONS = {
-    'ห้องสมุด':    '📚',
-    'วิทยาศาสตร์': '🔬',
-    'วิศวกรรม':   '⚙️',
-    'อาคารหลัก':  '🏛️',
-    'อื่นๆ':       '🚪',
+    'อาคาร ODL (Online Digital Learning)': '🏢',
+    'อาคาร ODL': '🏢',
+    'อื่นๆ': '🚪',
   }
 
   return (
@@ -858,9 +762,97 @@ function RoomStatusGrid({ bookings, termBookings, fmtTime, isMobile = false }) {
 }
 
 // ============================================================
+// MAINTENANCE SCHEDULER PANEL
+// ============================================================
+function MaintenancePanel({ adminRooms }) {
+  const [slots, setSlots]       = useState([])
+  const [loading, setLoading]   = useState(false)
+  const [blocking, setBlocking] = useState(null)
+
+  const fetchSlots = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get('maintenance/slots/', { params: { min_hours: 3, max_demand: 0.10 } })
+      setSlots(res.data.slots || [])
+    } catch {
+      alert('ไม่สามารถดึงสล็อตได้ — กรุณา retrain โมเดลก่อน')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const blockSlot = async (slot) => {
+    if (!confirm(`ล็อกห้อง ${slot.room_name}\n${slot.date} ${String(slot.start_hour).padStart(2,'0')}:00–${String(slot.end_hour).padStart(2,'0')}:00\nเพื่อซ่อมบำรุง?`)) return
+    setBlocking(slot.label)
+    try {
+      const start = `${slot.date}T${String(slot.start_hour).padStart(2,'0')}:00:00`
+      const end   = `${slot.date}T${String(slot.end_hour).padStart(2,'0')}:00:00`
+      await api.post('maintenance-blocks/', {
+        room: slot.room_id,
+        start_time: start,
+        end_time: end,
+        reason: 'ซ่อมบำรุงเชิงป้องกัน (AI แนะนำ)',
+        predicted_demand_avg: slot.avg_demand,
+        note: `ช่วง demand ต่ำ ${(slot.avg_demand * 100).toFixed(1)}% — ${slot.hours?.length || 0} ชม.`,
+      })
+      alert('ล็อกห้องเรียบร้อย — ส่งช่างเข้าบำรุงได้')
+      setSlots(prev => prev.filter(s => s.label !== slot.label))
+    } catch (e) {
+      alert(e.response?.data?.error || 'ล็อกห้องไม่สำเร็จ')
+    } finally {
+      setBlocking(null)
+    }
+  }
+
+  return (
+    <div className="au space-y-4">
+      <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <Wrench size={16} className="text-blue-600" />
+              ระบบแนะนำสล็อตซ่อมบำรุงเชิงป้องกัน
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              คัดจาก LSTM: demand ต่ำกว่า 10% ติดกัน ≥3 ชม. — ห้องจริง {adminRooms?.length || 0} ห้อง
+            </p>
+          </div>
+          <button onClick={fetchSlots} disabled={loading}
+            className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-60">
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            ดึงสล็อตแนะนำ
+          </button>
+        </div>
+        {slots.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-8">
+            {loading ? 'กำลังวิเคราะห์ DemandForecast...' : 'กดปุ่มด้านบนเพื่อดึงช่วงเวลาที่ AI แนะนำ'}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {slots.map((slot, i) => (
+              <div key={i} className="flex items-center gap-4 border border-emerald-100 bg-emerald-50/50 rounded-xl px-4 py-3">
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-slate-800">{slot.room_name}</p>
+                  <p className="text-xs text-slate-500">{slot.date} · {String(slot.start_hour).padStart(2,'0')}:00–{String(slot.end_hour).padStart(2,'0')}:00</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">demand เฉลี่ย {(slot.avg_demand * 100).toFixed(1)}%</p>
+                </div>
+                <button onClick={() => blockSlot(slot)} disabled={blocking === slot.label}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-lg disabled:opacity-50">
+                  {blocking === slot.label ? 'กำลังล็อก...' : 'ล็อกห้อง 1 คลิก'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // DESKTOP
 // ============================================================
-function DesktopAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTab, selectedBooking,
+function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
@@ -874,7 +866,8 @@ function DesktopAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTa
 
   const tabs = [
     {key:'active',   label:'การจองปัจจุบัน', count:currentB.length},
-    {key:'rooms',    label:'สถานะห้อง',      count:null},
+    {key:'rooms',    label:'สถานะห้อง',      count:adminRooms?.length ?? null},
+    {key:'maintenance', label:'ซ่อมบำรุง AI', count:null},
     {key:'overview', label:'ภาพรวม',         count:null},
     {key:'noshow',   label:'No-Show',        count:noShowB.length},
     {key:'all',      label:'ทั้งหมด',        count:bookings.length},
@@ -991,10 +984,14 @@ function DesktopAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTa
             <div className="flex items-center gap-2 mb-6">
               <LayoutGrid size={16} className="text-blue-600" />
               <h2 className="text-base font-bold text-slate-800">สถานะห้องแบบ Real-time</h2>
-              <span className="text-xs text-slate-400 ml-1">— ห้องทั้งหมด {ALL_ROOMS_DATA.length} ห้อง (อัปเดตทุก 30 วินาที)</span>
+              <span className="text-xs text-slate-400 ml-1">— ห้องทั้งหมด {adminRooms?.length ?? 0} ห้อง (ข้อมูลจริงจาก DB)</span>
             </div>
-            <RoomStatusGrid bookings={bookings} termBookings={termBookings} fmtTime={fmtTime} isMobile={false} />
+            <RoomStatusGrid bookings={bookings} termBookings={termBookings} adminRooms={adminRooms} fmtTime={fmtTime} isMobile={false} />
           </div>
+        )}
+
+        {tab === 'maintenance' && (
+          <MaintenancePanel adminRooms={adminRooms} />
         )}
 
         {tab === 'overview' && dashboard && (
@@ -1002,7 +999,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTa
             <div className="space-y-4 au">
               {[
                 {label:'จองวันนี้',    value:dashboard.today_bookings??0,        icon:'📅',color:'text-blue-700'},
-                {label:'ห้องทั้งหมด', value:ALL_ROOMS_DATA.length,               icon:'🏢',color:'text-slate-700'},
+                {label:'ห้องทั้งหมด', value:adminRooms?.length ?? dashboard.total_rooms ?? 0, icon:'🏢',color:'text-slate-700'},
                 {label:'อัตราการใช้', value:`${dashboard.utilization_rate??0}%`, icon:'📊',color:'text-emerald-600'},
                 {label:'ยืนยันแล้ว',  value:activeB.length,                      icon:'✅',color:'text-blue-600'},
               ].map((s,i) => (
@@ -1116,7 +1113,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTa
 // ============================================================
 // MOBILE
 // ============================================================
-function MobileAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTab, selectedBooking,
+function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
@@ -1130,7 +1127,8 @@ function MobileAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTab
 
   const tabs = [
     {key:'active',   label:'จอง',     count:currentB.length},
-    {key:'rooms',    label:'ห้อง',    count:null},
+    {key:'rooms',    label:'ห้อง',    count:adminRooms?.length ?? null},
+    {key:'maintenance', label:'ซ่อม', count:null},
     {key:'overview', label:'ภาพรวม',  count:null},
     {key:'noshow',   label:'No-Show', count:noShowB.length},
     {key:'all',      label:'ทั้งหมด', count:bookings.length},
@@ -1222,9 +1220,9 @@ function MobileAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTab
           <div className="au">
             <div className="flex items-center gap-2 mb-4">
               <LayoutGrid size={14} className="text-blue-600" />
-              <h2 className="text-sm font-bold text-slate-800">สถานะห้อง {ALL_ROOMS_DATA.length} ห้อง</h2>
+              <h2 className="text-sm font-bold text-slate-800">สถานะห้อง {adminRooms?.length ?? 0} ห้อง</h2>
             </div>
-            <RoomStatusGrid bookings={bookings} termBookings={termBookings} fmtTime={fmtTime} isMobile={true} />
+            <RoomStatusGrid bookings={bookings} termBookings={termBookings} adminRooms={adminRooms} fmtTime={fmtTime} isMobile={true} />
           </div>
         )}
 
@@ -1233,7 +1231,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, weekStats, tab, setTab
             <div className="grid grid-cols-2 gap-2 au">
               {[
                 {label:'จองวันนี้',    value:dashboard.today_bookings??0,        icon:'📅',color:'text-blue-700'},
-                {label:'ห้องทั้งหมด', value:ALL_ROOMS_DATA.length,               icon:'🏢',color:'text-slate-700'},
+                {label:'ห้องทั้งหมด', value:adminRooms?.length ?? dashboard.total_rooms ?? 0, icon:'🏢',color:'text-slate-700'},
                 {label:'อัตราการใช้', value:`${dashboard.utilization_rate??0}%`, icon:'📊',color:'text-emerald-600'},
                 {label:'ยืนยันแล้ว',  value:activeB.length,                      icon:'✅',color:'text-blue-600'},
               ].map((s,i) => (
@@ -1310,8 +1308,9 @@ export default function AdminPage() {
   const navigate = useNavigate()
   const isMobile = useDevice()
   const [dashboard,       setDashboard]      = useState(null)
+  const [adminRooms,      setAdminRooms]      = useState([])
   const [bookings,        setBookings]        = useState([])
-  const [termBookings,    setTermBookings]    = useState([])   // ← ใหม่
+  const [termBookings,    setTermBookings]    = useState([])
   const [tab,             setTab]             = useState('active')
   const [loading,         setLoading]         = useState(true)
   const [weekStats,       setWeekStats]       = useState([])
@@ -1320,12 +1319,14 @@ export default function AdminPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [dashRes, bookingRes, termRes] = await Promise.all([
+        const [dashRes, bookingRes, termRes, roomsRes] = await Promise.all([
           api.get('dashboard/'),
           api.get('bookings/'),
-          api.get('term-bookings/'),        // ← endpoint term bookings
+          api.get('term-bookings/'),
+          api.get('rooms/admin-status/').catch(() => ({ data: [] })),
         ])
         setDashboard(dashRes.data)
+        setAdminRooms(Array.isArray(roomsRes.data) ? roomsRes.data : [])
         const all = bookingRes.data.results || []
         setBookings(all)
 
@@ -1375,7 +1376,7 @@ export default function AdminPage() {
   )
 
   const props = {
-    dashboard, bookings, termBookings, weekStats, tab, setTab,
+    dashboard, adminRooms, bookings, termBookings, weekStats, tab, setTab,
     selectedBooking, setSelectedBooking,
     handleCancel, fmtDate, fmtTime, fmtDateFull, navigate
   }

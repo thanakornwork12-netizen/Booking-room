@@ -75,7 +75,8 @@ except ImportError:
     print("   กรุณาติดตั้ง: pip install tensorflow")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-MIN_DAYS      = 200
+MIN_DAYS      = 30   # จำนวน booking ขั้นต่ำต่อห้อง (ข้อมูลจริง ~700+ ต่อห้อง)
+MIN_UNIQUE_DAYS = 14  # จำนวนวันที่มีการใช้งานขั้นต่ำ
 FORECAST_DAYS = 14
 LSTM_LOOKBACK = 14
 LSTM_EPOCHS   = 150          # คงเดิม – ไม่เพิ่มเวลา
@@ -218,6 +219,115 @@ class SeasonalMedianModel:
 
     def predict_series(self, dates) -> np.ndarray:
         return np.array([self.predict_date(d) for d in dates])
+
+
+# ======= Data-Tiering, Cold-Start, Sparse Helpers =============================
+def get_data_tier(n_rows: int, unique_days: int) -> str:
+    if n_rows >= 200 and unique_days >= 60:
+        return 'full'
+    elif n_rows >= 60 and unique_days >= 21:
+        return 'medium'
+    elif n_rows >= 14 and unique_days >= 7:
+        return 'sparse'
+    else:
+        return 'cold_start'
+
+
+def build_cold_start_prior(room, all_rooms_daily: dict) -> SeasonalMedianModel:
+    """
+    รวม daily series จากห้องประเภทเดียวกัน แล้ว fit SeasonalMedianModel เป็น prior
+    all_rooms_daily : dict mapping Room -> pd.Series
+    """
+    same_type = [daily for r, daily in all_rooms_daily.items()
+                 if getattr(r, 'room_type', None) == getattr(room, 'room_type', None)
+                 and getattr(r, 'id', None) != getattr(room, 'id', None)]
+    if not same_type:
+        same_type = list(all_rooms_daily.values())
+
+    if len(same_type) == 0:
+        # fallback: empty seasonal median
+        sm = SeasonalMedianModel()
+        sm.global_median = 0.0
+        return sm
+
+    combined = pd.concat(same_type).groupby(level=0).mean()
+    return SeasonalMedianModel().fit(combined)
+
+
+def build_features_sparse(daily, term_df=None):
+    df = daily.to_frame(name='y')
+    idx = pd.to_datetime(df.index)
+
+    df['dow'] = idx.dayofweek.astype(int)
+    df['month'] = idx.month.astype(int)
+    df['is_weekend'] = (idx.dayofweek >= 5).astype(int)
+
+    for lag in [1, 7]:
+        df[f'lag_{lag}'] = df['y'].shift(lag)
+
+    for w in [3, 7]:
+        df[f'roll_mean_{w}'] = df['y'].shift(1).rolling(w, min_periods=1).mean()
+        df[f'roll_std_{w}'] = df['y'].shift(1).rolling(w, min_periods=1).std().fillna(0)
+
+    return df.bfill().ffill()
+
+
+def train_lgb_sparse(X_tr, y_tr, X_te, y_te):
+    model = lgb.LGBMRegressor(
+        objective='huber', alpha=0.9,
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=3,
+        num_leaves=8,
+        min_child_samples=5,
+        lambda_l1=2.0,
+        lambda_l2=2.0,
+        verbose=-1,
+    )
+    model.fit(X_tr, y_tr,
+              eval_set=[(X_te, y_te)],
+              callbacks=[lgb.early_stopping(30, verbose=False),
+                         lgb.log_evaluation(-1)])
+    return model
+
+
+def augment_sparse_daily(daily: pd.Series, target_days: int = 60) -> pd.Series:
+    if len(daily) >= target_days:
+        return daily
+
+    smed = SeasonalMedianModel().fit(daily)
+    extra = []
+    dates = pd.date_range(
+        daily.index.min() - pd.Timedelta(days=target_days),
+        daily.index.min() - pd.Timedelta(days=1),
+        freq='D'
+    )
+    for d in dates:
+        base = smed.predict_date(d)
+        noise = np.random.normal(0, max(0.01, base) * 0.10)
+        extra.append(max(0.0, base + noise))
+
+    aug_series = pd.Series(extra, index=dates)
+    combined = pd.concat([aug_series, daily]).sort_index()
+    print(f"   🔢 Augment: {len(daily)} → {len(combined)} วัน (synthetic={len(extra)})")
+    return combined
+
+
+class SeasonalPredictor:
+    """Dummy predictor that returns seasonal model predictions for requested index."""
+    def __init__(self, seasonal_model: SeasonalMedianModel):
+        self.seasonal_model = seasonal_model
+
+    def predict(self, X):
+        # X usually a pandas DataFrame with DatetimeIndex
+        try:
+            idx = getattr(X, 'index', None)
+            if idx is None:
+                return np.zeros(len(X))
+            return np.array([self.seasonal_model.predict_date(d) for d in idx])
+        except Exception:
+            return np.zeros(len(X))
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -827,6 +937,9 @@ def _build_forecast_bulk(
                 d_pred = np.expm1(d_pred)
             history.loc[fc_ts] = d_pred
 
+        # guard against non-finite predictions (can happen with synthetic fallbacks)
+        if not np.isfinite(d_pred):
+            d_pred = 0.0
         day_norm = float(np.clip(d_pred / (peak_ref + 1e-6), 0.0, 1.0))
 
         for hr, weight in room_hour_dist.items():
@@ -835,7 +948,15 @@ def _build_forecast_bulk(
             hr_pred      = day_norm * (0.6 + 0.4 * hr_factor)
             hr_term      = hr_term_load * day_norm * 0.6
             hr_dyn       = max(0.0, hr_pred - hr_term)
-            demand_score = round(float(0.7 * hr_pred + 0.3 * hr_dyn), 4)
+            demand_score = 0.7 * hr_pred + 0.3 * hr_dyn
+            if not np.isfinite(demand_score):
+                demand_score = 0.0
+            demand_score = round(float(demand_score), 4)
+
+            if not np.isfinite(hr_term):
+                hr_term = 0.0
+            if not np.isfinite(hr_dyn):
+                hr_dyn = 0.0
 
             if demand_score >= thr_high:
                 day_level = 'urgent';  day_avail = 'book_now'
@@ -900,11 +1021,88 @@ def retrain_and_forecast():
     forecast_dates = [today + timedelta(days=d) for d in range(FORECAST_DAYS)]
     all_stats      = []
 
+    # Build per-room daily series map (used for cold-start priors)
+    all_rooms_daily = {}
+    for r in Room.objects.all():
+        rdf_r = raw[raw['room_id'] == r.id]
+        if len(rdf_r) == 0:
+            all_rooms_daily[r] = pd.Series(dtype=float)
+            continue
+        daily_r = (
+            rdf_r.groupby('date')['duration'].sum()
+                 .reindex(pd.date_range(rdf_r['date'].min(), rdf_r['date'].max(), freq='D').date,
+                          fill_value=0.0)
+                 .astype(float)
+        )
+        daily_r.index = pd.to_datetime(daily_r.index)
+        all_rooms_daily[r] = daily_r
+
     for room in Room.objects.all():
         rdf = raw[raw['room_id'] == room.id]
-        if len(rdf) < MIN_DAYS:
-            print(f"⏭️  {room.name} – ข้อมูลน้อยเกินไป ({len(rdf)} rows < {MIN_DAYS})")
+        unique_days = rdf['date'].nunique()
+        tier = get_data_tier(len(rdf), unique_days)
+
+        if tier == 'cold_start':
+            print(f"🥶 {room.name} – Cold Start → ใช้ Prior จากห้องประเภทเดียวกัน")
+            seasonal_model = build_cold_start_prior(room, all_rooms_daily)
+
+            # build combined series for thresholds/peak_ref
+            same_type = [s for r_obj, s in all_rooms_daily.items()
+                         if getattr(r_obj, 'room_type', None) == getattr(room, 'room_type', None)
+                         and getattr(r_obj, 'id', None) != getattr(room, 'id', None)]
+            if not same_type:
+                same_type = list(all_rooms_daily.values())
+
+            # filter out empty series
+            same_type = [s for s in same_type if (hasattr(s, '__len__') and len(s) > 0)]
+
+            if len(same_type) > 0:
+                combined = pd.concat(same_type).groupby(level=0).mean()
+            else:
+                # fallback: build a zero series spanning forecast horizon + buffer
+                start = forecast_dates[0] - timedelta(days=60)
+                end = forecast_dates[-1]
+                idx = pd.date_range(start, end, freq='D')
+                combined = pd.Series(0.0, index=idx)
+
+            combined.index = pd.to_datetime(combined.index)
+
+            peak_ref = float(combined.quantile(0.95)) or 1.0
+            thr_high, thr_med = compute_adaptive_thresholds(combined, peak_ref)
+            room_hour_dist = learn_hour_dist(rdf, room_id=room.id) or HOUR_DIST_FALLBACK
+            confidence = 50.0
+
+            # Dummy models that return seasonal predictions so _build_forecast_bulk can blend
+            lgb_model = SeasonalPredictor(seasonal_model)
+            xgb_model = SeasonalPredictor(seasonal_model)
+
+            joblib.dump(seasonal_model, os.path.join(MODEL_DIR, f"{room.id}_seasonal.pkl"))
+
+            meta_payload = {
+                'peak_ref': peak_ref,
+                'thr_high': thr_high,
+                'thr_med': thr_med,
+                'hour_dist': room_hour_dist,
+                'confidence': confidence,
+                'has_lstm': False,
+                'used_fallback': True,
+            }
+            joblib.dump(meta_payload, os.path.join(META_DIR, f"{room.id}_meta.pkl"))
+
+            bulk = _build_forecast_bulk(
+                room, lgb_model, xgb_model, None, combined.copy(),
+                peak_ref, thr_high, thr_med, room_hour_dist, confidence,
+                forecast_dates, load_term_schedule(room.id),
+                seasonal_model=seasonal_model,
+            )
+            DemandForecast.objects.filter(
+                room=room, forecast_date__in=forecast_dates
+            ).delete()
+            DemandForecast.objects.bulk_create(bulk)
             continue
+
+        # tier controls
+        force_disable_lstm = (tier == 'medium')
 
         schedule = load_term_schedule(room.id)
         use_log  = _needs_log_transform(room)
@@ -917,6 +1115,47 @@ def retrain_and_forecast():
                .astype(float)
         )
         daily.index = pd.to_datetime(daily.index)
+
+        # Sparse-tier: augment + lean features + stronger regularization
+        if tier == 'sparse':
+            print(f"🟡 {room.name} – Sparse → Augment + Seasonal Median + LGB(sparse)")
+            daily = augment_sparse_daily(daily, target_days=60)
+            term_df = build_term_daily_features(daily.index, schedule)
+            term_df.index = daily.index
+            feat_df = build_features_sparse(daily, term_df).dropna()
+            X = feat_df.drop(columns='y')
+            y = feat_df['y'].values
+
+            split = int(len(X) * 0.85)
+            X_tr, X_te = X.iloc[:split], X.iloc[split:]
+            y_tr, y_te = y[:split], y[split:]
+            if len(X_te) < 5:
+                print(f"   ⚠️ Sparse: not enough test rows for {room.name}")
+                continue
+
+            lstm_model, lstm_scaler = None, None
+
+            lgb_model = train_lgb_sparse(X_tr, y_tr, X_te, y_te)
+            xgb_model = train_xgb(X_tr, y_tr, X_te, y_te, robust=False)
+
+            lgb_val = lgb_model.predict(X_te)
+            xgb_val = xgb_model.predict(X_te)
+            lgb_fut = lgb_model.predict(X_te)
+            xgb_fut = xgb_model.predict(X_te)
+
+            alpha = 10.0 if False else 1.0
+            meta_ridge = Ridge(alpha=alpha)
+            meta_ridge.fit(np.column_stack([lgb_val, xgb_val]), y_te)
+            final = meta_ridge.predict(np.column_stack([lgb_fut, xgb_fut]))
+            y_pred_ens = np.maximum(0, final)
+
+            # evaluate will reuse variables below (y_pred_ens, lgb_model, xgb_model, meta_ridge)
+        else:
+            term_df       = build_term_daily_features(daily.index, schedule)
+            term_df.index = daily.index
+            feat_df       = build_features(daily, term_df, use_log=use_log).dropna()
+            X = feat_df.drop(columns='y')
+            y = feat_df['y'].values
 
         # ── Auto-detect room profile ──────────────────────────────────────────
         profile      = detect_room_profile(room.name, daily)
@@ -938,21 +1177,25 @@ def retrain_and_forecast():
 
         room_hour_dist = learn_hour_dist(rdf, room_id=None)
 
-        term_df       = build_term_daily_features(daily.index, schedule)
-        term_df.index = daily.index
-        feat_df       = build_features(daily, term_df, use_log=use_log).dropna()
-        X = feat_df.drop(columns='y')
-        y = feat_df['y'].values
+        if tier != 'sparse':
+            term_df       = build_term_daily_features(daily.index, schedule)
+            term_df.index = daily.index
+            feat_df       = build_features(daily, term_df, use_log=use_log).dropna()
+            X = feat_df.drop(columns='y')
+            y = feat_df['y'].values
 
-        split      = int(len(X) * 0.85)
-        X_tr, X_te = X.iloc[:split], X.iloc[split:]
-        y_tr, y_te = y[:split], y[split:]
-        if len(X_te) < 5:
-            continue
+            split      = int(len(X) * 0.85)
+            X_tr, X_te = X.iloc[:split], X.iloc[split:]
+            y_tr, y_te = y[:split], y[split:]
+            if len(X_te) < 5:
+                continue
+        else:
+            # sparse path: X, y, split are prepared earlier
+            pass
 
         # ── ฝึก LSTM (Primary) ──────────────────────────────────────────────
         lstm_model, lstm_scaler = None, None
-        if LSTM_AVAILABLE and not use_log and len(y_tr) >= LSTM_LOOKBACK + 10:
+        if LSTM_AVAILABLE and not use_log and len(y_tr) >= LSTM_LOOKBACK + 10 and not force_disable_lstm:
             print(f"   🧠 [1/3] Training LSTM (Primary) for {room.name} ...")
             lstm_model, lstm_scaler = train_lstm(
                 y_tr, y_te, lookback=LSTM_LOOKBACK,
@@ -969,13 +1212,17 @@ def retrain_and_forecast():
         print(f"   🌿 [2/3] LightGBM (Support){rob_tag}")
         print(f"   ⚡ [3/3] XGBoost   (Support){rob_tag}")
 
-        y_pred_ens, lgb_model, xgb_model, meta_ridge = stacking_predict(
-            X_tr, y_tr, X_te, y_te, X_te,
-            lstm_model=lstm_model, lstm_scaler=lstm_scaler,
-            daily_tr_raw=y_tr, n_pred=len(X_te),
-            lstm_lookback=LSTM_LOOKBACK,
-            robust=needs_robust,
-        )
+        if tier == 'sparse':
+            # already trained above (sparse path)
+            pass
+        else:
+            y_pred_ens, lgb_model, xgb_model, meta_ridge = stacking_predict(
+                X_tr, y_tr, X_te, y_te, X_te,
+                lstm_model=lstm_model, lstm_scaler=lstm_scaler,
+                daily_tr_raw=y_tr, n_pred=len(X_te),
+                lstm_lookback=LSTM_LOOKBACK,
+                robust=needs_robust,
+            )
 
         if use_log:
             y_te_eval   = np.expm1(y_te)
@@ -1262,23 +1509,92 @@ def generate_forecast_only():
 #  SECTION 2 – Update Thai Facilities
 # ══════════════════════════════════════════════════════════════════════════════
 
-def update_to_thai_facilities():
-    print("🧹 ล้างข้อมูลอุปกรณ์เก่า (เฉพาะตารางเชื่อมโยง)...")
-    RoomFacility.objects.all().delete()
+def import_facilities_from_excel():
+    """นำเข้าอุปกรณ์จริงจาก Excel (ห้ามใช้ข้อมูลจำลอง)"""
+    import_path = os.path.join(BASE_DIR, 'ml', 'import_real_data.py')
+    if not os.path.exists(import_path):
+        print("❌ ไม่พบ ml/import_real_data.py")
+        return
+    print("📥 นำเข้าอุปกรณ์และข้อมูลห้องจาก Excel...")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('import_real_data', import_path)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.import_all(clear_mock=False)
+    print("✅ อุปกรณ์จาก Excel อัปเดตแล้ว")
 
-    fac_list = [
-        'โปรเจกเตอร์', 'ไวท์บอร์ด', 'ระบบเสียง', 'ไมโครโฟนไร้สาย',
-        'เครื่องปรับอากาศ', 'WiFi', 'เต้าเสียบไฟฟ้า', 'TV / จอแสดงผล',
-        'คอมพิวเตอร์ (สำหรับผู้นำเสนอ)', 'Smart Board', 'กล้องบันทึกการสอน'
-    ]
-    facility_objs = [Facility.objects.get_or_create(name=name)[0] for name in fac_list]
-    count = 0
-    for room in Room.objects.all():
-        chosen = random.sample(facility_objs, random.randint(4, 7))
-        for f in chosen:
-            RoomFacility.objects.create(room=room, facility=f)
-        count += 1
-    print(f"✅ เรียบร้อย! อัปเดตอุปกรณ์ภาษาไทยให้ทั้ง {count} ห้องแล้ว")
+
+def update_to_thai_facilities():
+    """Deprecated: ใช้ import_facilities_from_excel แทน (ข้อมูลจริงเท่านั้น)"""
+    print("⚠️  --update-fac ถูกแทนที่ด้วยการนำเข้าจาก Excel")
+    import_facilities_from_excel()
+
+
+# ── Predictive Maintenance: หาช่วง demand ต่ำจาก DemandForecast ─────────────
+def find_maintenance_slots(
+    room_id: int = None,
+    max_demand: float = 0.10,
+    min_consecutive_hours: int = 3,
+    days_ahead: int = 14,
+) -> list[dict]:
+    """
+    คัดกรองช่วงเวลาที่ LSTM/Ensemble พยากรณ์ demand ต่ำติดกัน
+    คืนค่า list ของ slot {room_id, room_name, date, start_hour, end_hour, avg_demand}
+    """
+    from datetime import date as date_type
+    today = date_type.today()
+    end   = today + timedelta(days=days_ahead)
+
+    qs = DemandForecast.objects.filter(
+        forecast_date__gte=today,
+        forecast_date__lte=end,
+        predicted_demand__lt=max_demand,
+    ).select_related('room').order_by('room_id', 'forecast_date', 'hour')
+
+    if room_id:
+        qs = qs.filter(room_id=room_id)
+
+    slots = []
+    current = None
+
+    for fc in qs:
+        key = (fc.room_id, fc.forecast_date)
+        if current and current['key'] == key and fc.hour == current['last_hour'] + 1:
+            current['hours'].append(fc.hour)
+            current['demands'].append(fc.predicted_demand)
+            current['last_hour'] = fc.hour
+        else:
+            if current and len(current['hours']) >= min_consecutive_hours:
+                slots.append(_finalize_slot(current))
+            current = {
+                'key': key,
+                'room_id': fc.room_id,
+                'room_name': fc.room.name,
+                'date': fc.forecast_date,
+                'hours': [fc.hour],
+                'demands': [fc.predicted_demand],
+                'last_hour': fc.hour,
+            }
+
+    if current and len(current['hours']) >= min_consecutive_hours:
+        slots.append(_finalize_slot(current))
+
+    return sorted(slots, key=lambda s: (s['date'], s['start_hour']))
+
+
+def _finalize_slot(current: dict) -> dict:
+    hrs = current['hours']
+    return {
+        'room_id':    current['room_id'],
+        'room_name':  current['room_name'],
+        'date':       str(current['date']),
+        'start_hour': min(hrs),
+        'end_hour':   max(hrs) + 1,
+        'hours':      hrs,
+        'avg_demand': round(sum(current['demands']) / len(current['demands']), 4),
+        'label':      f"{current['room_name']} | {current['date']} "
+                      f"{min(hrs):02d}:00–{max(hrs)+1:02d}:00",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1401,11 +1717,21 @@ if __name__ == '__main__':
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--retrain',      action='store_true')
     group.add_argument('--update-fac',   action='store_true')
+    group.add_argument('--import-excel', action='store_true', help='นำเข้าข้อมูลจริงจาก Excel')
     group.add_argument('--boost',        action='store_true')
     group.add_argument('--show-metrics', action='store_true')
     args = parser.parse_args()
 
-    if args.retrain:
+    if args.import_excel:
+        import_path = os.path.join(BASE_DIR, 'ml', 'import_real_data.py')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('import_real_data', import_path)
+        mod  = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.import_all(clear_mock=True)
+        print("\n🔄 เริ่ม retrain หลัง import...")
+        retrain_and_forecast()
+    elif args.retrain:
         retrain_and_forecast()
     elif args.update_fac:
         update_to_thai_facilities()

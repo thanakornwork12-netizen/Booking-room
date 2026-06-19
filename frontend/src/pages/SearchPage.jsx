@@ -9,13 +9,8 @@ import api from '../api/axios'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const BUILDINGS = [
-  { code: '',     label: 'ทั้งหมด' },
-  { code: 'LIB',  label: 'ห้องสมุด' },
-  { code: 'SC',   label: 'วิทยาศาสตร์' },
-  { code: 'EN',   label: 'วิศวกรรม' },
-  { code: 'MAIN', label: 'สำนักงาน' },
-]
+// BUILDINGS: load from API at runtime
+const DEFAULT_BUILDINGS = [{ code: '', label: 'ทั้งหมด' }]
 const TIME_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00']
 const DURATIONS  = [{ label: '1 ชม.', hours: 1 },{ label: '2 ชม.', hours: 2 },{ label: '3 ชม.', hours: 3 }]
 const ATTENDEES_PRESETS = [2, 5, 10, 20, 30, 50]
@@ -91,56 +86,120 @@ const SUMMARY_TIERS = [
 ]
 
 
-const EQUIPMENT_PRESETS = [
-  { key: 'projector',   label: 'โปรเจกเตอร์',  icon: '📽️', keywords: ['โปรเจกเตอร์'] },
-  { key: 'whiteboard',  label: 'ไวท์บอร์ด',    icon: '📋', keywords: ['ไวท์บอร์ด', 'กระดานไวท์บอร์ด'] },
-  { key: 'sound',       label: 'ระบบเสียง',     icon: '🔊', keywords: ['ระบบเสียง', 'ลำโพง', 'เสียง'] },
-  
-  { key: 'ac',          label: 'แอร์',           icon: '❄️', keywords: ['ปรับอากาศ', 'แอร์', 'เครื่องปรับอากาศ'] },
-  { key: 'tv',          label: 'TV/จอแสดงผล',   icon: '📺', keywords: ['TV', 'จอแสดงผล', 'จอรับภาพ', 'TV / จอแสดงผล'] },
-  { key: 'computer',    label: 'คอมพิวเตอร์',   icon: '💻', keywords: ['คอมพิวเตอร์'] },
- 
-  { key: 'smartboard',  label: 'Smart Board',   icon: '🖊️', keywords: ['Smart Board', 'กระดาน Smart', 'Smart'] },
-  { key: 'wifi',        label: 'WiFi',           icon: '📶', keywords: ['WiFi', 'wifi'] },
+/** ตัวกรองอุปกรณ์ — โหลดจาก API (ข้อมูลจริง ODL) หรือใช้ค่า fallback */
+const FALLBACK_EQUIPMENT_PRESETS = [
+  { key: 'computer',   label: 'คอมพิวเตอร์',              icon: '💻', keywords: ['คอมพิวเตอร์', 'computer', 'pc', 'imac'], group_key: 'computer', group_label: 'คอมพิวเตอร์', is_category: true },
+  { key: 'projector',  label: 'โปรเจกเตอร์',              icon: '📽️', keywords: ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector'], group_key: 'projector', group_label: 'โปรเจกเตอร์', is_category: true },
+  { key: 'microphone', label: 'ไมโครโฟน',                 icon: '🎤', keywords: ['ไมโครโฟน', 'microphone', 'ไมค์'], group_key: 'microphone', group_label: 'ไมโครโฟน', is_category: true },
+  { key: 'sound',      label: 'ระบบเสียง',                icon: '🔊', keywords: ['ระบบเสียง', 'เครื่องเสียง', 'ลำโพง', 'mixer'], group_key: 'sound', group_label: 'ระบบเสียง', is_category: true },
+  { key: 'tv',         label: 'TV / จอแสดงผล',            icon: '📺', keywords: ['tv', 'จอแสดงผล', 'จอ ', 'จอแขวน', 'จอมอเตอร์', 'จอไฟฟ้า', 'นิ้ว'], group_key: 'tv', group_label: 'TV / จอแสดงผล', is_category: true },
+  { key: 'flipboard',  label: 'Flipboard',                icon: '📋', keywords: ['flipboard', 'flip2'], group_key: 'flipboard', group_label: 'Flipboard', is_category: true },
+  { key: 'video_conf', label: 'Video Conference',         icon: '📹', keywords: ['video conference', 'วีดีโอ', 'vdo', 'webcam', 'zoom', 'teams', 'meet'], group_key: 'video_conf', group_label: 'Video Conference', is_category: true },
+  { key: 'interactive',label: 'โปรเจกเตอร์อินเทอร์แอคทีฟ', icon: '🖊️', keywords: ['อินเทอร์แอคทีฟ', 'interactive', 'touch screen'], group_key: 'interactive', group_label: 'โปรเจกเตอร์อินเทอร์แอคทีฟ', is_category: true },
 ]
 
-//  Facility Icons
+const QUICK_EQUIPMENT_PRESETS = [
+  {
+    key: 'presentation_ready',
+    label: 'นำเสนอ / บรรยาย',
+    shortLabel: 'นำเสนอ',
+    icon: '📽️',
+    hint: 'โปรเจกเตอร์ + จอ',
+    keywords: ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector', 'จอ', 'visual'],
+  },
+  {
+    key: 'computer_lab',
+    label: 'คอมพิวเตอร์แลบ',
+    shortLabel: 'คอมแลบ',
+    icon: '💻',
+    hint: 'PC / iMac',
+    keywords: ['pc', 'คอมพิวเตอร์', 'imac'],
+  },
+  {
+    key: 'graphics_lab',
+    label: 'กราฟิก / มัลติมีเดีย',
+    shortLabel: 'กราฟิก',
+    icon: '🎨',
+    hint: 'PC 50-61 / iMac',
+    keywords: ['pc 50', 'pc 51', 'pc 61', 'imac', 'core i5', 'touch screen'],
+  },
+  {
+    key: 'audio_room',
+    label: 'ประชุมพร้อมเสียง',
+    shortLabel: 'ระบบเสียง',
+    icon: '🔊',
+    hint: 'ไมค์ + ลำโพง',
+    keywords: ['ไมค์', 'ไมโครโฟน', 'ระบบเสียง', 'ลำโพง', 'mixer'],
+  },
+  {
+    key: 'video_meeting',
+    label: 'Video Conference',
+    shortLabel: 'วิดีโอ',
+    icon: '📹',
+    hint: 'กล้อง / Zoom',
+    keywords: ['video conference', 'vdo', 'webcam', 'zoom', 'teams', 'meet', 'กล้อง'],
+  },
+  {
+    key: 'interactive_room',
+    label: 'Interactive / Touch',
+    shortLabel: 'Interactive',
+    icon: '🖊️',
+    hint: 'Touch / Flipboard',
+    keywords: ['interactive', 'touch screen', 'flipboard', 'flip2', 'อินเทอร์แอคทีฟ'],
+  },
+]
 
-const FAC_ICONS = {
-  'โปรเจกเตอร์':                    '📽️',
-  'จอรับภาพ':                       '🖥️',
-  'ไวท์บอร์ด':                      '📋',
-  'กระดานไวท์บอร์ด':                '📋',
-  'ระบบเสียง':                      '🔊',
-  'ไมโครโฟน':                       '🎤',
-  
-  'เครื่องปรับอากาศ':               '❄️',
-  'WiFi':                           '📶',
-  'เต้าเสียบไฟฟ้า':                 '🔌',
-  'TV / จอแสดงผล':                  '📺',
-  'คอมพิวเตอร์ (สำหรับผู้นำเสนอ)':  '💻',
-  'คอมพิวเตอร์ (สำหรับผู้สอน)':     '💻',
-  
-  'กระดาน Smart Board':             '🖊️',
-  'Smart Board':                    '🖊️',
-  'เครื่องพิมพ์เอกสาร':             '🖨️',
-  'ตู้เก็บเอกสาร':                  '🗄️',
-  'ตู้เก็บอุปกรณ์การสอน':           '🗄️',
-  'ม่านบังแสง':                     '🪟',
-  'นาฬิกาแขวน':                     '🕐',
-  'โพเดียม / แท่นบรรยาย':           '🎙️',
-  'จอแสดงผลเสริม (ด้านข้าง)':       '🖥️',
-  'ระบบ LMS (จอควบคุม)':            '🖥️',
+const getEquipmentOptions = (presets = []) => {
+  const categoryOptions = (presets?.length ? presets : FALLBACK_EQUIPMENT_PRESETS)
+    .filter(eq => eq.is_category)
+    .filter(eq => !['computer', 'projector', 'microphone', 'sound'].includes(eq.key))
+
+  return [...QUICK_EQUIPMENT_PRESETS, ...categoryOptions]
+}
+
+const findPreset = (presets, key) =>
+  [...QUICK_EQUIPMENT_PRESETS, ...(presets || []), ...FALLBACK_EQUIPMENT_PRESETS].find(p => p.key === key)
+
+const groupEquipmentPresets = (presets) => {
+  const groups = []
+  const byKey = new Map()
+
+  presets.forEach(eq => {
+    const groupKey = eq.group_key || eq.key || 'other'
+    const groupLabel = eq.group_label || eq.label || 'อุปกรณ์อื่นๆ'
+    if (!byKey.has(groupKey)) {
+      const group = { key: groupKey, label: groupLabel, icon: eq.icon || '🔧', items: [] }
+      byKey.set(groupKey, group)
+      groups.push(group)
+    }
+    byKey.get(groupKey).items.push(eq)
+  })
+
+  return groups.map(group => ({
+    ...group,
+    items: [
+      ...group.items.filter(eq => eq.is_category),
+      ...group.items.filter(eq => !eq.is_category),
+    ],
+  }))
 }
 
 const getFacIcon = (name) => {
-  if (FAC_ICONS[name]) return FAC_ICONS[name]
-  if (name.includes('คอมพิวเตอร์')) return '💻'
-  if (name.includes('จอ') || name.includes('TV')) return '🖥️'
-  
-  
-  if (name.includes('เสียง') || name.includes('ลำโพง')) return '🔊'
-  if (name.includes('ปรับอากาศ')) return '❄️'
+  const n = name || ''
+  const lower = n.toLowerCase()
+  if (lower.includes('cpu')) return '⚙️'
+  if (lower.includes('ram')) return '🧠'
+  if (lower.includes('storage')) return '💾'
+  if (lower.includes('คอมพิวเตอร์') || lower.includes('pc') || lower.includes('imac')) return '💻'
+  if (lower.includes('โปรเจกเตอร์') || lower.includes('โปรเจคเตอร์') || lower.includes('projector')) return '📽️'
+  if (lower.includes('ไมโครโฟน') || lower.includes('ไมค์')) return '🎤'
+  if (lower.includes('เสียง') || lower.includes('ลำโพง') || lower.includes('mixer')) return '🔊'
+  if (lower.includes('tv') || lower.includes('จอ') || lower.includes('นิ้ว')) return '📺'
+  if (lower.includes('flipboard') || lower.includes('flip2')) return '📋'
+  if (lower.includes('video') || lower.includes('วีดีโอ') || lower.includes('vdo') || lower.includes('webcam')) return '📹'
+  if (lower.includes('อินเทอร์แอคทีฟ') || lower.includes('interactive') || lower.includes('touch screen')) return '🖊️'
+  if (lower.includes('whiteboard')) return '📝'
+  if (lower.includes('เก้าอี้')) return '🪑'
   return '🔧'
 }
 
@@ -186,14 +245,15 @@ const isClassroomType = room => {
 // ─── Equipment filter helper ──────────────────────────────────────────────────
 // คืน true ถ้าห้องมีอุปกรณ์ที่ผู้ใช้เลือก *อย่างน้อยหนึ่งชื่อ* ต่อหนึ่ง preset key
 // (ห้องสามารถมีอุปกรณ์อื่นๆ ปนมาได้)
-const roomHasEquipments = (room, selectedEquipments) => {
+const roomHasEquipments = (room, selectedEquipments, equipmentPresets) => {
   if (!selectedEquipments || selectedEquipments.length === 0) return true
   if (!room.facilities || room.facilities.length === 0) return false
 
   const facilityNames = room.facilities.map(f => f.name.toLowerCase())
+  const presets = equipmentPresets?.length ? equipmentPresets : FALLBACK_EQUIPMENT_PRESETS
 
   return selectedEquipments.every(key => {
-    const preset = EQUIPMENT_PRESETS.find(p => p.key === key)
+    const preset = findPreset(presets, key)
     if (!preset) return true
     return preset.keywords.some(kw =>
       facilityNames.some(fn => fn.includes(kw.toLowerCase()))
@@ -253,7 +313,7 @@ function SectionLabel({ icon: Icon, children }) {
 
 // ─── EquipmentSelector ────────────────────────────────────────────────────────
 
-function EquipmentSelector({ selected, onChange, compact = false }) {
+function EquipmentSelector({ selected, onChange, compact = false, equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
   const toggle = (key) => {
     if (selected.includes(key)) {
       onChange(selected.filter(k => k !== key))
@@ -262,26 +322,36 @@ function EquipmentSelector({ selected, onChange, compact = false }) {
     }
   }
 
+  if (!equipmentPresets.length) {
+    return <p className="text-xs text-slate-400">ไม่พบข้อมูลอุปกรณ์ในห้อง — รัน import ข้อมูลจริงก่อน</p>
+  }
+
+  const options = getEquipmentOptions(equipmentPresets)
+
   return (
-    <div className={`flex flex-wrap ${compact ? 'gap-1.5' : 'gap-2'}`}>
-      {EQUIPMENT_PRESETS.map(eq => {
+    <div className={`grid ${compact ? 'grid-cols-2 gap-2' : 'grid-cols-3 gap-2'}`}>
+      {options.map(eq => {
         const active = selected.includes(eq.key)
         return (
           <button
             key={eq.key}
             onClick={() => toggle(eq.key)}
-            className={`inline-flex items-center gap-1.5 rounded-full border-2 font-semibold transition-all duration-150
-              ${compact ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-xs'}
+            className={`relative min-h-[68px] rounded-xl border-2 px-3 py-2 text-left transition-all duration-150
               ${active
                 ? 'bg-blue-700 border-blue-700 text-white shadow-sm'
-                : 'bg-white border-blue-100 text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                : 'bg-white border-blue-100 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
               }`}
           >
-            <span className="text-sm leading-none">{eq.icon}</span>
-            {eq.label}
+            <div className="flex items-center gap-2">
+              <span className="text-lg leading-none">{eq.icon}</span>
+              <span className={`text-xs font-extrabold leading-tight ${active ? 'text-white' : 'text-slate-800'}`}>
+                {compact ? (eq.shortLabel || eq.label) : eq.label}
+              </span>
+            </div>
+            <p className={`mt-1 text-xs leading-snug ${active ? 'text-white/70' : 'text-slate-400'}`}>{eq.hint}</p>
             {active && (
-              <span className="w-3.5 h-3.5 rounded-full bg-white/25 flex items-center justify-center ml-0.5">
-                <X size={8} className="text-white" />
+              <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-white/25 flex items-center justify-center">
+                <X size={9} className="text-white" />
               </span>
             )}
           </button>
@@ -293,15 +363,16 @@ function EquipmentSelector({ selected, onChange, compact = false }) {
 
 // ─── FacilityTags ─────────────────────────────────────────────────────────────
 
-function FacilityTags({ facilities = [], compact = true, maxShow = 5, highlight = [] }) {
-  if (!facilities || facilities.length === 0) return null
+function FacilityTags({ facilities = [], compact = true, maxShow = 8, highlight = [], equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
+  if (!facilities || facilities.length === 0) {
+    return compact ? null : <p className="text-xs text-slate-400">ไม่มีข้อมูลอุปกรณ์</p>
+  }
 
-  // ตรวจว่า facility นี้ตรงกับ highlighted keywords ไหม
   const isHighlighted = (facilityName) => {
     if (!highlight || highlight.length === 0) return false
     const nameLower = facilityName.toLowerCase()
     return highlight.some(key => {
-      const preset = EQUIPMENT_PRESETS.find(p => p.key === key)
+      const preset = findPreset(equipmentPresets, key)
       if (!preset) return false
       return preset.keywords.some(kw => nameLower.includes(kw.toLowerCase()))
     })
@@ -507,9 +578,45 @@ function SummaryTiles({ rooms, layout = 'vertical' }) {
   )
 }
 
+// ─── แนะนำจองสลับห้อง (ครึ่งเทอม) ─────────────────────────────────────────────
+function SplitSuggestionList({ suggestions, onSelect }) {
+  if (!suggestions?.length) return null
+  return (
+    <div className="text-left mt-4 space-y-3 max-w-xl mx-auto">
+      <p className="text-xs font-bold text-violet-700 text-center">
+        💡 ไม่มีห้องว่างทั้งเทอม — เลือกแผนจองสลับห้องด้านล่าง
+      </p>
+      {suggestions.map((s, i) => (
+        <div key={i} className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+          <div className="grid sm:grid-cols-2 gap-2 text-xs mb-3">
+            <div className="bg-white rounded-lg p-3 border border-violet-100">
+              <p className="font-bold text-violet-800 mb-1">เทอมแรก</p>
+              <p className="font-semibold text-slate-800">{s.first_half.room_name}</p>
+              <p className="text-slate-500 mt-0.5">
+                {formatDateShort(s.first_half.term_start)} – {formatDateShort(s.first_half.term_end)}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-violet-100">
+              <p className="font-bold text-violet-800 mb-1">เทอมหลัง</p>
+              <p className="font-semibold text-slate-800">{s.second_half.room_name}</p>
+              <p className="text-slate-500 mt-0.5">
+                {formatDateShort(s.second_half.term_start)} – {formatDateShort(s.second_half.term_end)}
+              </p>
+            </div>
+          </div>
+          <button type="button" onClick={() => onSelect(s)}
+            className="w-full bg-indigo-700 hover:bg-indigo-800 text-white text-sm font-bold py-2.5 rounded-xl transition-colors">
+            เลือกแผนนี้และไปยืนยันการจอง →
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── RoomCard ─────────────────────────────────────────────────────────────────
 
-function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, selectedEquipments = [] }) {
+function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, selectedEquipments = [], equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
   const level = getDemandLevel(room)
   const cfg   = FORECAST_CONFIG[level]
   const isTop = idx === 0 && (level === 'low' || level === 'none')
@@ -554,8 +661,9 @@ function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, sel
           <FacilityTags
             facilities={room.facilities}
             compact={true}
-            maxShow={compact ? 4 : 6}
+            maxShow={compact ? 4 : 8}
             highlight={selectedEquipments}
+            equipmentPresets={equipmentPresets}
           />
         </div>
         <ChevronRight size={14} className="text-blue-200 flex-shrink-0 mt-1" />
@@ -578,9 +686,13 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
     termEnd, setTermEnd,
     termName, setTermName,
     selectedEquipments, setSelectedEquipments,
+    equipmentPresets,
+    buildings,
   } = formProps
-  const { rooms, setSelectedRoom } = resultProps
-  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success } = confirmProps
+  const { applyTermPreset } = formProps
+  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit } = resultProps
+  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success,
+    splitPlan, splitBookResult, onCancelSplit } = confirmProps
 
   const isTermMode = bookingType === 'term'
   const accentBg   = isTermMode ? 'bg-indigo-700' : 'bg-blue-700'
@@ -590,30 +702,49 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
   if (success) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <style>{ANIM}</style>
-      <div className="bg-white border border-blue-100 rounded-3xl p-12 text-center max-w-md w-full shadow-2xl si">
+      <div className="bg-white border border-blue-100 rounded-3xl p-12 text-center max-w-lg w-full shadow-2xl si">
         <div className={`w-20 h-20 rounded-full ${accentBg} flex items-center justify-center mx-auto mb-6 shadow-xl ${accentShadow}`}>
           <CheckCircle size={38} color="#fff" />
         </div>
         <div className="h-1 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-6" />
         <p className="text-2xl font-extrabold text-slate-900 mb-2">จองสำเร็จแล้ว</p>
-        <p className={`text-lg font-bold mb-4 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
-        {isTermMode
-          ? (
-            <>
-              <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
-              {termStart && termEnd && (
-                <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
-              )}
-              {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
-            </>
-          )
-          : <p className="text-sm text-slate-500">{formatDate(date)} · {startTime} – {endTime} น.</p>
-        }
+        {splitBookResult ? (
+          <div className="text-left space-y-3 mb-4">
+            <p className="text-sm text-center text-indigo-700 font-semibold">จองสลับห้อง 2 ช่วงเรียบร้อย</p>
+            <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-xs">
+              <p className="font-bold text-violet-800">เทอมแรก · {splitBookResult.first_booking?.room_name}</p>
+              <p className="text-slate-600">{formatDateShort(splitBookResult.first_booking?.term_start)} – {formatDateShort(splitBookResult.first_booking?.term_end)}</p>
+            </div>
+            <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-xs">
+              <p className="font-bold text-violet-800">เทอมหลัง · {splitBookResult.second_booking?.room_name}</p>
+              <p className="text-slate-600">{formatDateShort(splitBookResult.second_booking?.term_start)} – {formatDateShort(splitBookResult.second_booking?.term_end)}</p>
+            </div>
+            <p className="text-sm text-slate-500 text-center">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+          </div>
+        ) : (
+          <>
+            <p className={`text-lg font-bold mb-4 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
+            {isTermMode
+              ? (
+                <>
+                  <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+                  {termStart && termEnd && (
+                    <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
+                  )}
+                  {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
+                </>
+              )
+              : <p className="text-sm text-slate-500">{formatDate(date)} · {startTime} – {endTime} น.</p>
+            }
+          </>
+        )}
         <p className="text-sm text-slate-500 mt-1">{attendees} ผู้เข้าร่วม</p>
-        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
-          <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
-          <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
-        </div>
+        {!splitBookResult && bookingType !== 'term' && (
+          <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
+            <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
+            <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
+          </div>
+        )}
         <button onClick={() => navigate('/')}
           className={`mt-5 w-full ${accentBg} ${accentHov} text-white rounded-2xl py-4 font-bold text-sm transition-all shadow-lg ${accentShadow} active:scale-95`}>
           กลับหน้าหลัก
@@ -729,7 +860,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                   <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
                     <SectionLabel icon={MapPin}>อาคาร</SectionLabel>
                     <div className="flex flex-wrap gap-1.5">
-                      {BUILDINGS.map(b => <Chip key={b.code} active={building === b.code} onClick={() => setBuilding(b.code)}>{b.label}</Chip>)}
+                      {buildings.map(b => <Chip key={b.code} active={building === b.code} onClick={() => setBuilding(b.code)}>{b.label}</Chip>)}
                     </div>
                   </div>
                 </div>
@@ -739,7 +870,19 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                 <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
                   <SectionLabel>ข้อมูลเทอม</SectionLabel>
                   <div className="space-y-3">
-                    <div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => applyTermPreset(1)}
+                          className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
+                            ${termStart === `${new Date().getFullYear()}-01-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
+                          เทอมที่ 1
+                        </button>
+                        <button type="button" onClick={() => applyTermPreset(2)}
+                          className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
+                            ${termStart === `${new Date().getFullYear()}-07-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
+                          เทอมที่ 2
+                        </button>
+                      </div>
+                      <div>
                       <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
                       <input type="text" value={termName} onChange={e => setTermName(e.target.value)}
                         placeholder="เช่น ภาคเรียนที่ 1/2568"
@@ -806,12 +949,12 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                     </button>
                   )}
                 </div>
-                <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} />
+                <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} equipmentPresets={equipmentPresets} />
                 {selectedEquipments.length > 0 && (
                   <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
                     <Filter size={11} className="text-blue-500 flex-shrink-0" />
                     <p className="text-xs text-blue-600 font-semibold">
-                      กรองเฉพาะห้องที่มี: {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.label).join(', ')}
+                      กรองเฉพาะห้องที่มี: {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.label).join(', ')}
                     </p>
                   </div>
                 )}
@@ -853,14 +996,14 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                     : <div className="flex justify-between"><span className="text-slate-500">วันที่</span><span className="font-bold text-slate-800">{formatDateShort(date)}</span></div>
                   }
                   <div className="flex justify-between"><span className="text-slate-500">เวลา</span><span className="font-bold text-slate-800">{startTime ? `${startTime}–${endTime}` : '—'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">อาคาร</span><span className="font-bold text-slate-800">{BUILDINGS.find(b => b.code === building)?.label || 'ทั้งหมด'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">อาคาร</span><span className="font-bold text-slate-800">{buildings.find(b => b.code === building)?.label || 'ทั้งหมด'}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">ขนาดห้อง</span><span className="font-bold text-slate-800">{attendees}–{attendees + CAPACITY_BUFFER} คน</span></div>
                   {selectedEquipments.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <span className="text-slate-500">อุปกรณ์ที่ต้องการ</span>
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {selectedEquipments.map(k => {
-                          const eq = EQUIPMENT_PRESETS.find(p => p.key === k)
+                          const eq = findPreset(equipmentPresets, k)
                           return (
                             <span key={k} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full px-2 py-0.5 text-xs font-semibold">
                               {eq?.icon} {eq?.label}
@@ -894,7 +1037,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                 : <span className="text-white/80 text-sm">{formatDateShort(date)}</span>
               }
               <span className="text-white/80 text-sm">{startTime}–{endTime}</span>
-              {building && <span className="text-white/80 text-sm">{BUILDINGS.find(b=>b.code===building)?.label}</span>}
+              {building && <span className="text-white/80 text-sm">{buildings.find(b=>b.code===building)?.label}</span>}
               <span className="text-white/80 text-sm">จุ {attendees}–{attendees + CAPACITY_BUFFER} คน</span>
               {isTermMode && termName && (
                 <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2.5 py-1">{termName}</span>
@@ -907,7 +1050,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
               {selectedEquipments.length > 0 && (
                 <span className="bg-white/15 text-white text-xs font-bold rounded-full px-2.5 py-1 flex items-center gap-1">
                   <Filter size={10} />
-                  {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.icon).join(' ')}
+                  {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.icon).join(' ')}
                   {selectedEquipments.length} อุปกรณ์
                 </span>
               )}
@@ -921,18 +1064,22 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
             <SummaryTiles rooms={rooms} layout="vertical" />
             <div className="col-span-3 space-y-3 au2">
               {rooms.length === 0 ? (
-                <div className="bg-white border border-blue-100 rounded-2xl py-16 text-center">
+                <div className="bg-white border border-blue-100 rounded-2xl py-10 px-6 text-center">
                   <Building2 size={40} className="text-blue-200 mx-auto mb-4" />
                   <p className="font-semibold text-blue-700 mb-2">
-                    {isTermMode ? 'ไม่พบห้องเรียน/Lecture ที่ว่าง' : 'ไม่พบห้องว่างที่เหมาะสม'}
+                    {isTermMode ? 'ไม่พบห้องว่างทั้งเทอม' : 'ไม่พบห้องว่างที่เหมาะสม'}
                   </p>
-                  <p className="text-xs text-slate-400 mb-4">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
+                  {isTermMode && (
+                    <SplitSuggestionList suggestions={splitSuggestions} onSelect={onSelectSplit} />
+                  )}
+                  <p className="text-xs text-slate-400 mb-4 mt-4">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
                   <button onClick={() => setStep(1)} className="text-sm text-blue-600 hover:underline">← ค้นหาใหม่</button>
                 </div>
               ) : rooms.map((room, idx) => (
                 <RoomCard key={room.id} room={room} idx={idx} isTermMode={isTermMode}
                   selectedEquipments={selectedEquipments}
-                  onClick={() => { setSelectedRoom(room); setStep(3) }} />
+                  equipmentPresets={equipmentPresets}
+                  onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
               ))}
             </div>
           </div>
@@ -940,7 +1087,56 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
       )}
 
       {/* ── STEP 3 ── */}
-      {step === 3 && selectedRoom && (() => {
+      {step === 3 && (splitPlan || selectedRoom) && (() => {
+        if (splitPlan) {
+          const fh = splitPlan.first_half
+          const sh = splitPlan.second_half
+          return (
+            <div className="max-w-3xl mx-auto px-6 py-8">
+              <div className="mb-4 au">
+                <button type="button" onClick={onCancelSplit} className="text-sm text-slate-500 hover:text-indigo-700">← กลับเลือกแผนอื่น</button>
+              </div>
+              <div className="bg-white border border-indigo-100 rounded-2xl p-6 shadow-sm au1">
+                <SectionLabel icon={BookOpen}>ยืนยันจองสลับห้อง (2 ช่วง)</SectionLabel>
+                <div className="h-0.5 bg-gradient-to-r from-violet-300 to-indigo-500 rounded-full mb-4" />
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
+                    <p className="text-xs font-bold text-violet-800 mb-1">เทอมแรก</p>
+                    <p className="text-lg font-bold text-slate-900">{fh.room_name}</p>
+                    <p className="text-xs text-slate-500">{formatDateShort(fh.term_start)} – {formatDateShort(fh.term_end)}</p>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                    <p className="text-xs font-bold text-indigo-800 mb-1">เทอมหลัง</p>
+                    <p className="text-lg font-bold text-slate-900">{sh.room_name}</p>
+                    <p className="text-xs text-slate-500">{formatDateShort(sh.term_start)} – {formatDateShort(sh.term_end)}</p>
+                  </div>
+                </div>
+                <div className="border border-blue-50 rounded-xl overflow-hidden mb-4 text-sm">
+                  {[
+                    { label: 'วัน', value: `ทุก${getDayLabel(dayOfWeek)}` },
+                    { label: 'เวลา', value: `${startTime} – ${endTime} น.` },
+                    { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
+                    { label: 'เทอม', value: termName || '—' },
+                  ].map((r, i) => (
+                    <div key={i} className="flex justify-between px-4 py-2.5 border-b border-blue-50 last:border-0">
+                      <span className="text-slate-500 text-xs">{r.label}</span>
+                      <span className="font-semibold text-slate-800">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <label className="block text-xs font-bold text-slate-600 mb-2">ชื่อวิชา / กิจกรรม *</label>
+                <input type="text" autoFocus value={title} onChange={e => setTitle(e.target.value)}
+                  placeholder="เช่น วิชา CS101"
+                  className="w-full border-2 border-indigo-100 rounded-xl px-4 py-3 text-sm mb-4 outline-none focus:border-indigo-500" />
+                <button type="button" onClick={handleBook} disabled={bookingLoading || !title.trim()}
+                  className="w-full bg-indigo-700 hover:bg-indigo-800 disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold flex items-center justify-center gap-2">
+                  {bookingLoading ? 'กำลังจอง 2 ช่วง...' : 'ยืนยันจองทั้ง 2 ช่วง'}
+                </button>
+              </div>
+            </div>
+          )
+        }
+
         const level = getDemandLevel(selectedRoom)
         const cfg   = FORECAST_CONFIG[level]
         return (
@@ -997,6 +1193,7 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                       facilities={selectedRoom.facilities}
                       compact={false}
                       highlight={selectedEquipments}
+                      equipmentPresets={equipmentPresets}
                     />
                   </div>
                 )}
@@ -1049,9 +1246,13 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
     termEnd, setTermEnd,
     termName, setTermName,
     selectedEquipments, setSelectedEquipments,
+    equipmentPresets,
+    buildings,
   } = formProps
-  const { rooms, setSelectedRoom } = resultProps
-  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success } = confirmProps
+  const { applyTermPreset } = formProps
+  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit } = resultProps
+  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success,
+    splitPlan, splitBookResult, onCancelSplit } = confirmProps
 
   const isTermMode   = bookingType === 'term'
   const accentBg     = isTermMode ? 'bg-indigo-700' : 'bg-blue-700'
@@ -1068,19 +1269,35 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
         </div>
         <div className="h-1 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-5" />
         <p className="text-xl font-extrabold text-slate-900 mb-1.5">จองสำเร็จแล้ว</p>
-        <p className={`text-base font-bold mb-3 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
-        {isTermMode
-          ? (
-            <>
-              <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
-              {termStart && termEnd && (
-                <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
-              )}
-              {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
-            </>
-          )
-          : <p className="text-sm text-slate-500">{formatDateShort(date)} · {startTime} – {endTime} น.</p>
-        }
+        {splitBookResult ? (
+          <div className="text-left space-y-2 mb-3 text-xs">
+            <p className="text-center text-indigo-700 font-semibold text-sm">จองสลับห้อง 2 ช่วง</p>
+            <div className="bg-violet-50 rounded-lg p-2 border border-violet-100">
+              <p className="font-bold">เทอมแรก · {splitBookResult.first_booking?.room_name}</p>
+              <p className="text-slate-500">{formatDateShort(splitBookResult.first_booking?.term_start)} – {formatDateShort(splitBookResult.first_booking?.term_end)}</p>
+            </div>
+            <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
+              <p className="font-bold">เทอมหลัง · {splitBookResult.second_booking?.room_name}</p>
+              <p className="text-slate-500">{formatDateShort(splitBookResult.second_booking?.term_start)} – {formatDateShort(splitBookResult.second_booking?.term_end)}</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className={`text-base font-bold mb-3 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
+            {isTermMode
+              ? (
+                <>
+                  <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
+                  {termStart && termEnd && (
+                    <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
+                  )}
+                  {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
+                </>
+              )
+              : <p className="text-sm text-slate-500">{formatDateShort(date)} · {startTime} – {endTime} น.</p>
+            }
+          </>
+        )}
         <p className="text-sm text-slate-500 mt-0.5">{attendees} คน</p>
         <div className="mt-5 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-left">
           <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
@@ -1185,6 +1402,18 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
               <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
                 <SectionLabel>ข้อมูลเทอม</SectionLabel>
                 <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => applyTermPreset(1)}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
+                        ${termStart === `${new Date().getFullYear()}-01-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
+                      เทอมที่ 1
+                    </button>
+                    <button type="button" onClick={() => applyTermPreset(2)}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
+                        ${termStart === `${new Date().getFullYear()}-07-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
+                      เทอมที่ 2
+                    </button>
+                  </div>
                   <div>
                     <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
                     <input type="text" value={termName} onChange={e => setTermName(e.target.value)}
@@ -1240,7 +1469,7 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
             <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
               <SectionLabel icon={MapPin}>อาคาร</SectionLabel>
               <div className="flex flex-wrap gap-1.5">
-                {BUILDINGS.map(b => <Chip key={b.code} active={building === b.code} onClick={() => setBuilding(b.code)}>{b.label}</Chip>)}
+                {buildings.map(b => <Chip key={b.code} active={building === b.code} onClick={() => setBuilding(b.code)}>{b.label}</Chip>)}
               </div>
             </div>
 
@@ -1257,12 +1486,12 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                   </button>
                 )}
               </div>
-              <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} compact />
+              <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} compact equipmentPresets={equipmentPresets} />
               {selectedEquipments.length > 0 && (
                 <div className="mt-2.5 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
                   <Filter size={10} className="text-blue-500 flex-shrink-0" />
                   <p className="text-xs text-blue-600 font-semibold">
-                    มี: {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.label).join(', ')}
+                    มี: {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.label).join(', ')}
                   </p>
                 </div>
               )}
@@ -1297,7 +1526,7 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                 {selectedEquipments.length > 0 && (
                   <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2 py-0.5 flex items-center gap-1">
                     <Filter size={9} />
-                    {selectedEquipments.map(k => EQUIPMENT_PRESETS.find(p => p.key === k)?.icon).join('')}
+                    {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.icon).join('')}
                   </span>
                 )}
               </div>
@@ -1309,24 +1538,58 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
             {rooms.length > 0 && <SummaryTiles rooms={rooms} layout="grid" />}
 
             {rooms.length === 0 ? (
-              <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au">
+              <div className="bg-white border border-blue-100 rounded-2xl py-10 px-4 text-center au">
                 <Building2 size={32} className="text-blue-200 mx-auto mb-3" />
                 <p className="text-sm font-semibold text-blue-700 mb-1">
-                  {isTermMode ? 'ไม่พบห้องเรียน/Lecture ที่ว่าง' : 'ไม่พบห้องว่างที่เหมาะสม'}
+                  {isTermMode ? 'ไม่พบห้องว่างทั้งเทอม' : 'ไม่พบห้องว่างที่เหมาะสม'}
                 </p>
-                <p className="text-xs text-slate-400 mb-3">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
+                {isTermMode && (
+                  <SplitSuggestionList suggestions={splitSuggestions} onSelect={onSelectSplit} />
+                )}
+                <p className="text-xs text-slate-400 mb-3 mt-3">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
                 <button onClick={() => setStep(1)} className="text-xs text-blue-600 hover:underline">← ค้นหาใหม่</button>
               </div>
             ) : rooms.map((room, idx) => (
               <RoomCard key={room.id} room={room} idx={idx} compact isTermMode={isTermMode}
                 selectedEquipments={selectedEquipments}
-                onClick={() => { setSelectedRoom(room); setStep(3) }} />
+                equipmentPresets={equipmentPresets}
+                onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
             ))}
           </>
         )}
 
         {/* ── STEP 3 ── */}
-        {step === 3 && selectedRoom && (() => {
+        {step === 3 && (splitPlan || selectedRoom) && (() => {
+          if (splitPlan) {
+            const fh = splitPlan.first_half
+            const sh = splitPlan.second_half
+            return (
+              <>
+                <button type="button" onClick={onCancelSplit} className="text-xs text-slate-500 mb-2">← กลับเลือกแผน</button>
+                <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au1">
+                  <SectionLabel icon={BookOpen}>ยืนยันจองสลับห้อง</SectionLabel>
+                  <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                    <div className="bg-violet-50 rounded-lg p-2 border border-violet-100">
+                      <p className="font-bold text-violet-800">เทอมแรก</p>
+                      <p className="font-semibold">{fh.room_name}</p>
+                    </div>
+                    <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
+                      <p className="font-bold text-indigo-800">เทอมหลัง</p>
+                      <p className="font-semibold">{sh.room_name}</p>
+                    </div>
+                  </div>
+                  <input type="text" value={title} onChange={e => setTitle(e.target.value)}
+                    placeholder="ชื่อวิชา / กิจกรรม *"
+                    className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm mb-3" />
+                  <button type="button" onClick={handleBook} disabled={bookingLoading || !title.trim()}
+                    className="w-full bg-indigo-700 text-white rounded-xl py-3.5 text-sm font-bold disabled:bg-slate-400">
+                    {bookingLoading ? 'กำลังจอง...' : 'ยืนยันจองทั้ง 2 ช่วง'}
+                  </button>
+                </div>
+              </>
+            )
+          }
+
           const level = getDemandLevel(selectedRoom)
           const cfg   = FORECAST_CONFIG[level]
           return (
@@ -1378,6 +1641,7 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                       facilities={selectedRoom.facilities}
                       compact={false}
                       highlight={selectedEquipments}
+                      equipmentPresets={equipmentPresets}
                     />
                   </div>
                 )}
@@ -1432,16 +1696,67 @@ export default function SearchPage() {
   const [selectedRoom, setSelectedRoom]           = useState(null)
   const [title, setTitle]                         = useState('')
   const [loading, setLoading]                     = useState(false)
+  const [buildings, setBuildings]                 = useState(DEFAULT_BUILDINGS)
+
   const [bookingLoading, setBookingLoading]       = useState(false)
   const [success, setSuccess]                     = useState(false)
   const [error, setError]                         = useState('')
   const [termStart, setTermStart]                 = useState('')
   const [termEnd, setTermEnd]                     = useState('')
   const [termName, setTermName]                   = useState('ภาคเรียนที่ 1/2568')
-  const [selectedEquipments, setSelectedEquipments] = useState([])   // ← NEW
+  const [selectedEquipments, setSelectedEquipments] = useState([])
+  const [splitSuggestions, setSplitSuggestions]     = useState([])
+  const [splitPlan, setSplitPlan]                     = useState(null)
+  const [splitBookResult, setSplitBookResult]         = useState(null)
+  const [equipmentPresets, setEquipmentPresets]       = useState(FALLBACK_EQUIPMENT_PRESETS)
+
+  const onSelectSplit = (suggestion) => {
+    setSplitPlan(suggestion)
+    setSelectedRoom(null)
+    setTitle('')
+    setStep(3)
+  }
+
+  const onCancelSplit = () => {
+    setSplitPlan(null)
+    setStep(2)
+  }
+
+  useEffect(() => {
+    api.get('rooms/equipment-filters/')
+      .then(res => {
+        const filters = res.data?.filters
+        if (filters?.length) setEquipmentPresets(filters)
+      })
+      .catch(() => { /* ใช้ fallback */ })
+  }, [])
+
+  // โหลดรายการอาคารจาก backend
+  useEffect(() => {
+    api.get('buildings/')
+      .then(res => {
+        const data = res.data?.results ?? res.data ?? []
+        const mapped = [{ code: '', label: 'ทั้งหมด' }, ...data.map(b => ({ code: b.code || b.id, label: b.name }))]
+        setBuildings(mapped)
+      })
+      .catch(() => { /* เก็บ default */ })
+  }, [])
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
+  const applyTermPreset = (n) => {
+    const y = new Date().getFullYear()
+    const thaiYear = y + 543
+    if (n === 1) {
+      setTermStart(`${y}-01-01`)
+      setTermEnd(`${y}-06-30`)
+      setTermName(`เทอมที่ 1/${thaiYear}`)
+    } else {
+      setTermStart(`${y}-07-01`)
+      setTermEnd(`${y}-12-31`)
+      setTermName(`เทอมที่ 2/${thaiYear}`)
+    }
+  }
  const handleSearch = async () => {
   if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
   if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
@@ -1469,10 +1784,6 @@ export default function SearchPage() {
     }
 
     const res = await api.post('/rooms/search/', payload)
-    console.log('ห้องแรกเต็มๆ:', JSON.stringify(res.data[0], null, 2))
-    console.log('ผลลัพธ์:', res.data)
-    console.log('facilities ห้องแรก:', res.data[0]?.facilities)
-    console.log('จำนวนห้องก่อนกรอง:', res.data.length)
 
     let filtered = res.data.filter(r =>
       r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER
@@ -1483,10 +1794,28 @@ export default function SearchPage() {
     }
 
     if (selectedEquipments.length > 0) {
-      filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments))
+      filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments, equipmentPresets))
     }
 
     setRooms(filtered)
+    setSplitSuggestions([])
+    setSplitPlan(null)
+
+    if (bookingType === 'term' && filtered.length === 0) {
+      try {
+        const splitRes = await api.post('term-bookings/split-recommend/', {
+          day_of_week: dayOfWeek,
+          start_time: startTime,
+          end_time: endTime,
+          term_start: termStart,
+          term_end: termEnd,
+          attendees,
+          room: selectedRoom?.id,
+        })
+        setSplitSuggestions(splitRes.data.suggestions || [])
+      } catch { /* ไม่มีคำแนะนำสลับห้อง */ }
+    }
+
     setStep(2)
   } catch (err) {
     console.log('error full:', err)
@@ -1498,8 +1827,12 @@ export default function SearchPage() {
 }
 
 const handleBook = async () => {
-  if (!selectedRoom) {
+  if (!splitPlan && !selectedRoom) {
     setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
+    return
+  }
+  if (!title.trim()) {
+    setError('กรุณากรอกชื่อวิชา / กิจกรรม')
     return
   }
 
@@ -1509,7 +1842,28 @@ const handleBook = async () => {
   try {
     let response
 
-    if (bookingType === 'term') {
+    if (bookingType === 'term' && splitPlan) {
+      const fh = splitPlan.first_half
+      const sh = splitPlan.second_half
+      response = await api.post('term-bookings/split-book/', {
+        subject_name: title.trim(),
+        subject_code: 'N/A',
+        attendees: parseInt(attendees, 10),
+        day_of_week: dayOfWeek,
+        start_time: startTime,
+        end_time: endTime,
+        term_name: termName,
+        note: `จองสลับห้อง: ${fh.room_name} → ${sh.room_name}`,
+        first_room_id: fh.room_id,
+        first_term_start: fh.term_start,
+        first_term_end: fh.term_end,
+        second_room_id: sh.room_id,
+        second_term_start: sh.term_start,
+        second_term_end: sh.term_end,
+      })
+      setSplitBookResult(response.data)
+      setSplitPlan(null)
+    } else if (bookingType === 'term') {
       const termPayload = {
         room: selectedRoom.id,
         subject_name: title,
@@ -1543,7 +1897,9 @@ const handleBook = async () => {
     }
   } catch (err) {
     const errorData = err.response?.data
-    const msg = errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
+    const msg = err.code === 'ECONNABORTED'
+      ? 'การจองใช้เวลานานเกินไป กรุณาตรวจสอบรายการจองของฉัน หรือลองใหม่อีกครั้ง'
+      : errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
     setError(msg)
   } finally {
     setBookingLoading(false)
@@ -1560,10 +1916,16 @@ const handleBook = async () => {
       termStart, setTermStart,
       termEnd, setTermEnd,
       termName, setTermName,
-      selectedEquipments, setSelectedEquipments,   // ← NEW
+      applyTermPreset,
+      selectedEquipments, setSelectedEquipments,
+      equipmentPresets,
+      buildings,
     },
-    resultProps:  { rooms, setSelectedRoom },
-    confirmProps: { selectedRoom, title, setTitle, bookingLoading, handleBook, success },
+    resultProps:  { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit },
+    confirmProps: {
+      selectedRoom, title, setTitle, bookingLoading, handleBook, success,
+      splitPlan, splitBookResult, onCancelSplit,
+    },
   }
 
   return isMobile

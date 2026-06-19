@@ -7,7 +7,7 @@ import sys
 
 def retrain_model():
     print("🔁 Retraining AI model...")
-    subprocess.run([sys.executable, "ml/train.py"])
+    subprocess.run([sys.executable, "ml/saved/forecast.py", "--retrain"])
 
 
 def send_checkin_reminders():

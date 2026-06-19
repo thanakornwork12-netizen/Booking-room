@@ -10,6 +10,7 @@ from .views import (
     TermBookingViewSet, BookingViewSet,
     NotificationViewSet, DemandForecastViewSet,
     DashboardView, ExportExcelView,
+    MaintenanceSlotsView, MaintenanceBlockViewSet,
 )
 
 
@@ -31,6 +32,7 @@ router.register('term-bookings', TermBookingViewSet,    basename='term-booking')
 router.register('bookings',      BookingViewSet,        basename='booking')
 router.register('notifications', NotificationViewSet,   basename='notification')
 router.register('forecasts',     DemandForecastViewSet, basename='forecast')
+router.register('maintenance-blocks', MaintenanceBlockViewSet, basename='maintenance-block')
 
 urlpatterns = [
     # Auth
@@ -42,6 +44,7 @@ urlpatterns = [
     # Dashboard + Export
     path('dashboard/',     DashboardView.as_view(),           name='dashboard'),
     path('export/excel/',  ExportExcelView.as_view(),         name='export_excel'),
+    path('maintenance/slots/', MaintenanceSlotsView.as_view(), name='maintenance_slots'),
 
     # ViewSets
     path('', include(router.urls)),

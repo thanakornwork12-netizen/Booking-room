@@ -164,6 +164,36 @@ class TermBooking(models.Model):
 
 
 # ============================================================
+# 5b. MAINTENANCE BLOCK — ล็อกช่วงซ่อมบำรุงเชิงป้องกัน
+# ============================================================
+class MaintenanceBlock(models.Model):
+    STATUS_CHOICES = [
+        ('scheduled', 'กำหนดการแล้ว'),
+        ('active',    'กำลังซ่อม'),
+        ('completed', 'เสร็จสิ้น'),
+        ('cancelled', 'ยกเลิก'),
+    ]
+    room                 = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='maintenance_blocks')
+    start_time           = models.DateTimeField(verbose_name='เวลาเริ่มล็อก')
+    end_time             = models.DateTimeField(verbose_name='เวลาสิ้นสุดล็อก')
+    reason               = models.CharField(max_length=200, default='ซ่อมบำรุงเชิงป้องกัน')
+    note                 = models.TextField(blank=True)
+    status               = models.CharField(max_length=20, choices=STATUS_CHOICES, default='scheduled')
+    predicted_demand_avg = models.FloatField(null=True, blank=True, help_text='ค่าเฉลี่ย demand จาก LSTM ช่วงที่เลือก')
+    created_by           = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='maintenance_blocks'
+    )
+    created_at           = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'ช่วงล็อกซ่อมบำรุง'
+        ordering = ['start_time']
+
+    def __str__(self):
+        return f"{self.room} | {self.start_time:%d/%m/%Y %H:%M}–{self.end_time:%H:%M}"
+
+
+# ============================================================
 # 6. BOOKING — จองรายวัน
 # ============================================================
 class Booking(models.Model):

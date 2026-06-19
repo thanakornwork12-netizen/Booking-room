@@ -1,6 +1,7 @@
 # booking/signals.py
 # ส่ง WebSocket Event อัตโนมัติทุกครั้งที่ Booking เปลี่ยนสถานะ
 
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.core.mail import send_mail
@@ -8,11 +9,61 @@ from django.conf import settings
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 import pytz
+import logging
+import threading
+import socket
 
-from .models import Booking, Notification
+from .models import Booking, Notification, TermBooking
 
 THAI_TZ  = pytz.timezone('Asia/Bangkok')
 SITE_URL = getattr(settings, 'SITE_URL', 'http://localhost:8000')
+logger = logging.getLogger(__name__)
+
+
+def get_recipient_email(user):
+    if user.email:
+        return user.email
+
+    username = user.username or ''
+    if '@' in username:
+        return username
+    if username.isdigit():
+        return f'{username}@ubu.ac.th'
+    return ''
+
+
+def send_email_after_commit(send_func, instance):
+  def run():
+    try:
+      logger.info('Background email thread starting for instance id=%s', getattr(instance, 'id', None))
+      logger.info('EMAIL_HOST=%s EMAIL_PORT=%s EMAIL_BACKEND=%s',
+            getattr(settings, 'EMAIL_HOST', None),
+            getattr(settings, 'EMAIL_PORT', None),
+            getattr(settings, 'EMAIL_BACKEND', None))
+      send_func(instance)
+    except Exception:
+      logger.exception('ส่งอีเมลแบบ background ไม่สำเร็จ')
+
+  def _start_thread():
+    logger.info('Starting background email thread (on commit) for instance id=%s', getattr(instance, 'id', None))
+    threading.Thread(target=run, daemon=True).start()
+
+  transaction.on_commit(_start_thread)
+
+
+def log_email_error(context, error):
+    if isinstance(error, (TimeoutError, socket.timeout)):
+        logger.error(
+            '%s: เชื่อมต่อ SMTP ไม่สำเร็จภายใน %s วินาที (%s:%s). '
+            'ตรวจสอบ firewall/network หรือเปลี่ยน EMAIL_BACKEND/SMTP provider',
+            context,
+            getattr(settings, 'EMAIL_TIMEOUT', None),
+            getattr(settings, 'EMAIL_HOST', None),
+            getattr(settings, 'EMAIL_PORT', None),
+        )
+        return
+
+    logger.exception('%s: %s', context, error)
 
 
 @receiver(post_save, sender=Booking)
@@ -20,27 +71,36 @@ def broadcast_booking_update(sender, instance, created, **kwargs):
     """
     ทุกครั้งที่ Booking ถูก save → broadcast ให้ทุก Client รู้
     """
+    if created:
+        send_email_after_commit(send_booking_confirmation_email, instance)
+    elif instance.status == 'cancelled':
+        send_email_after_commit(send_booking_cancelled_email, instance)
+
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
 
-    async_to_sync(channel_layer.group_send)(
-        'room_status',
-        {
-            'type':       'booking_update',
-            'booking_id': instance.id,
-            'room_id':    instance.room.id,
-            'room_name':  instance.room.name,
-            'status':     instance.status,
-            'start_time': instance.start_time.isoformat(),
-            'end_time':   instance.end_time.isoformat(),
-        }
-    )
+    try:
+        async_to_sync(channel_layer.group_send)(
+            'room_status',
+            {
+                'type':       'booking_update',
+                'booking_id': instance.id,
+                'room_id':    instance.room.id,
+                'room_name':  instance.room.name,
+                'status':     instance.status,
+                'start_time': instance.start_time.isoformat(),
+                'end_time':   instance.end_time.isoformat(),
+            }
+        )
+    except Exception:
+        logger.exception('ส่ง WebSocket booking update ไม่สำเร็จ')
 
+
+@receiver(post_save, sender=TermBooking)
+def send_term_booking_email(sender, instance, created, **kwargs):
     if created:
-        send_booking_confirmation_email(instance)
-    elif instance.status == 'cancelled':
-        send_booking_cancelled_email(instance)
+        send_email_after_commit(send_term_booking_confirmation_email, instance)
 
 
 @receiver(post_save, sender=Notification)
@@ -71,8 +131,9 @@ def push_notification(sender, instance, created, **kwargs):
 
 def send_booking_confirmation_email(instance):
     """ส่งอีเมลยืนยันเมื่อจองสำเร็จ พร้อมปุ่ม Check-in และ ยกเลิก"""
-    user_email = instance.user.email
+    user_email = get_recipient_email(instance.user)
     if not user_email:
+        logger.warning('ไม่ส่งอีเมลยืนยัน เพราะ user %s ไม่มี email', instance.user_id)
         return
 
     start_thai = instance.start_time.astimezone(THAI_TZ)
@@ -199,22 +260,106 @@ def send_booking_confirmation_email(instance):
     '''
 
     try:
-        send_mail(
-            subject=f'✅ ยืนยันการจองห้อง {instance.room.name}',
+      logger.info(
+        'Attempting send_mail to %s (instance id=%s) via %s:%s backend=%s',
+        user_email,
+        getattr(instance, 'id', None),
+        getattr(settings, 'EMAIL_HOST', None),
+        getattr(settings, 'EMAIL_PORT', None),
+        getattr(settings, 'EMAIL_BACKEND', None),
+      )
+      send_mail(
+        subject=f'✅ ยืนยันการจองห้อง {instance.room.name}',
+        message=plain_text,
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+        recipient_list=[user_email],
+        html_message=html_message,
+        fail_silently=False,
+      )
+    except Exception as e:
+      log_email_error('ส่งอีเมลยืนยันไม่สำเร็จ', e)
+
+
+def send_term_booking_confirmation_email(instance):
+    """ส่งอีเมลยืนยันเมื่อจองทั้งเทอมสำเร็จ"""
+    user_email = get_recipient_email(instance.user)
+    if not user_email:
+        logger.warning('ไม่ส่งอีเมลจองทั้งเทอม เพราะ user %s ไม่มี email', instance.user_id)
+        return
+
+    day_name = instance.get_day_of_week_display()
+    plain_text = f'''
+สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
+
+การจองห้องทั้งเทอมของคุณสำเร็จแล้ว
+
+รายละเอียดการจอง
+─────────────────────────
+ห้อง      : {instance.room.name}
+อาคาร     : {instance.room.building.name}
+วิชา/กิจกรรม: {instance.subject_name}
+วัน       : ทุกวัน{day_name}
+เวลา      : {instance.start_time:%H:%M} - {instance.end_time:%H:%M} น.
+ช่วงเทอม  : {instance.term_start} ถึง {instance.term_end}
+ผู้เข้าร่วม: {instance.attendees} คน
+─────────────────────────
+
+ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+    '''
+
+    html_message = f'''
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
+  <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#4338ca;padding:28px 32px;">
+      <h1 style="color:white;margin:0;font-size:22px;">ยืนยันการจองห้องทั้งเทอมสำเร็จ</h1>
+      <p style="color:#c7d2fe;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+    </div>
+    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
+    <div style="padding:28px 32px;">
+      <p style="font-size:16px;color:#374151;">สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b></p>
+      <p style="color:#6b7280;">การจองห้องทั้งเทอมของคุณสำเร็จแล้ว รายละเอียดด้านล่างครับ</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
+        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;width:40%;">ห้อง</td><td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td></tr>
+        <tr><td style="padding:10px 12px;color:#6b7280;">อาคาร</td><td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td></tr>
+        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;">วิชา/กิจกรรม</td><td style="padding:10px 12px;color:#111827;">{instance.subject_name}</td></tr>
+        <tr><td style="padding:10px 12px;color:#6b7280;">วัน/เวลา</td><td style="padding:10px 12px;color:#111827;">ทุกวัน{day_name} {instance.start_time:%H:%M} - {instance.end_time:%H:%M} น.</td></tr>
+        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;">ช่วงเทอม</td><td style="padding:10px 12px;color:#111827;">{instance.term_start} ถึง {instance.term_end}</td></tr>
+        <tr><td style="padding:10px 12px;color:#6b7280;">ผู้เข้าร่วม</td><td style="padding:10px 12px;color:#111827;">{instance.attendees} คน</td></tr>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
+    '''
+
+    try:
+      logger.info(
+        'Attempting send_mail to %s (term instance id=%s) via %s:%s backend=%s',
+        user_email,
+        getattr(instance, 'id', None),
+        getattr(settings, 'EMAIL_HOST', None),
+        getattr(settings, 'EMAIL_PORT', None),
+        getattr(settings, 'EMAIL_BACKEND', None),
+      )
+      send_mail(
+            subject=f'ยืนยันการจองห้องทั้งเทอม {instance.room.name}',
             message=plain_text,
-            from_email='nookkup47@gmail.com',
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
             recipient_list=[user_email],
             html_message=html_message,
-            fail_silently=True,
+            fail_silently=False,
         )
     except Exception as e:
-        print(f'❌ ส่งอีเมลยืนยันไม่สำเร็จ: {e}')
+        log_email_error('ส่งอีเมลยืนยันจองทั้งเทอมไม่สำเร็จ', e)
 
 
 def send_booking_cancelled_email(instance):
     """ส่งอีเมลเมื่อการจองถูกยกเลิก"""
-    user_email = instance.user.email
+    user_email = get_recipient_email(instance.user)
     if not user_email:
+        logger.warning('ไม่ส่งอีเมลยกเลิก เพราะ user %s ไม่มี email', instance.user_id)
         return
 
     start_thai = instance.start_time.astimezone(THAI_TZ)
@@ -309,13 +454,21 @@ def send_booking_cancelled_email(instance):
     '''
 
     try:
-        send_mail(
+      logger.info(
+        'Attempting send_mail to %s (cancel instance id=%s) via %s:%s backend=%s',
+        user_email,
+        getattr(instance, 'id', None),
+        getattr(settings, 'EMAIL_HOST', None),
+        getattr(settings, 'EMAIL_PORT', None),
+        getattr(settings, 'EMAIL_BACKEND', None),
+      )
+      send_mail(
             subject=f'❌ การจองห้อง {instance.room.name} ถูกยกเลิกแล้ว',
             message=plain_text,
-            from_email='nookkup47@gmail.com',
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
             recipient_list=[user_email],
             html_message=html_message,
-            fail_silently=True,
+            fail_silently=False,
         )
     except Exception as e:
-        print(f'❌ ส่งอีเมลยกเลิกไม่สำเร็จ: {e}')
+        log_email_error('ส่งอีเมลยกเลิกไม่สำเร็จ', e)

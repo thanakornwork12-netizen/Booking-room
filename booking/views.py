@@ -16,7 +16,7 @@ from .ldap_auth import authenticate_ldap
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
-    DemandForecast, Notification, RoomUsageStat
+    DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
 from .serializers import (
     UserSerializer, RegisterSerializer,
@@ -25,7 +25,8 @@ from .serializers import (
     TermBookingSerializer, TermBookingCreateSerializer,
     BookingSerializer, BookingCreateSerializer,
     BookingLogSerializer, DemandForecastSerializer,
-    NotificationSerializer, RoomUsageStatSerializer
+    NotificationSerializer, RoomUsageStatSerializer,
+    MaintenanceBlockSerializer, MaintenanceBlockCreateSerializer,
 )
 
 THAI_TZ = pytz.timezone('Asia/Bangkok')
@@ -52,9 +53,9 @@ class ProfileView(generics.RetrieveUpdateAPIView):
 # BUILDING
 # ============================================================
 class BuildingViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset           = Building.objects.filter(is_active=True)
+    queryset           = Building.objects.filter(is_active=True).order_by('name')
     serializer_class   = BuildingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
 
 # ============================================================
@@ -101,13 +102,18 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             start_time__lt=end_dt, end_time__gt=start_dt,
         ).values_list('room_id', flat=True)
 
+        maint_blocked = MaintenanceBlock.objects.filter(
+            status__in=['scheduled', 'active'],
+            start_time__lt=end_dt, end_time__gt=start_dt,
+        ).values_list('room_id', flat=True)
+
         booked_term = TermBooking.objects.filter(
             day_of_week=target_dow, status='active',
             term_start__lte=target_date, term_end__gte=target_date,
         ).exclude(start_time__gte=d['end_time']).exclude(end_time__lte=d['start_time'])\
          .values_list('room_id', flat=True)
 
-        blocked   = set(list(booked_dynamic) + list(booked_term))
+        blocked   = set(list(booked_dynamic) + list(booked_term) + list(maint_blocked))
         available = Room.objects.filter(
             is_active=True, status='available', capacity__gte=d['attendees'],
         ).exclude(id__in=blocked).select_related('building')\
@@ -136,9 +142,15 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         ).exclude(start_time__gte=d['end_time']).exclude(end_time__lte=d['start_time'])\
          .values_list('room_id', flat=True)
 
+        # ช่วงซ่อมบำรุงที่ทับกับเทอม
+        maint_blocked = MaintenanceBlock.objects.filter(
+            status__in=['scheduled', 'active'],
+            start_time__date__lte=t_end, end_time__date__gte=t_start,
+        ).values_list('room_id', flat=True)
+
         available = Room.objects.filter(
             is_active=True, status='available', capacity__gte=d['attendees'],
-        ).exclude(id__in=booked_term).select_related('building')\
+        ).exclude(id__in=set(list(booked_term) + list(maint_blocked))).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
 
         if d.get('room_type'):
@@ -242,6 +254,106 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             )),
         })
 
+    @action(detail=False, methods=['get'], url_path='equipment-filters')
+    def equipment_filters(self, request):
+        """
+        ตัวกรองอุปกรณ์สำหรับหน้าค้นหา — อิง Facility master จริงใน DB
+        คืนหมวดหลักก่อน แล้วเติมรายการ master ทั้งหมดเพื่อไม่ให้ตัวเลือกตกหล่น
+        """
+        facility_rows = list(Facility.objects.order_by('name').values('id', 'name'))
+        active_names = set(
+            Facility.objects.filter(roomfacility__room__is_active=True)
+            .values_list('name', flat=True)
+            .distinct()
+        )
+        names = [row['name'] for row in facility_rows]
+        names_lower = [n.lower() for n in names]
+
+        categories = [
+            {'key': 'computer',  'label': 'คอมพิวเตอร์',              'icon': '💻',
+             'keywords': ['คอมพิวเตอร์', 'computer', 'pc ', 'pc |', 'pc', 'imac']},
+            {'key': 'projector', 'label': 'โปรเจกเตอร์',              'icon': '📽️',
+             'keywords': ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector']},
+            {'key': 'microphone','label': 'ไมโครโฟน',                 'icon': '🎤',
+             'keywords': ['ไมโครโฟน', 'microphone', 'ไมค์']},
+            {'key': 'sound',     'label': 'ระบบเสียง',                'icon': '🔊',
+             'keywords': ['ระบบเสียง', 'เครื่องเสียง', 'ลำโพง', 'mixer']},
+            {'key': 'tv',        'label': 'TV / จอแสดงผล',            'icon': '📺',
+             'keywords': ['tv', 'จอแสดงผล', 'จอ ', 'จอแขวน', 'จอมอเตอร์', 'จอไฟฟ้า', 'นิ้ว']},
+            {'key': 'flipboard', 'label': 'Flipboard',                'icon': '📋',
+             'keywords': ['flipboard', 'flip2']},
+            {'key': 'video_conf','label': 'Video Conference',         'icon': '📹',
+             'keywords': ['video conference', 'วีดีโอ', 'vdo', 'webcam', 'zoom', 'teams', 'meet']},
+            {'key': 'interactive','label': 'โปรเจกเตอร์อินเทอร์แอคทีฟ', 'icon': '🖊️',
+             'keywords': ['อินเทอร์แอคทีฟ', 'interactive', 'touch screen']},
+        ]
+
+        for cat in categories:
+            cat['group_key'] = cat['key']
+            cat['group_label'] = cat['label']
+            cat['is_category'] = True
+
+        available = [
+            cat for cat in categories
+            if any(
+                kw in name
+                for name in names_lower
+                for kw in cat['keywords']
+            )
+        ]
+
+        def get_group(name):
+            name_lower = name.lower()
+            for cat in categories:
+                if any(kw in name_lower for kw in cat['keywords']):
+                    return cat
+            return {'key': 'other', 'label': 'อุปกรณ์อื่นๆ', 'icon': '🔧'}
+
+        master_filters = [
+            {
+                'key': f'facility_{row["id"]}',
+                'label': row['name'],
+                'icon': get_group(row['name'])['icon'],
+                'keywords': [row['name']],
+                'is_master': True,
+                'group_key': get_group(row['name'])['key'],
+                'group_label': get_group(row['name'])['label'],
+                'has_active_room': row['name'] in active_names,
+            }
+            for row in facility_rows
+        ]
+
+        return Response({
+            'filters': available + master_filters,
+            'facility_names': names,
+            'active_facility_names': sorted(active_names),
+        })
+
+    @action(detail=False, methods=['get'], url_path='admin-status')
+    def admin_status(self, request):
+        """รายการห้องจริงจาก DB สำหรับ Admin (แทน ALL_ROOMS_DATA mock)"""
+        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+            return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
+
+        rooms = Room.objects.filter(is_active=True).select_related('building')
+        total_bookings = Booking.objects.filter(status__in=['approved', 'completed']).count() or 1
+        result = []
+        for room in rooms:
+            cnt = Booking.objects.filter(room=room, status__in=['approved', 'completed']).count()
+            result.append({
+                'id':           room.id,
+                'name':         room.name,
+                'code':         room.name,
+                'building':     room.building.name if room.building else 'ไม่ระบุ',
+                'building_code': room.building.code if room.building else '',
+                'capacity':     room.capacity,
+                'room_type':    room.room_type,
+                'status':       room.status,
+                'util_rate':    round(cnt / total_bookings, 4),
+                'booking_count': cnt,
+            })
+        return Response(result)
+
 
 # ============================================================
 # TERM BOOKING ViewSet
@@ -275,7 +387,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         return TermBookingCreateSerializer if self.action == 'create' else TermBookingSerializer
 
     def perform_create(self, serializer):
-        term_booking = serializer.save(user=self.request.user, status='approved')
+        term_booking = serializer.save(user=self.request.user, status='active')
         Notification.objects.create(
             user=self.request.user, term_booking=term_booking,
             type='term_approved', title='จองห้องทั้งเทอมสำเร็จ',
@@ -333,6 +445,199 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             for i, slots in days.items()
         })
 
+    @action(detail=False, methods=['post'], url_path='split-recommend')
+    def split_recommend(self, request):
+        """
+        แนะนำจองทั้งเทอมแบบสลับห้อง: ครึ่งเทอมแรกห้อง A ครึ่งเทอมหลังห้อง B
+        เมื่อห้องเดียวไม่ว่างตลอดเทอม
+        """
+        room_id    = request.data.get('room')
+        dow        = request.data.get('day_of_week')
+        start_time = request.data.get('start_time')
+        end_time   = request.data.get('end_time')
+        term_start = request.data.get('term_start')
+        term_end   = request.data.get('term_end')
+        attendees  = request.data.get('attendees', 30)
+
+        if not all([dow is not None, start_time, end_time, term_start, term_end]):
+            return Response({'error': 'กรุณาระบุ day_of_week, start_time, end_time, term_start, term_end'},
+                            status=400)
+
+        try:
+            t_start = date_type.fromisoformat(str(term_start))
+            t_end   = date_type.fromisoformat(str(term_end))
+            from datetime import time as time_type
+            st = datetime.strptime(str(start_time), '%H:%M').time() if len(str(start_time)) <= 5 \
+                 else datetime.strptime(str(start_time), '%H:%M:%S').time()
+            et = datetime.strptime(str(end_time), '%H:%M').time() if len(str(end_time)) <= 5 \
+                 else datetime.strptime(str(end_time), '%H:%M:%S').time()
+        except ValueError as e:
+            return Response({'error': f'รูปแบบวันที่/เวลาไม่ถูกต้อง: {e}'}, status=400)
+
+        mid = t_start + (t_end - t_start) // 2
+
+        def find_available_rooms(period_start, period_end):
+            booked = TermBooking.objects.filter(
+                day_of_week=dow, status='active',
+                term_start__lte=period_end, term_end__gte=period_start,
+            ).exclude(start_time__gte=et).exclude(end_time__lte=st).values_list('room_id', flat=True)
+            qs = Room.objects.filter(
+                is_active=True, status='available', capacity__gte=attendees,
+            ).exclude(id__in=booked).select_related('building')
+            if room_id:
+                preferred = qs.filter(id=room_id).first()
+                if preferred and preferred.id not in booked:
+                    return list(qs.order_by('capacity')[:5])
+            return list(qs.order_by('capacity')[:5])
+
+        first_rooms  = find_available_rooms(t_start, mid)
+        second_rooms = find_available_rooms(mid + timedelta(days=1), t_end)
+
+        primary_conflict = bool(room_id and room_id not in [r.id for r in first_rooms])
+
+        suggestions = []
+        if first_rooms and second_rooms:
+            for r1 in first_rooms[:3]:
+                for r2 in second_rooms[:3]:
+                    if r1.id == r2.id:
+                        continue
+                    suggestions.append({
+                        'first_half': {
+                            'room_id': r1.id, 'room_name': r1.name,
+                            'building': r1.building.name, 'term_start': str(t_start), 'term_end': str(mid),
+                        },
+                        'second_half': {
+                            'room_id': r2.id, 'room_name': r2.name,
+                            'building': r2.building.name,
+                            'term_start': str(mid + timedelta(days=1)), 'term_end': str(t_end),
+                        },
+                        'message': (
+                            f'เทอมแรก ({t_start}–{mid}): ห้อง {r1.name} | '
+                            f'เทอมหลัง ({mid + timedelta(days=1)}–{t_end}): ห้อง {r2.name}'
+                        ),
+                    })
+                    if len(suggestions) >= 5:
+                        break
+                if len(suggestions) >= 5:
+                    break
+
+        return Response({
+            'needs_split':    primary_conflict or not first_rooms,
+            'term_midpoint':  str(mid),
+            'suggestions':    suggestions,
+            'first_half_rooms':  [{'id': r.id, 'name': r.name} for r in first_rooms],
+            'second_half_rooms': [{'id': r.id, 'name': r.name} for r in second_rooms],
+        })
+
+    @action(detail=False, methods=['post'], url_path='split-book')
+    def split_book(self, request):
+        """
+        จองทั้งเทอมแบบสลับห้อง — สร้าง TermBooking 2 รายการ (ครึ่งเทอมแรก + ครึ่งเทอมหลัง)
+        """
+        from django.db import transaction
+
+        data = request.data
+        required = [
+            'subject_name', 'day_of_week', 'start_time', 'end_time',
+            'first_room_id', 'first_term_start', 'first_term_end',
+            'second_room_id', 'second_term_start', 'second_term_end',
+        ]
+        missing = [k for k in required if data.get(k) in (None, '')]
+        if missing:
+            return Response({'error': f'ข้อมูลไม่ครบ: {", ".join(missing)}'}, status=400)
+
+        try:
+            dow = int(data['day_of_week'])
+            st = datetime.strptime(str(data['start_time']), '%H:%M').time() \
+                if len(str(data['start_time'])) <= 5 \
+                else datetime.strptime(str(data['start_time']), '%H:%M:%S').time()
+            et = datetime.strptime(str(data['end_time']), '%H:%M').time() \
+                if len(str(data['end_time'])) <= 5 \
+                else datetime.strptime(str(data['end_time']), '%H:%M:%S').time()
+            f_start = date_type.fromisoformat(str(data['first_term_start']))
+            f_end   = date_type.fromisoformat(str(data['first_term_end']))
+            s_start = date_type.fromisoformat(str(data['second_term_start']))
+            s_end   = date_type.fromisoformat(str(data['second_term_end']))
+        except (ValueError, TypeError) as e:
+            return Response({'error': f'รูปแบบวันที่/เวลาไม่ถูกต้อง: {e}'}, status=400)
+
+        if st >= et or f_start >= f_end or s_start >= s_end:
+            return Response({'error': 'ช่วงวันที่หรือเวลาไม่ถูกต้อง'}, status=400)
+        if f_end >= s_start:
+            return Response({'error': 'ช่วงเทอมแรกและเทอมหลังต้องไม่ซ้อนกัน'}, status=400)
+
+        attendees  = int(data.get('attendees', 30))
+        term_name  = data.get('term_name', '')
+        note_base  = data.get('note', '')
+        subject    = data['subject_name']
+        subject_code = data.get('subject_code', '')
+
+        common = {
+            'user': request.user,
+            'subject_name': subject,
+            'subject_code': subject_code,
+            'attendees': attendees,
+            'day_of_week': dow,
+            'start_time': st,
+            'end_time': et,
+            'term_name': term_name,
+            'status': 'active',
+        }
+
+        def check_overlap(room_id, t_start, t_end):
+            return TermBooking.objects.filter(
+                room_id=room_id,
+                day_of_week=dow,
+                status='active',
+                term_start__lte=t_end,
+                term_end__gte=t_start,
+            ).exclude(start_time__gte=et).exclude(end_time__lte=st).exists()
+
+        if check_overlap(data['first_room_id'], f_start, f_end):
+            return Response({'error': 'ห้องเทอมแรกมีการจองซ้อนในช่วงเวลานี้แล้ว'}, status=400)
+        if check_overlap(data['second_room_id'], s_start, s_end):
+            return Response({'error': 'ห้องเทอมหลังมีการจองซ้อนในช่วงเวลานี้แล้ว'}, status=400)
+
+        try:
+            with transaction.atomic():
+                tb1 = TermBooking.objects.create(
+                    room_id=data['first_room_id'],
+                    term_start=f_start,
+                    term_end=f_end,
+                    note=(note_base + ' [เทอมแรก — จองสลับห้อง]').strip(),
+                    **common,
+                )
+                tb2 = TermBooking.objects.create(
+                    room_id=data['second_room_id'],
+                    term_start=s_start,
+                    term_end=s_end,
+                    note=(note_base + ' [เทอมหลัง — จองสลับห้อง]').strip(),
+                    **common,
+                )
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+
+        for tb in (tb1, tb2):
+            Notification.objects.create(
+                user=request.user,
+                term_booking=tb,
+                type='term_approved',
+                title='จองห้องทั้งเทอม (สลับห้อง) สำเร็จ',
+                message=(
+                    f'จองห้อง {tb.room.name} สำหรับ "{tb.subject_name}" '
+                    f'ทุกวัน{tb.get_day_of_week_display()} '
+                    f'{tb.start_time:%H:%M}–{tb.end_time:%H:%M} '
+                    f'ตั้งแต่ {tb.term_start} ถึง {tb.term_end}'
+                ),
+            )
+
+        ser = TermBookingSerializer
+        return Response({
+            'message': 'จองสลับห้องทั้ง 2 ช่วงเรียบร้อยแล้ว',
+            'first_booking':  ser(tb1, context={'request': request}).data,
+            'second_booking': ser(tb2, context={'request': request}).data,
+        }, status=201)
+
 
 # ============================================================
 # DYNAMIC BOOKING ViewSet
@@ -386,6 +691,51 @@ class BookingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         return Response(BookingLogSerializer(self.get_object().logs.all(), many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='check_in')
+    def check_in(self, request, pk=None):
+        booking = self.get_object()
+        user_role = getattr(request.user, 'role', None)
+
+        if booking.user != request.user and user_role not in ['admin', 'staff']:
+            return Response({'error': 'ไม่มีสิทธิ์ Check-in การจองนี้'}, status=403)
+        if booking.checked_in:
+            return Response({'message': 'Check-in ไปแล้ว', 'checked_in': True})
+        if booking.status != 'approved':
+            return Response({
+                'error': 'ไม่สามารถ Check-in ได้',
+                'status': booking.status,
+            }, status=400)
+
+        now = timezone.now()
+        window_start = booking.start_time - timedelta(minutes=15)
+
+        if now < window_start:
+            return Response({
+                'error': 'ยังไม่ถึงเวลา Check-in',
+                'check_in_available_at': window_start,
+            }, status=400)
+
+        if now > booking.end_time:
+            return Response({'error': 'เลยเวลาการจองแล้ว'}, status=400)
+
+        old = booking.status
+        booking.checked_in = True
+        booking.checked_in_at = now
+        booking.status = 'checked_in'
+        booking.save()
+        BookingLog.objects.create(
+            booking=booking,
+            changed_by=request.user,
+            old_status=old,
+            new_status='checked_in',
+        )
+
+        return Response({
+            'message': 'Check-in สำเร็จ',
+            'checked_in': True,
+            'status': booking.status,
+        })
 
     # ─── CHECK-IN via Email Link ───────────────────────────────
     @action(
@@ -559,6 +909,89 @@ class DemandForecastViewSet(viewsets.ReadOnlyModelViewSet):
         if room: qs = qs.filter(room_id=room)
         if date: qs = qs.filter(forecast_date=date)
         return qs
+
+
+# ============================================================
+# MAINTENANCE — Predictive Maintenance Scheduler
+# ============================================================
+class MaintenanceSlotsView(APIView):
+    """คัดกรองช่วง demand ต่ำจาก DemandForecast (LSTM)"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+            return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
+
+        room_id  = request.query_params.get('room')
+        max_dem  = float(request.query_params.get('max_demand', 0.10))
+        min_hrs  = int(request.query_params.get('min_hours', 3))
+        days     = int(request.query_params.get('days', 14))
+
+        import sys, os, importlib.util
+        fc_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ml', 'saved', 'forecast.py')
+        spec = importlib.util.spec_from_file_location('forecast', fc_path)
+        fc_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fc_mod)
+        find_maintenance_slots = fc_mod.find_maintenance_slots
+
+        slots = find_maintenance_slots(
+            room_id=int(room_id) if room_id else None,
+            max_demand=max_dem,
+            min_consecutive_hours=min_hrs,
+            days_ahead=days,
+        )
+        return Response({'slots': slots, 'count': len(slots)})
+
+
+class MaintenanceBlockViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    queryset = MaintenanceBlock.objects.select_related('room__building', 'created_by')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return MaintenanceBlockCreateSerializer
+        return MaintenanceBlockSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if getattr(self.request.user, 'role', None) not in ['admin', 'staff']:
+            return qs.none()
+        room = self.request.query_params.get('room')
+        if room:
+            qs = qs.filter(room_id=room)
+        return qs.order_by('-start_time')
+
+    def perform_create(self, serializer):
+        block = serializer.save(
+            created_by=self.request.user,
+            status='scheduled',
+        )
+        block.room.status = 'maintenance'
+        block.room.save(update_fields=['status'])
+
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        block = self.get_object()
+        block.status = 'completed'
+        block.save(update_fields=['status'])
+        if not MaintenanceBlock.objects.filter(
+            room=block.room, status__in=['scheduled', 'active']
+        ).exists():
+            block.room.status = 'available'
+            block.room.save(update_fields=['status'])
+        return Response({'message': 'บำรุงรักษาเสร็จสิ้น'})
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        block = self.get_object()
+        block.status = 'cancelled'
+        block.save(update_fields=['status'])
+        if not MaintenanceBlock.objects.filter(
+            room=block.room, status__in=['scheduled', 'active']
+        ).exists():
+            block.room.status = 'available'
+            block.room.save(update_fields=['status'])
+        return Response({'message': 'ยกเลิกช่วงซ่อมบำรุงแล้ว'})
 
 
 # ============================================================
