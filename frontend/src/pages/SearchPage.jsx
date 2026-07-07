@@ -231,6 +231,74 @@ const getDemandLevel = room => {
 
 const getDayLabel = v => DAYS_OF_WEEK.find(d => d.value === v)?.full ?? ''
 
+// ─── ปฏิทินการศึกษา (UBU) ────────────────────────────────────────────────────
+const ACADEMIC_TERM_META = {
+  1: {
+    label: 'ภาคเรียนที่ 1',
+    short: 'เทอม 1',
+    period: 'มิถุนายน – ตุลาคม',
+    desc: 'เปิดภาคเรียนต้นปีการศึกษา',
+  },
+  2: {
+    label: 'ภาคเรียนที่ 2',
+    short: 'เทอม 2',
+    period: 'พฤศจิกายน – มีนาคม',
+    desc: 'เปิดภาคเรียนปลายปีการศึกษา',
+  },
+  3: {
+    label: 'ภาคฤดูร้อน',
+    short: 'ฤดูร้อน',
+    period: 'เมษายน – พฤษภาคม',
+    desc: 'ภาคฤดูร้อน ปิดท้ายปีการศึกษา',
+  },
+}
+
+const ACADEMIC_TERM_IDS = [1, 2, 3]
+
+const gregorianFromThaiYear = thaiYear => thaiYear - 543
+
+const getTermDateRange = (thaiYear, termNum) => {
+  const gy = gregorianFromThaiYear(thaiYear)
+  if (termNum === 1) {
+    return { start: `${gy}-06-01`, end: `${gy}-10-31` }
+  }
+  if (termNum === 2) {
+    return { start: `${gy}-11-01`, end: `${gy + 1}-03-31` }
+  }
+  return { start: `${gy + 1}-04-01`, end: `${gy + 1}-05-31` }
+}
+
+const buildTermName = (thaiYear, termNum) =>
+  `${ACADEMIC_TERM_META[termNum]?.label ?? 'ภาคเรียน'}/${thaiYear}`
+
+const getDefaultAcademicYearBE = () => {
+  const now = new Date()
+  const m = now.getMonth() + 1
+  const gy = now.getFullYear()
+  if (m >= 6) return gy + 543
+  return gy + 543 - 1
+}
+
+const getDefaultTermNumber = () => {
+  const m = new Date().getMonth() + 1
+  if (m >= 6 && m <= 10) return 1
+  if (m >= 11 || m <= 3) return 2
+  if (m >= 4 && m <= 5) return 3
+  return 1
+}
+
+const getAcademicYearOptions = () => {
+  const current = getDefaultAcademicYearBE()
+  return [current - 1, current, current + 1]
+}
+
+const formatThaiDateFull = isoDate => {
+  if (!isoDate) return '—'
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString('th-TH', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
 const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()
@@ -542,6 +610,109 @@ function TermFilterBanner({ compact = false }) {
   )
 }
 
+// ─── เลือกปีการศึกษา + ภาคเรียน (พ.ศ.) ─────────────────────────────────────
+function TermAcademicSelector({
+  academicYearBE, termNumber, termStart, termEnd, termName, customTermDates,
+  onSelectYear, onSelectTerm, onToggleCustom, onStartChange, onEndChange,
+  compact = false,
+}) {
+  const yearOptions = getAcademicYearOptions()
+  const meta = ACADEMIC_TERM_META[termNumber]
+
+  return (
+    <div className={`bg-white border border-indigo-100 rounded-2xl shadow-sm ${compact ? 'p-4' : 'p-5'}`}>
+      <SectionLabel icon={BookOpen}>ปีการศึกษา & ภาคการศึกษา</SectionLabel>
+      <p className="text-xs text-slate-500 mb-3">
+        เลือกปี พ.ศ. และภาคเรียน/ฤดูร้อน — ระบบกำหนดช่วงวันเริ่ม–สิ้นสุดให้อัตโนมัติ (ตามปฏิทิน ม.อุบล)
+      </p>
+
+      <label className="text-xs font-bold text-slate-600 mb-1.5 block">ปีการศึกษา (พ.ศ.)</label>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {yearOptions.map(y => (
+          <button
+            key={y}
+            type="button"
+            onClick={() => onSelectYear(y)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all
+              ${academicYearBE === y
+                ? 'bg-indigo-700 border-indigo-700 text-white shadow-sm'
+                : 'bg-white border-indigo-100 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50'}`}
+          >
+            {y}
+          </button>
+        ))}
+      </div>
+
+      <label className="text-xs font-bold text-slate-600 mb-1.5 block">ภาคการศึกษา</label>
+      <div className={`grid gap-2 mb-4 ${compact ? 'grid-cols-1' : 'grid-cols-3'}`}>
+        {ACADEMIC_TERM_IDS.map(n => {
+          const t = ACADEMIC_TERM_META[n]
+          const active = termNumber === n
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onSelectTerm(n)}
+              className={`text-left rounded-xl border-2 p-3 transition-all
+                ${active
+                  ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-200'
+                  : 'border-indigo-100 bg-white hover:border-indigo-300 hover:bg-indigo-50/50'}`}
+            >
+              <p className={`text-sm font-extrabold ${active ? 'text-indigo-800' : 'text-slate-800'}`}>
+                {t.label}
+              </p>
+              <p className="text-xs text-indigo-600 font-semibold mt-0.5">{t.period}</p>
+              <p className="text-[11px] text-slate-500 mt-1">{t.desc}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-3">
+        <p className="text-xs font-bold text-indigo-800 mb-1">สรุปการจองทั้งเทอม</p>
+        <p className="text-sm font-extrabold text-slate-900">{termName || buildTermName(academicYearBE, termNumber)}</p>
+        <p className="text-xs text-slate-600 mt-1">
+          {formatThaiDateFull(termStart)} – {formatThaiDateFull(termEnd)}
+          {meta && <span className="text-indigo-600 ml-1">({meta.period})</span>}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onToggleCustom}
+        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline-offset-2 hover:underline"
+      >
+        {customTermDates ? '← ใช้วันที่ตามปฏิทินมหาวิทยาลัย' : 'ปรับช่วงวันที่เอง (ขั้นสูง)'}
+      </button>
+
+      {customTermDates && (
+        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-indigo-100">
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
+            <input
+              type="date"
+              value={termStart}
+              onChange={e => onStartChange(e.target.value)}
+              className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
+            <input
+              type="date"
+              value={termEnd}
+              onChange={e => onEndChange(e.target.value)}
+              className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── SummaryTiles ─────────────────────────────────────────────────────────────
 
 function SummaryTiles({ rooms, layout = 'vertical' }) {
@@ -614,6 +785,44 @@ function SplitSuggestionList({ suggestions, onSelect }) {
   )
 }
 
+// ─── แนะนำห้องใกล้เคียง (จองรายวัน) ───────────────────────────────────────────
+function DynamicSimilarList({ rooms, onSelect, compact = false }) {
+  if (!rooms?.length) return null
+  return (
+    <div className={`text-left mt-4 space-y-3 ${compact ? '' : 'max-w-xl mx-auto'}`}>
+      <p className="text-xs font-bold text-blue-700 text-center">
+        💡 ไม่พบห้องตรงเงื่อนไข — ห้องใกล้เคียงด้านล่างว่างและจองได้ทันที
+      </p>
+      {rooms.map((room, idx) => (
+        <div
+          key={room.id}
+          className="bg-blue-50 border border-blue-200 rounded-xl p-4 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all"
+          onClick={() => onSelect(room)}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-bold text-slate-900">{room.name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง
+              </p>
+              {room.recommendation_reason && (
+                <p className="text-xs text-blue-700 mt-1.5 font-medium">{room.recommendation_reason}</p>
+              )}
+            </div>
+            <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full px-2 py-0.5 font-bold whitespace-nowrap">
+              จองได้เลย
+            </span>
+          </div>
+          <button type="button"
+            className="w-full mt-3 bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold py-2 rounded-xl transition-colors">
+            เลือกห้องนี้และไปยืนยันการจอง →
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── RoomCard ─────────────────────────────────────────────────────────────────
 
 function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, selectedEquipments = [], equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
@@ -633,6 +842,9 @@ function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, sel
         <div className="flex-1 min-w-0">
           {isTop && (
             <span className="inline-block bg-yellow-100 text-yellow-800 border border-yellow-300 text-xs font-bold rounded-full px-2.5 py-0.5 mb-2">แนะนำ</span>
+          )}
+          {room.is_similar_recommendation && (
+            <span className="inline-block bg-sky-100 text-sky-800 border border-sky-300 text-xs font-bold rounded-full px-2.5 py-0.5 mb-2">ใกล้เคียง</span>
           )}
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
             <span className={`font-bold text-slate-900 ${compact ? 'text-sm' : 'text-base'}`}>{room.name}</span>
@@ -656,6 +868,9 @@ function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, sel
           )}
           {level !== 'none' && (
             <p className={`text-xs font-semibold ${cfg.subCls} mb-1`}>{cfg.sub}</p>
+          )}
+          {room.recommendation_reason && (
+            <p className="text-xs text-blue-600 font-medium mb-1">{room.recommendation_reason}</p>
           )}
           {/* อุปกรณ์ — highlight ตัวที่ผู้ใช้เลือก */}
           <FacilityTags
@@ -682,15 +897,16 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
     startTime, setStartTime, duration, setDuration,
     building, setBuilding, endTime, loading, handleSearch, error,
     dayOfWeek, setDayOfWeek,
-    termStart, setTermStart,
-    termEnd, setTermEnd,
-    termName, setTermName,
+    termStart, termEnd, termName,
+    academicYearBE, termNumber, customTermDates,
+    applyAcademicTerm, toggleCustomTermDates,
+    handleCustomTermStart, handleCustomTermEnd,
     selectedEquipments, setSelectedEquipments,
     equipmentPresets,
     buildings,
   } = formProps
-  const { applyTermPreset } = formProps
-  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit } = resultProps
+  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit,
+    similarRooms, onSelectSimilar } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success,
     splitPlan, splitBookResult, onCancelSplit } = confirmProps
 
@@ -867,44 +1083,19 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
               </div>
 
               {isTermMode && (
-                <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
-                  <SectionLabel>ข้อมูลเทอม</SectionLabel>
-                  <div className="space-y-3">
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => applyTermPreset(1)}
-                          className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
-                            ${termStart === `${new Date().getFullYear()}-01-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
-                          เทอมที่ 1
-                        </button>
-                        <button type="button" onClick={() => applyTermPreset(2)}
-                          className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
-                            ${termStart === `${new Date().getFullYear()}-07-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
-                          เทอมที่ 2
-                        </button>
-                      </div>
-                      <div>
-                      <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
-                      <input type="text" value={termName} onChange={e => setTermName(e.target.value)}
-                        placeholder="เช่น ภาคเรียนที่ 1/2568"
-                        className="w-full border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                        style={{fontFamily:"inherit"}} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
-                        <input type="date" value={termStart} onChange={e => setTermStart(e.target.value)}
-                          className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                          style={{fontFamily:"inherit"}} />
-                      </div>
-                      <div>
-                        <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
-                        <input type="date" value={termEnd} onChange={e => setTermEnd(e.target.value)}
-                          className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                          style={{fontFamily:"inherit"}} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <TermAcademicSelector
+                  academicYearBE={academicYearBE}
+                  termNumber={termNumber}
+                  termStart={termStart}
+                  termEnd={termEnd}
+                  termName={termName}
+                  customTermDates={customTermDates}
+                  onSelectYear={y => applyAcademicTerm(y, termNumber)}
+                  onSelectTerm={t => applyAcademicTerm(academicYearBE, t)}
+                  onToggleCustom={toggleCustomTermDates}
+                  onStartChange={handleCustomTermStart}
+                  onEndChange={handleCustomTermEnd}
+                />
               )}
 
               <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
@@ -1069,18 +1260,27 @@ function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, f
                   <p className="font-semibold text-blue-700 mb-2">
                     {isTermMode ? 'ไม่พบห้องว่างทั้งเทอม' : 'ไม่พบห้องว่างที่เหมาะสม'}
                   </p>
-                  {isTermMode && (
+                  {isTermMode ? (
                     <SplitSuggestionList suggestions={splitSuggestions} onSelect={onSelectSplit} />
+                  ) : (
+                    <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} />
                   )}
                   <p className="text-xs text-slate-400 mb-4 mt-4">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
                   <button onClick={() => setStep(1)} className="text-sm text-blue-600 hover:underline">← ค้นหาใหม่</button>
                 </div>
-              ) : rooms.map((room, idx) => (
-                <RoomCard key={room.id} room={room} idx={idx} isTermMode={isTermMode}
-                  selectedEquipments={selectedEquipments}
-                  equipmentPresets={equipmentPresets}
-                  onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
-              ))}
+              ) : (
+                <>
+                  {rooms.map((room, idx) => (
+                    <RoomCard key={room.id} room={room} idx={idx} isTermMode={isTermMode}
+                      selectedEquipments={selectedEquipments}
+                      equipmentPresets={equipmentPresets}
+                      onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
+                  ))}
+                  {!isTermMode && similarRooms.length > 0 && (
+                    <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} />
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1242,15 +1442,16 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
     startTime, setStartTime, duration, setDuration,
     building, setBuilding, endTime, loading, handleSearch, error,
     dayOfWeek, setDayOfWeek,
-    termStart, setTermStart,
-    termEnd, setTermEnd,
-    termName, setTermName,
+    termStart, termEnd, termName,
+    academicYearBE, termNumber, customTermDates,
+    applyAcademicTerm, toggleCustomTermDates,
+    handleCustomTermStart, handleCustomTermEnd,
     selectedEquipments, setSelectedEquipments,
     equipmentPresets,
     buildings,
   } = formProps
-  const { applyTermPreset } = formProps
-  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit } = resultProps
+  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit,
+    similarRooms, onSelectSimilar } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success,
     splitPlan, splitBookResult, onCancelSplit } = confirmProps
 
@@ -1399,44 +1600,20 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
             )}
 
             {isTermMode && (
-              <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
-                <SectionLabel>ข้อมูลเทอม</SectionLabel>
-                <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => applyTermPreset(1)}
-                      className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
-                        ${termStart === `${new Date().getFullYear()}-01-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
-                      เทอมที่ 1
-                    </button>
-                    <button type="button" onClick={() => applyTermPreset(2)}
-                      className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all
-                        ${termStart === `${new Date().getFullYear()}-07-01` ? 'bg-indigo-700 text-white' : 'bg-white border border-indigo-100 text-indigo-700'}`}>
-                      เทอมที่ 2
-                    </button>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">ชื่อเทอม</label>
-                    <input type="text" value={termName} onChange={e => setTermName(e.target.value)}
-                      placeholder="เช่น ภาคเรียนที่ 1/2568"
-                      className="w-full border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
-                      style={{fontFamily:"inherit"}} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
-                      <input type="date" value={termStart} onChange={e => setTermStart(e.target.value)}
-                        className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-all"
-                        style={{fontFamily:"inherit"}} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
-                      <input type="date" value={termEnd} onChange={e => setTermEnd(e.target.value)}
-                        className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-all"
-                        style={{fontFamily:"inherit"}} />
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <TermAcademicSelector
+                compact
+                academicYearBE={academicYearBE}
+                termNumber={termNumber}
+                termStart={termStart}
+                termEnd={termEnd}
+                termName={termName}
+                customTermDates={customTermDates}
+                onSelectYear={y => applyAcademicTerm(y, termNumber)}
+                onSelectTerm={t => applyAcademicTerm(academicYearBE, t)}
+                onToggleCustom={toggleCustomTermDates}
+                onStartChange={handleCustomTermStart}
+                onEndChange={handleCustomTermEnd}
+              />
             )}
 
             <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
@@ -1543,18 +1720,27 @@ function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, fo
                 <p className="text-sm font-semibold text-blue-700 mb-1">
                   {isTermMode ? 'ไม่พบห้องว่างทั้งเทอม' : 'ไม่พบห้องว่างที่เหมาะสม'}
                 </p>
-                {isTermMode && (
+                {isTermMode ? (
                   <SplitSuggestionList suggestions={splitSuggestions} onSelect={onSelectSplit} />
+                ) : (
+                  <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} compact />
                 )}
                 <p className="text-xs text-slate-400 mb-3 mt-3">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
                 <button onClick={() => setStep(1)} className="text-xs text-blue-600 hover:underline">← ค้นหาใหม่</button>
               </div>
-            ) : rooms.map((room, idx) => (
-              <RoomCard key={room.id} room={room} idx={idx} compact isTermMode={isTermMode}
-                selectedEquipments={selectedEquipments}
-                equipmentPresets={equipmentPresets}
-                onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
-            ))}
+            ) : (
+              <>
+                {rooms.map((room, idx) => (
+                  <RoomCard key={room.id} room={room} idx={idx} compact isTermMode={isTermMode}
+                    selectedEquipments={selectedEquipments}
+                    equipmentPresets={equipmentPresets}
+                    onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
+                ))}
+                {!isTermMode && similarRooms.length > 0 && (
+                  <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} compact />
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -1701,11 +1887,18 @@ export default function SearchPage() {
   const [bookingLoading, setBookingLoading]       = useState(false)
   const [success, setSuccess]                     = useState(false)
   const [error, setError]                         = useState('')
-  const [termStart, setTermStart]                 = useState('')
-  const [termEnd, setTermEnd]                     = useState('')
-  const [termName, setTermName]                   = useState('ภาคเรียนที่ 1/2568')
+  const _initYear = getDefaultAcademicYearBE()
+  const _initTerm = getDefaultTermNumber()
+  const _initDates = getTermDateRange(_initYear, _initTerm)
+  const [academicYearBE, setAcademicYearBE]       = useState(_initYear)
+  const [termNumber, setTermNumber]               = useState(_initTerm)
+  const [customTermDates, setCustomTermDates]     = useState(false)
+  const [termStart, setTermStart]                 = useState(_initDates.start)
+  const [termEnd, setTermEnd]                     = useState(_initDates.end)
+  const [termName, setTermName]                   = useState(buildTermName(_initYear, _initTerm))
   const [selectedEquipments, setSelectedEquipments] = useState([])
   const [splitSuggestions, setSplitSuggestions]     = useState([])
+  const [similarRooms, setSimilarRooms]           = useState([])
   const [splitPlan, setSplitPlan]                     = useState(null)
   const [splitBookResult, setSplitBookResult]         = useState(null)
   const [equipmentPresets, setEquipmentPresets]       = useState(FALLBACK_EQUIPMENT_PRESETS)
@@ -1713,6 +1906,13 @@ export default function SearchPage() {
   const onSelectSplit = (suggestion) => {
     setSplitPlan(suggestion)
     setSelectedRoom(null)
+    setTitle('')
+    setStep(3)
+  }
+
+  const onSelectSimilar = (room) => {
+    setSplitPlan(null)
+    setSelectedRoom(room)
     setTitle('')
     setStep(3)
   }
@@ -1744,19 +1944,40 @@ export default function SearchPage() {
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
-  const applyTermPreset = (n) => {
-    const y = new Date().getFullYear()
-    const thaiYear = y + 543
-    if (n === 1) {
-      setTermStart(`${y}-01-01`)
-      setTermEnd(`${y}-06-30`)
-      setTermName(`เทอมที่ 1/${thaiYear}`)
+  const applyAcademicTerm = (yearBE, termNum) => {
+    const { start, end } = getTermDateRange(yearBE, termNum)
+    setAcademicYearBE(yearBE)
+    setTermNumber(termNum)
+    setTermStart(start)
+    setTermEnd(end)
+    setTermName(buildTermName(yearBE, termNum))
+    setCustomTermDates(false)
+  }
+
+  const toggleCustomTermDates = () => {
+    if (customTermDates) {
+      applyAcademicTerm(academicYearBE, termNumber)
     } else {
-      setTermStart(`${y}-07-01`)
-      setTermEnd(`${y}-12-31`)
-      setTermName(`เทอมที่ 2/${thaiYear}`)
+      setCustomTermDates(true)
     }
   }
+
+  const handleCustomTermStart = v => {
+    setCustomTermDates(true)
+    setTermStart(v)
+  }
+
+  const handleCustomTermEnd = v => {
+    setCustomTermDates(true)
+    setTermEnd(v)
+  }
+
+  useEffect(() => {
+    if (bookingType === 'term') {
+      applyAcademicTerm(getDefaultAcademicYearBE(), getDefaultTermNumber())
+    }
+  }, [bookingType])
+
  const handleSearch = async () => {
   if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
   if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
@@ -1777,7 +1998,7 @@ export default function SearchPage() {
             day_of_week: dayOfWeek,
             term_start: termStart,
             term_end: termEnd,
-            term_name: termName || 'ภาคเรียนที่ 1/2568',
+            term_name: termName || buildTermName(academicYearBE, termNumber),
           }
         : { date }
       ),
@@ -1799,6 +2020,7 @@ export default function SearchPage() {
 
     setRooms(filtered)
     setSplitSuggestions([])
+    setSimilarRooms([])
     setSplitPlan(null)
 
     if (bookingType === 'term' && filtered.length === 0) {
@@ -1814,6 +2036,41 @@ export default function SearchPage() {
         })
         setSplitSuggestions(splitRes.data.suggestions || [])
       } catch { /* ไม่มีคำแนะนำสลับห้อง */ }
+    }
+
+    if (bookingType !== 'term' && filtered.length === 0) {
+      try {
+        const recPayload = {
+          attendees: parseInt(attendees, 10),
+          date,
+          start_time: startTime,
+          end_time: endTime,
+          booking_type: 'dynamic',
+        }
+        if (building) recPayload.building_code = building
+        const recRes = await api.post('/rooms/dynamic-recommend/', recPayload)
+        setSimilarRooms(recRes.data.suggestions || [])
+      } catch { /* ไม่มีห้องใกล้เคียง */ }
+    }
+
+    // มีห้องแต่ไม่มี AI forecast — เติมห้องใกล้เคียงเพิ่มให้เลือกจองได้ทันที
+    if (bookingType !== 'term' && filtered.length > 0
+        && filtered.every(r => r.forecast?.has_forecast === false)) {
+      try {
+        const recPayload = {
+          attendees: parseInt(attendees, 10),
+          date,
+          start_time: startTime,
+          end_time: endTime,
+          booking_type: 'dynamic',
+        }
+        if (building) recPayload.building_code = building
+        const recRes = await api.post('/rooms/dynamic-recommend/', recPayload)
+        const extra = (recRes.data.suggestions || []).filter(
+          s => !filtered.some(r => r.id === s.id)
+        )
+        if (extra.length) setSimilarRooms(extra)
+      } catch { /* ignore */ }
     }
 
     setStep(2)
@@ -1913,15 +2170,15 @@ const handleBook = async () => {
       startTime, setStartTime, duration, setDuration,
       building, setBuilding, endTime, loading, handleSearch, error,
       dayOfWeek, setDayOfWeek,
-      termStart, setTermStart,
-      termEnd, setTermEnd,
-      termName, setTermName,
-      applyTermPreset,
+      termStart, termEnd, termName,
+      academicYearBE, termNumber, customTermDates,
+      applyAcademicTerm, toggleCustomTermDates,
+      handleCustomTermStart, handleCustomTermEnd,
       selectedEquipments, setSelectedEquipments,
       equipmentPresets,
       buildings,
     },
-    resultProps:  { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit },
+    resultProps:  { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit, similarRooms, onSelectSimilar },
     confirmProps: {
       selectedRoom, title, setTitle, bookingLoading, handleBook, success,
       splitPlan, splitBookResult, onCancelSplit,

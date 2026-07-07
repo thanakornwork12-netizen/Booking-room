@@ -229,6 +229,166 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         result.sort(key=lambda r: level_order.get(r['forecast']['demand_level'], 0))
         return result
 
+    def _blocked_room_ids(self, target_date, start_time, end_time):
+        """ห้องที่ถูกจอง/ซ่อมบำรุง/จองเทอม ในช่วงเวลาที่ระบุ"""
+        start_dt   = timezone.make_aware(datetime.combine(target_date, start_time))
+        end_dt     = timezone.make_aware(datetime.combine(target_date, end_time))
+        target_dow = target_date.weekday()
+
+        booked_dynamic = set(Booking.objects.filter(
+            status__in=['pending', 'approved', 'checked_in'],
+            start_time__lt=end_dt, end_time__gt=start_dt,
+        ).values_list('room_id', flat=True))
+
+        maint_blocked = set(MaintenanceBlock.objects.filter(
+            status__in=['scheduled', 'active'],
+            start_time__lt=end_dt, end_time__gt=start_dt,
+        ).values_list('room_id', flat=True))
+
+        booked_term = set(TermBooking.objects.filter(
+            day_of_week=target_dow, status='active',
+            term_start__lte=target_date, term_end__gte=target_date,
+        ).exclude(start_time__gte=end_time).exclude(end_time__lte=start_time)
+         .values_list('room_id', flat=True))
+
+        return booked_dynamic | maint_blocked | booked_term
+
+    def _score_similar_room(self, room, attendees, building_code=None, room_type=None):
+        if room.capacity < attendees:
+            return None, []
+        score   = max(0, 50 - (room.capacity - attendees) * 2)
+        reasons = [f'รองรับ {room.capacity} คน']
+        if building_code and room.building.code == building_code:
+            score += 40
+            reasons.append(f'อาคาร {room.building.name}')
+        elif building_code:
+            score += 12
+            reasons.append(f'อาคารใกล้เคียง ({room.building.name})')
+        else:
+            reasons.append(room.building.name)
+        if room_type and room_type.lower() in (room.room_type or '').lower():
+            score += 25
+            reasons.append('ประเภทห้องตรงที่ต้องการ')
+        elif room_type:
+            score += 8
+            reasons.append(f'ประเภท {room.room_type}')
+        return score, reasons
+
+    def _find_similar_dynamic_rooms(self, d, request, max_results=8):
+        """
+        หาห้องว่างใกล้เคียงเมื่อค้นหาปกติไม่เจอหรือไม่มี AI forecast
+        ลำดับ: ช่วงเวลาเดิม → ขยายความจุ → ช่วงเวลาใกล้เคียง ±30/60 นาที
+        """
+        from datetime import time as time_type, timedelta as td
+
+        target_date   = d['date']
+        start_time    = d['start_time']
+        end_time      = d['end_time']
+        attendees     = d['attendees']
+        building_code = (d.get('building_code') or '').strip()
+        room_type     = (d.get('room_type') or '').strip()
+
+        base_qs = Room.objects.filter(
+            is_active=True, status='available',
+        ).select_related('building').prefetch_related(
+            'room_facilities__facility', 'forecasts',
+        )
+
+        def collect_for_slot(st, et, time_label=None):
+            blocked = self._blocked_room_ids(target_date, st, et)
+            candidates = base_qs.filter(capacity__gte=attendees).exclude(id__in=blocked)
+            scored = []
+            for room in candidates:
+                sc, reasons = self._score_similar_room(
+                    room, attendees, building_code or None, room_type or None,
+                )
+                if sc is None:
+                    continue
+                if not time_label:
+                    reasons.insert(0, 'ว่างตามเวลาที่เลือก')
+                else:
+                    reasons.insert(0, time_label)
+                scored.append((sc, room, ' · '.join(reasons[:4])))
+            scored.sort(key=lambda x: (-x[0], x[1].capacity))
+            return scored
+
+        # Tier 1: exact time
+        all_scored = collect_for_slot(start_time, end_time)
+
+        # Tier 2: relaxed capacity (ยังว่างช่วงเดิม แต่ห้องใหญ่ขึ้น)
+        if len(all_scored) < max_results:
+            blocked = self._blocked_room_ids(target_date, start_time, end_time)
+            relaxed = base_qs.exclude(id__in=blocked).filter(
+                capacity__gte=max(1, attendees - 2),
+            )
+            seen = {r.id for _, r, _ in all_scored}
+            for room in relaxed:
+                if room.id in seen or room.capacity < attendees:
+                    continue
+                sc, reasons = self._score_similar_room(
+                    room, attendees, building_code or None, room_type or None,
+                )
+                if sc is None:
+                    sc = 5
+                    reasons = [f'รองรับ {room.capacity} คน (ขยายจากเงื่อนไขเดิม)']
+                reasons.insert(0, 'ว่างตามเวลาที่เลือก')
+                all_scored.append((sc - 5, room, ' · '.join(reasons[:4])))
+                seen.add(room.id)
+
+        # Tier 3: ช่วงเวลาใกล้เคียง ±30 / ±60 นาที
+        if len(all_scored) < max_results:
+            st_dt = datetime.combine(target_date, start_time)
+            et_dt = datetime.combine(target_date, end_time)
+            duration = et_dt - st_dt
+            offsets = [30, -30, 60, -60]
+            seen = {r.id for _, r, _ in all_scored}
+            for mins in offsets:
+                new_st = (st_dt + td(minutes=mins)).time()
+                new_et = (st_dt + td(minutes=mins) + duration).time()
+                if new_st >= new_et:
+                    continue
+                label = f'เวลาใกล้เคียง {new_st.strftime("%H:%M")}–{new_et.strftime("%H:%M")}'
+                for sc, room, reason in collect_for_slot(new_st, new_et, label):
+                    if room.id in seen:
+                        continue
+                    all_scored.append((sc - 15, room, reason))
+                    seen.add(room.id)
+                    if len(all_scored) >= max_results * 2:
+                        break
+
+        all_scored.sort(key=lambda x: (-x[0], x[1].capacity))
+        top_rooms = [r for _, r, _ in all_scored[:max_results]]
+        if not top_rooms:
+            return []
+
+        enriched = self._enrich_rooms(
+            top_rooms, target_date, start_time, end_time, 'dynamic', request,
+        )
+        reason_map = {r.id: reason for _, r, reason in all_scored[:max_results]}
+        for item in enriched:
+            item['is_similar_recommendation'] = True
+            item['recommendation_reason'] = reason_map.get(item['id'], 'ห้องใกล้เคียงที่ว่าง')
+        return enriched
+
+    @action(detail=False, methods=['post'], url_path='dynamic-recommend')
+    def dynamic_recommend(self, request):
+        """
+        แนะนำห้องจองรายวันใกล้เคียง — ใช้เมื่อค้นหาปกติไม่พบห้องหรือไม่มี AI forecast
+        """
+        ser = RoomSearchSerializer(data={**request.data, 'booking_type': 'dynamic'})
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+        suggestions = self._find_similar_dynamic_rooms(d, request)
+        return Response({
+            'count':       len(suggestions),
+            'suggestions': suggestions,
+            'message':     (
+                'พบห้องใกล้เคียงที่ว่าง — เลือกจองได้ทันที'
+                if suggestions else
+                'ไม่พบห้องใกล้เคียงในช่วงเวลานี้ ลองเปลี่ยนวันหรือเวลา'
+            ),
+        })
+
     @action(detail=True, methods=['get'])
     def availability(self, request, pk=None):
         room = self.get_object()
