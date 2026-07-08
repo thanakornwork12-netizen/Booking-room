@@ -3,6 +3,7 @@ from django.utils import timezone
 from datetime import timedelta
 import subprocess
 import sys
+import os
 
 
 def retrain_model():
@@ -251,6 +252,21 @@ def mark_no_show():
 
 
 def start():
+    # Avoid starting background jobs in ad-hoc management commands / scripts.
+    # This prevents executor shutdown noise when forecast.py or shell imports Django.
+    if os.environ.get('DISABLE_DJANGO_SCHEDULER') == '1':
+        return
+
+    argv = ' '.join(sys.argv).lower()
+    server_mode = (
+        'runserver' in argv
+        or 'gunicorn' in argv
+        or 'uvicorn' in argv
+        or os.environ.get('RUN_MAIN') == 'true'
+    )
+    if not server_mode:
+        return
+
     scheduler = BackgroundScheduler()
 
     # เทรน AI ทุกวันตี 3
