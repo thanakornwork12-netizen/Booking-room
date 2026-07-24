@@ -653,15 +653,15 @@ function AppShell({ children }) {
 
   return (
     <div className="min-h-screen w-full bg-[linear-gradient(180deg,#f8fbff_0%,#f5f8fc_100%)] text-slate-900">
-      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 shadow-[0_8px_30px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-blue-950/20 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-900 shadow-[0_10px_34px_rgba(15,23,42,0.18)] backdrop-blur-xl">
         <div className="mx-auto flex h-20 w-full max-w-[1600px] items-center gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_12px_28px_rgba(37,99,235,0.28)]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-blue-800 shadow-[0_12px_28px_rgba(15,23,42,0.20)]">
               <Building2 size={24} />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-lg font-extrabold leading-tight">ระบบจองห้องประชุม</p>
-              <p className="truncate text-sm font-semibold text-slate-500">มหาวิทยาลัยอุบลราชธานี</p>
+              <p className="truncate text-lg font-extrabold leading-tight text-white">ระบบจองห้องประชุม</p>
+              <p className="truncate text-sm font-semibold text-blue-100">มหาวิทยาลัยอุบลราชธานี</p>
             </div>
           </div>
 
@@ -676,12 +676,12 @@ function AppShell({ children }) {
                   if (e.key === 'Enter') runGlobalSearch()
                 }}
                 placeholder="ค้นหาห้องประชุม, รายการจอง..."
-                className="h-12 w-full rounded-full border border-slate-200 bg-slate-50/90 px-12 pr-4 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="h-12 w-full rounded-full border border-white/15 bg-white/10 px-12 pr-4 text-sm text-white placeholder:text-blue-100/70 outline-none transition focus:border-white/30 focus:bg-white/15 focus:ring-4 focus:ring-white/10"
               />
               <button
                 type="button"
                 onClick={() => runGlobalSearch()}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-white px-4 py-2 text-xs font-bold text-blue-800 shadow-sm transition hover:bg-blue-50"
               >
                 ค้นหา
               </button>
@@ -691,7 +691,7 @@ function AppShell({ children }) {
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <button
               type="button"
-              className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
+              className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white shadow-sm transition hover:bg-white/15"
               aria-label="Notifications"
             >
               <Bell size={19} />
@@ -701,27 +701,27 @@ function AppShell({ children }) {
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white shadow-sm transition hover:bg-white/15"
               aria-label="Settings"
             >
               <Settings2 size={19} />
             </button>
 
-            <div className="hidden lg:flex h-11 items-center gap-3 rounded-full border border-slate-200 bg-white px-3 pr-4 shadow-sm">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            <div className="hidden lg:flex h-11 items-center gap-3 rounded-full border border-white/15 bg-white/10 px-3 pr-4 shadow-sm">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white">
                 <UserCircle2 size={18} />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold leading-tight">{displayName}</p>
-                <p className="truncate text-[11px] text-slate-500">{roleLabel}</p>
+                <p className="truncate text-sm font-semibold leading-tight text-white">{displayName}</p>
+                <p className="truncate text-[11px] text-blue-100">{roleLabel}</p>
               </div>
-              <ChevronDown size={16} className="text-slate-400" />
+              <ChevronDown size={16} className="text-blue-100" />
             </div>
 
             <button
               type="button"
               onClick={logout}
-              className="hidden h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700 lg:inline-flex"
+              className="hidden h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white shadow-sm transition hover:bg-white/15 lg:inline-flex"
               aria-label="Logout"
             >
               <LogOut size={18} />
@@ -894,15 +894,15 @@ function AppShell({ children }) {
         </div>
       )}
 
-      <footer className="border-t border-slate-200/80 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2 px-4 py-4 text-xs text-slate-500 sm:px-6 lg:px-8">
-          <p className="font-semibold text-slate-700">{supportInfo.organization}</p>
-          <p>{supportInfo.address}</p>
+      <footer className="border-t border-blue-950/20 bg-gradient-to-r from-slate-950 via-blue-950 to-indigo-950 text-white shadow-[0_-10px_34px_rgba(15,23,42,0.18)]">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2 px-4 py-4 text-xs text-blue-100 sm:px-6 lg:px-8">
+          <p className="font-semibold text-white">{supportInfo.organization}</p>
+          <p className="text-blue-100/90">{supportInfo.address}</p>
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <span>โทร. {supportInfo.phone}</span>
             <span>webmaster {supportInfo.webmaster}</span>
             <span>{supportInfo.email}</span>
-            <a href={supportInfo.facebook} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+            <a href={supportInfo.facebook} target="_blank" rel="noreferrer" className="text-white font-semibold hover:underline">
               OCNfanpage
             </a>
           </div>
