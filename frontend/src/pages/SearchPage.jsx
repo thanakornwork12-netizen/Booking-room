@@ -1,22 +1,19 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  ArrowLeft, CheckCircle, Building2, ChevronRight,
-  Search, Clock, Users, Calendar, MapPin, Zap,
-  AlertTriangle, BookOpen, Coffee, Filter, X,
+  ArrowLeft, Bell, BarChart3, Building2, Calendar, CalendarDays, Check,
+  CheckCircle, ChevronDown, ChevronRight, Clock, Coffee, Home,
+  LifeBuoy, LayoutDashboard, MapPin, RefreshCw, Search, Settings2,
+  Sparkles, ArrowRight, Users, X, BookOpen, AlertTriangle,
 } from 'lucide-react'
 import api from '../api/axios'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-// BUILDINGS: load from API at runtime
 const DEFAULT_BUILDINGS = [{ code: '', label: 'ทั้งหมด' }]
 const TIME_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00']
 const DURATIONS  = [{ label: '1 ชม.', hours: 1 },{ label: '2 ชม.', hours: 2 },{ label: '3 ชม.', hours: 3 }]
 const ATTENDEES_PRESETS = [2, 5, 10, 20, 30, 50]
 const CAPACITY_BUFFER   = 10
-
-const TERM_ALLOWED_TYPES = ['ห้องเรียน', 'ห้อง lecture', 'ห้อง Lecture', 'classroom', 'lecture', 'Lecture Hall', 'lecture_hall']
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'จ.',  full: 'วันจันทร์' },
@@ -37,28 +34,25 @@ const ROOM_STATUS = {
 
 const FORECAST_CONFIG = {
   urgent: {
-    badge: 'รีบจองด่วนที่สุด!', sub: 'โอกาสสุดท้ายก่อนเต็ม',
+    badge: 'รีบจองด่วน!', sub: 'โอกาสสุดท้ายก่อนเต็ม',
     badgeCls: 'bg-red-50 text-red-700 border border-red-200',
     dotColor: '#dc2626', pillCls: 'bg-red-50 border border-red-200',
     textCls: 'text-red-700', subCls: 'text-red-500',
     cardBg: 'bg-red-50', cardBorder: 'border-red-200', numCls: 'text-red-600',
-    scoreLabel: '≥ 0.70',
   },
   high: {
-    badge: 'รีบจองด่วน!', sub: 'เริ่มเป็นที่ต้องการสูง',
+    badge: 'ความต้องการสูง', sub: 'เริ่มเป็นที่ต้องการ',
     badgeCls: 'bg-orange-50 text-orange-700 border border-orange-200',
     dotColor: '#f97316', pillCls: 'bg-orange-50 border border-orange-200',
     textCls: 'text-orange-700', subCls: 'text-orange-500',
     cardBg: 'bg-orange-50', cardBorder: 'border-orange-200', numCls: 'text-orange-600',
-    scoreLabel: '0.50–0.69',
   },
   medium: {
-    badge: 'ควรจองตอนนี้', sub: 'เริ่มมีคนสนใจห้องนี้',
+    badge: 'ควรจองตอนนี้', sub: 'เริ่มมีคนสนใจ',
     badgeCls: 'bg-yellow-50 text-yellow-800 border border-yellow-300',
     dotColor: '#f59e0b', pillCls: 'bg-yellow-50 border border-yellow-300',
     textCls: 'text-yellow-800', subCls: 'text-yellow-600',
     cardBg: 'bg-yellow-50', cardBorder: 'border-yellow-200', numCls: 'text-yellow-600',
-    scoreLabel: '0.30–0.49',
   },
   low: {
     badge: 'ยังว่างอยู่', sub: 'ห้องว่าง พร้อมใช้งาน',
@@ -66,7 +60,6 @@ const FORECAST_CONFIG = {
     dotColor: '#2563eb', pillCls: 'bg-blue-50 border border-blue-200',
     textCls: 'text-blue-700', subCls: 'text-blue-500',
     cardBg: 'bg-blue-50', cardBorder: 'border-blue-200', numCls: 'text-blue-600',
-    scoreLabel: '< 0.30',
   },
   none: {
     badge: '—', sub: '',
@@ -74,297 +67,207 @@ const FORECAST_CONFIG = {
     dotColor: '#cbd5e1', pillCls: 'bg-gray-50 border border-gray-200',
     textCls: 'text-gray-500', subCls: 'text-gray-400',
     cardBg: 'bg-gray-50', cardBorder: 'border-gray-200', numCls: 'text-gray-500',
-    scoreLabel: '',
   },
 }
 
 const SUMMARY_TIERS = [
-  { level: 'urgent', label: 'รีบจองด่วนที่สุด!' },
-  { level: 'high',   label: 'รีบจองด่วน!'       },
-  { level: 'medium', label: 'ควรจองตอนนี้'       },
-  { level: 'low',    label: 'ยังว่างอยู่'         },
+  { level: 'urgent', label: 'รีบจองด่วน!' },
+  { level: 'high',   label: 'ความต้องการสูง' },
+  { level: 'medium', label: 'ควรจองตอนนี้' },
+  { level: 'low',    label: 'ยังว่างอยู่' },
 ]
 
-
-/** ตัวกรองอุปกรณ์ — โหลดจาก API (ข้อมูลจริง ODL) หรือใช้ค่า fallback */
 const FALLBACK_EQUIPMENT_PRESETS = [
-  { key: 'computer',   label: 'คอมพิวเตอร์',              icon: '💻', keywords: ['คอมพิวเตอร์', 'computer', 'pc', 'imac'], group_key: 'computer', group_label: 'คอมพิวเตอร์', is_category: true },
-  { key: 'projector',  label: 'โปรเจกเตอร์',              icon: '📽️', keywords: ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector'], group_key: 'projector', group_label: 'โปรเจกเตอร์', is_category: true },
-  { key: 'microphone', label: 'ไมโครโฟน',                 icon: '🎤', keywords: ['ไมโครโฟน', 'microphone', 'ไมค์'], group_key: 'microphone', group_label: 'ไมโครโฟน', is_category: true },
-  { key: 'sound',      label: 'ระบบเสียง',                icon: '🔊', keywords: ['ระบบเสียง', 'เครื่องเสียง', 'ลำโพง', 'mixer'], group_key: 'sound', group_label: 'ระบบเสียง', is_category: true },
-  { key: 'tv',         label: 'TV / จอแสดงผล',            icon: '📺', keywords: ['tv', 'จอแสดงผล', 'จอ ', 'จอแขวน', 'จอมอเตอร์', 'จอไฟฟ้า', 'นิ้ว'], group_key: 'tv', group_label: 'TV / จอแสดงผล', is_category: true },
-  { key: 'flipboard',  label: 'Flipboard',                icon: '📋', keywords: ['flipboard', 'flip2'], group_key: 'flipboard', group_label: 'Flipboard', is_category: true },
-  { key: 'video_conf', label: 'Video Conference',         icon: '📹', keywords: ['video conference', 'วีดีโอ', 'vdo', 'webcam', 'zoom', 'teams', 'meet'], group_key: 'video_conf', group_label: 'Video Conference', is_category: true },
-  { key: 'interactive',label: 'โปรเจกเตอร์อินเทอร์แอคทีฟ', icon: '🖊️', keywords: ['อินเทอร์แอคทีฟ', 'interactive', 'touch screen'], group_key: 'interactive', group_label: 'โปรเจกเตอร์อินเทอร์แอคทีฟ', is_category: true },
+  { key: 'computer',   label: 'คอมพิวเตอร์', shortLabel: 'คอมฯ', icon: '💻', keywords: ['คอมพิวเตอร์', 'computer', 'pc', 'imac'], group_key: 'computer', group_label: 'คอมพิวเตอร์', is_category: true },
+  { key: 'projector',  label: 'โปรเจกเตอร์', shortLabel: 'โปรเจค', icon: '📽️', keywords: ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector'], group_key: 'projector', group_label: 'โปรเจกเตอร์', is_category: true },
+  { key: 'microphone', label: 'ไมโครโฟน', shortLabel: 'ไมค์', icon: '🎤', keywords: ['ไมโครโฟน', 'microphone', 'ไมค์'], group_key: 'microphone', group_label: 'ไมโครโฟน', is_category: true },
+  { key: 'sound',      label: 'ระบบเสียง', shortLabel: 'เสียง', icon: '🔊', keywords: ['ระบบเสียง', 'เครื่องเสียง', 'ลำโพง', 'mixer'], group_key: 'sound', group_label: 'ระบบเสียง', is_category: true },
+  { key: 'tv',         label: 'TV / จอแสดงผล', shortLabel: 'TV/จอ', icon: '📺', keywords: ['tv', 'จอแสดงผล', 'จอ ', 'จอแขวน', 'จอมอเตอร์', 'จอไฟฟ้า', 'นิ้ว'], group_key: 'tv', group_label: 'TV / จอแสดงผล', is_category: true },
+  { key: 'video_conf', label: 'Video Conference', shortLabel: 'VDO Conf', icon: '📹', keywords: ['video conference', 'วีดีโอ', 'vdo', 'webcam', 'zoom', 'teams', 'meet'], group_key: 'video_conf', group_label: 'Video Conference', is_category: true },
 ]
 
 const QUICK_EQUIPMENT_PRESETS = [
-  {
-    key: 'presentation_ready',
-    label: 'นำเสนอ / บรรยาย',
-    shortLabel: 'นำเสนอ',
-    icon: '📽️',
-    hint: 'โปรเจกเตอร์ + จอ',
-    keywords: ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector', 'จอ', 'visual'],
-  },
-  {
-    key: 'computer_lab',
-    label: 'คอมพิวเตอร์แลบ',
-    shortLabel: 'คอมแลบ',
-    icon: '💻',
-    hint: 'PC / iMac',
-    keywords: ['pc', 'คอมพิวเตอร์', 'imac'],
-  },
-  {
-    key: 'graphics_lab',
-    label: 'กราฟิก / มัลติมีเดีย',
-    shortLabel: 'กราฟิก',
-    icon: '🎨',
-    hint: 'PC 50-61 / iMac',
-    keywords: ['pc 50', 'pc 51', 'pc 61', 'imac', 'core i5', 'touch screen'],
-  },
-  {
-    key: 'audio_room',
-    label: 'ประชุมพร้อมเสียง',
-    shortLabel: 'ระบบเสียง',
-    icon: '🔊',
-    hint: 'ไมค์ + ลำโพง',
-    keywords: ['ไมค์', 'ไมโครโฟน', 'ระบบเสียง', 'ลำโพง', 'mixer'],
-  },
-  {
-    key: 'video_meeting',
-    label: 'Video Conference',
-    shortLabel: 'วิดีโอ',
-    icon: '📹',
-    hint: 'กล้อง / Zoom',
-    keywords: ['video conference', 'vdo', 'webcam', 'zoom', 'teams', 'meet', 'กล้อง'],
-  },
-  {
-    key: 'interactive_room',
-    label: 'Interactive / Touch',
-    shortLabel: 'Interactive',
-    icon: '🖊️',
-    hint: 'Touch / Flipboard',
-    keywords: ['interactive', 'touch screen', 'flipboard', 'flip2', 'อินเทอร์แอคทีฟ'],
-  },
+  { key: 'presentation_ready', label: 'นำเสนอ / บรรยาย', shortLabel: 'นำเสนอ', icon: '📽️', hint: 'โปรเจกเตอร์ + จอ', keywords: ['โปรเจกเตอร์', 'projector', 'จอ'] },
+  { key: 'computer_lab', label: 'คอมพิวเตอร์แลบ', shortLabel: 'คอมแลบ', icon: '💻', hint: 'PC / iMac', keywords: ['pc', 'คอมพิวเตอร์', 'imac'] },
+  { key: 'audio_room', label: 'ประชุมพร้อมเสียง', shortLabel: 'ระบบเสียง', icon: '🔊', hint: 'ไมค์ + ลำโพง', keywords: ['ไมค์', 'ระบบเสียง', 'ลำโพง'] },
+  { key: 'video_meeting', label: 'Video Conference', shortLabel: 'วิดีโอ', icon: '📹', hint: 'กล้อง / Zoom', keywords: ['video conference', 'zoom', 'กล้อง'] },
 ]
 
 const getEquipmentOptions = (presets = []) => {
   const categoryOptions = (presets?.length ? presets : FALLBACK_EQUIPMENT_PRESETS)
     .filter(eq => eq.is_category)
     .filter(eq => !['computer', 'projector', 'microphone', 'sound'].includes(eq.key))
-
   return [...QUICK_EQUIPMENT_PRESETS, ...categoryOptions]
 }
 
 const findPreset = (presets, key) =>
   [...QUICK_EQUIPMENT_PRESETS, ...(presets || []), ...FALLBACK_EQUIPMENT_PRESETS].find(p => p.key === key)
 
-const groupEquipmentPresets = (presets) => {
-  const groups = []
-  const byKey = new Map()
-
-  presets.forEach(eq => {
-    const groupKey = eq.group_key || eq.key || 'other'
-    const groupLabel = eq.group_label || eq.label || 'อุปกรณ์อื่นๆ'
-    if (!byKey.has(groupKey)) {
-      const group = { key: groupKey, label: groupLabel, icon: eq.icon || '🔧', items: [] }
-      byKey.set(groupKey, group)
-      groups.push(group)
-    }
-    byKey.get(groupKey).items.push(eq)
-  })
-
-  return groups.map(group => ({
-    ...group,
-    items: [
-      ...group.items.filter(eq => eq.is_category),
-      ...group.items.filter(eq => !eq.is_category),
-    ],
-  }))
-}
-
 const getFacIcon = (name) => {
-  const n = name || ''
-  const lower = n.toLowerCase()
-  if (lower.includes('cpu')) return '⚙️'
-  if (lower.includes('ram')) return '🧠'
-  if (lower.includes('storage')) return '💾'
-  if (lower.includes('คอมพิวเตอร์') || lower.includes('pc') || lower.includes('imac')) return '💻'
-  if (lower.includes('โปรเจกเตอร์') || lower.includes('โปรเจคเตอร์') || lower.includes('projector')) return '📽️'
+  const lower = (name || '').toLowerCase()
+  if (lower.includes('คอมพิวเตอร์') || lower.includes('pc')) return '💻'
+  if (lower.includes('โปรเจกเตอร์') || lower.includes('projector')) return '📽️'
   if (lower.includes('ไมโครโฟน') || lower.includes('ไมค์')) return '🎤'
-  if (lower.includes('เสียง') || lower.includes('ลำโพง') || lower.includes('mixer')) return '🔊'
-  if (lower.includes('tv') || lower.includes('จอ') || lower.includes('นิ้ว')) return '📺'
-  if (lower.includes('flipboard') || lower.includes('flip2')) return '📋'
-  if (lower.includes('video') || lower.includes('วีดีโอ') || lower.includes('vdo') || lower.includes('webcam')) return '📹'
-  if (lower.includes('อินเทอร์แอคทีฟ') || lower.includes('interactive') || lower.includes('touch screen')) return '🖊️'
-  if (lower.includes('whiteboard')) return '📝'
-  if (lower.includes('เก้าอี้')) return '🪑'
+  if (lower.includes('เสียง') || lower.includes('ลำโพง')) return '🔊'
+  if (lower.includes('tv') || lower.includes('จอ')) return '📺'
+  if (lower.includes('video') || lower.includes('zoom')) return '📹'
   return '🔧'
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
 const addHours = (time, hours) => {
   const [h, m] = time.split(':').map(Number)
   return `${String(h + hours).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
-const formatDate = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', {
-  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-})
-const formatDateShort = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', {
-  day: 'numeric', month: 'short',
-})
-
+const formatDate = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+const formatDateShort = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 const getDemandLevel = room => {
   const raw = room.forecast?.demand_level
-  const availMap = {
-    book_now: 'urgent',
-    book_soon: 'high',
-    recommended: 'medium',
-    likely_available: 'low',
-  }
+  const availMap = { book_now: 'urgent', book_soon: 'high', recommended: 'medium', likely_available: 'low' }
   if (raw && availMap[raw]) return availMap[raw]
   if (raw && FORECAST_CONFIG[raw]) return raw
   return 'none'
 }
-
 const getDayLabel = v => DAYS_OF_WEEK.find(d => d.value === v)?.full ?? ''
 
-// ─── ปฏิทินการศึกษา (UBU) ────────────────────────────────────────────────────
 const ACADEMIC_TERM_META = {
-  1: {
-    label: 'ภาคเรียนที่ 1',
-    short: 'เทอม 1',
-    period: 'มิถุนายน – ตุลาคม',
-    desc: 'เปิดภาคเรียนต้นปีการศึกษา',
-  },
-  2: {
-    label: 'ภาคเรียนที่ 2',
-    short: 'เทอม 2',
-    period: 'พฤศจิกายน – มีนาคม',
-    desc: 'เปิดภาคเรียนปลายปีการศึกษา',
-  },
-  3: {
-    label: 'ภาคฤดูร้อน',
-    short: 'ฤดูร้อน',
-    period: 'เมษายน – พฤษภาคม',
-    desc: 'ภาคฤดูร้อน ปิดท้ายปีการศึกษา',
-  },
+  1: { label: 'ภาคเรียนที่ 1', short: 'เทอม 1', period: 'มิ.ย. – ต.ค.' },
+  2: { label: 'ภาคเรียนที่ 2', short: 'เทอม 2', period: 'พ.ย. – มี.ค.' },
+  3: { label: 'ภาคฤดูร้อน', short: 'ฤดูร้อน', period: 'เม.ย. – พ.ค.' },
 }
-
 const ACADEMIC_TERM_IDS = [1, 2, 3]
-
 const gregorianFromThaiYear = thaiYear => thaiYear - 543
-
 const getTermDateRange = (thaiYear, termNum) => {
   const gy = gregorianFromThaiYear(thaiYear)
-  if (termNum === 1) {
-    return { start: `${gy}-06-01`, end: `${gy}-10-31` }
-  }
-  if (termNum === 2) {
-    return { start: `${gy}-11-01`, end: `${gy + 1}-03-31` }
-  }
+  if (termNum === 1) return { start: `${gy}-06-01`, end: `${gy}-10-31` }
+  if (termNum === 2) return { start: `${gy}-11-01`, end: `${gy + 1}-03-31` }
   return { start: `${gy + 1}-04-01`, end: `${gy + 1}-05-31` }
 }
-
-const buildTermName = (thaiYear, termNum) =>
-  `${ACADEMIC_TERM_META[termNum]?.label ?? 'ภาคเรียน'}/${thaiYear}`
-
+const buildTermName = (thaiYear, termNum) => `${ACADEMIC_TERM_META[termNum]?.label ?? 'ภาคเรียน'}/${thaiYear}`
 const getDefaultAcademicYearBE = () => {
-  const now = new Date()
-  const m = now.getMonth() + 1
-  const gy = now.getFullYear()
-  if (m >= 6) return gy + 543
-  return gy + 543 - 1
+  const m = new Date().getMonth() + 1
+  const gy = new Date().getFullYear()
+  return m >= 6 ? gy + 543 : gy + 543 - 1
 }
-
 const getDefaultTermNumber = () => {
   const m = new Date().getMonth() + 1
   if (m >= 6 && m <= 10) return 1
   if (m >= 11 || m <= 3) return 2
-  if (m >= 4 && m <= 5) return 3
-  return 1
+  return 3
 }
-
 const getAcademicYearOptions = () => {
   const current = getDefaultAcademicYearBE()
   return [current - 1, current, current + 1]
 }
-
-const formatThaiDateFull = isoDate => {
-  if (!isoDate) return '—'
-  return new Date(`${isoDate}T00:00:00`).toLocaleDateString('th-TH', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-}
-
 const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()
-  return (
-    t.includes('ห้องเรียน') ||
-    t.includes('lecture') ||
-    t.includes('classroom') ||
-    t.includes('เรียน')
-  )
+  return t.includes('ห้องเรียน') || t.includes('lecture') || t.includes('classroom')
 }
 
-// ─── Equipment filter helper ──────────────────────────────────────────────────
-// คืน true ถ้าห้องมีอุปกรณ์ที่ผู้ใช้เลือก *อย่างน้อยหนึ่งชื่อ* ต่อหนึ่ง preset key
-// (ห้องสามารถมีอุปกรณ์อื่นๆ ปนมาได้)
 const roomHasEquipments = (room, selectedEquipments, equipmentPresets) => {
   if (!selectedEquipments || selectedEquipments.length === 0) return true
   if (!room.facilities || room.facilities.length === 0) return false
-
   const facilityNames = room.facilities.map(f => f.name.toLowerCase())
   const presets = equipmentPresets?.length ? equipmentPresets : FALLBACK_EQUIPMENT_PRESETS
-
   return selectedEquipments.every(key => {
     const preset = findPreset(presets, key)
     if (!preset) return true
-    return preset.keywords.some(kw =>
-      facilityNames.some(fn => fn.includes(kw.toLowerCase()))
-    )
+    return preset.keywords.some(kw => facilityNames.some(fn => fn.includes(kw.toLowerCase())))
   })
 }
 
-// ─── Animations ──────────────────────────────────────────────────────────────
+const normalizeText = value => (value ?? '').toString().toLowerCase().trim()
 
-const ANIM = `
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes scaleIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-.au{animation:fadeUp .28s ease both}
-.au1{animation:fadeUp .28s .06s ease both}
-.au2{animation:fadeUp .28s .12s ease both}
-.au3{animation:fadeUp .28s .18s ease both}
-.au4{animation:fadeUp .28s .24s ease both}
-.si{animation:scaleIn .22s ease both}
-.af{animation:fadeIn .2s ease both}
-.checkin-pulse{animation:pulse 2.5s ease-in-out infinite}
-`
-
-function useDevice() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-  useEffect(() => {
-    const fn = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', fn)
-    return () => window.removeEventListener('resize', fn)
-  }, [])
-  return isMobile
+const getMatchedEquipmentCount = (room, selectedEquipments, equipmentPresets) => {
+  if (!selectedEquipments?.length || !room.facilities?.length) return 0
+  const facilityNames = room.facilities.map(f => normalizeText(f.name))
+  const presets = equipmentPresets?.length ? equipmentPresets : FALLBACK_EQUIPMENT_PRESETS
+  return selectedEquipments.reduce((count, key) => {
+    const preset = findPreset(presets, key)
+    if (!preset) return count
+    const matched = preset.keywords.some(kw => facilityNames.some(fn => fn.includes(normalizeText(kw))))
+    return matched ? count + 1 : count
+  }, 0)
 }
 
-// ─── Shared small components ──────────────────────────────────────────────────
+const scoreFallbackRoom = (room, {
+  attendees,
+  building,
+  bookingType,
+  selectedEquipments,
+  equipmentPresets,
+}) => {
+  const capacity = Number(room.capacity) || 0
+  const gap = Math.max(0, capacity - attendees)
+  let score = 0
+  const reasons = []
 
+  if (capacity === attendees) {
+    score += 40
+    reasons.push('ความจุพอดี')
+  } else if (capacity <= attendees + 5) {
+    score += 32
+    reasons.push(`รองรับ ${capacity} คน`)
+  } else {
+    score += Math.max(8, 24 - Math.min(gap, 20))
+    reasons.push(`รองรับ ${capacity} คน`)
+  }
+
+  const roomBuildingCode = room.building?.code || room.building_code || room.building
+  const roomBuildingName = room.building_name || room.building?.name
+  if (building && roomBuildingCode && normalizeText(roomBuildingCode) === normalizeText(building)) {
+    score += 30
+    reasons.push('อาคารเดียวกับเงื่อนไข')
+  } else if (building && roomBuildingName) {
+    score += 10
+    reasons.push(`อาคาร ${roomBuildingName}`)
+  }
+
+  if (bookingType === 'term' && isClassroomType(room)) {
+    score += 18
+    reasons.push('เหมาะกับจองทั้งเทอม')
+  }
+
+  const level = getDemandLevel(room)
+  if (level === 'low') score += 8
+  else if (level === 'medium') score += 5
+  else if (level === 'high') score += 2
+
+  const matchedEquipmentCount = getMatchedEquipmentCount(room, selectedEquipments, equipmentPresets)
+  if (matchedEquipmentCount > 0) {
+    score += matchedEquipmentCount * 7
+    reasons.push(`ตรงอุปกรณ์ ${matchedEquipmentCount} รายการ`)
+  } else if (selectedEquipments?.length > 0) {
+    reasons.push('อุปกรณ์ใกล้เคียง')
+  }
+
+  if (room.status === 'available') score += 4
+
+  const reason = reasons.slice(0, 3).join(' · ') || 'ห้องใกล้เคียงที่พร้อมจอง'
+  return { score, reason }
+}
+
+// ─── Animations ──────────────────────────────────────────────────────────────
+const ANIM = `
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
+.au{animation:fadeUp .2s ease both}
+.au1{animation:fadeUp .2s .05s ease both}
+.au2{animation:fadeUp .2s .1s ease both}
+.si{animation:scaleIn .2s ease both}
+.checkin-pulse{animation:pulse 2.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+`
+
+// ─── Shared Compact Components ───────────────────────────────────────────────
 function Chip({ active, children, onClick, className = '' }) {
   return (
     <button onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all duration-150
+      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all duration-150 whitespace-nowrap
         ${active
           ? 'bg-blue-700 border-blue-700 text-white shadow-sm'
-          : 'bg-white border-blue-100 text-slate-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50'
+          : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
         } ${className}`}>
       {children}
     </button>
@@ -373,55 +276,38 @@ function Chip({ active, children, onClick, className = '' }) {
 
 function SectionLabel({ icon: Icon, children }) {
   return (
-    <div className="flex items-center gap-1.5 text-blue-600 text-xs font-bold uppercase tracking-widest mb-3">
-      {Icon && <Icon size={11} />}{children}
+    <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-bold uppercase tracking-wider mb-1.5">
+      {Icon && <Icon size={11} className="flex-shrink-0" />}<span>{children}</span>
     </div>
   )
 }
 
-// ─── EquipmentSelector ────────────────────────────────────────────────────────
-
-function EquipmentSelector({ selected, onChange, compact = false, equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
+function EquipmentSelector({ selected, onChange, equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
   const toggle = (key) => {
-    if (selected.includes(key)) {
-      onChange(selected.filter(k => k !== key))
-    } else {
-      onChange([...selected, key])
-    }
+    if (selected.includes(key)) onChange(selected.filter(k => k !== key))
+    else onChange([...selected, key])
   }
-
-  if (!equipmentPresets.length) {
-    return <p className="text-xs text-slate-400">ไม่พบข้อมูลอุปกรณ์ในห้อง — รัน import ข้อมูลจริงก่อน</p>
-  }
-
   const options = getEquipmentOptions(equipmentPresets)
-
   return (
-    <div className={`grid ${compact ? 'grid-cols-2 gap-2' : 'grid-cols-3 gap-2'}`}>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {options.map(eq => {
         const active = selected.includes(eq.key)
         return (
-          <button
-            key={eq.key}
-            onClick={() => toggle(eq.key)}
-            className={`relative min-h-[68px] rounded-xl border-2 px-3 py-2 text-left transition-all duration-150
+          <button key={eq.key} onClick={() => toggle(eq.key)}
+            className={`group relative overflow-hidden rounded-2xl border px-3 py-3 text-left transition-all min-h-[72px] flex flex-col justify-between
               ${active
-                ? 'bg-blue-700 border-blue-700 text-white shadow-sm'
-                : 'bg-white border-blue-100 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg leading-none">{eq.icon}</span>
-              <span className={`text-xs font-extrabold leading-tight ${active ? 'text-white' : 'text-slate-800'}`}>
-                {compact ? (eq.shortLabel || eq.label) : eq.label}
-              </span>
+                ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-lg shadow-blue-200'
+                : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md'}`}>
+            <div className={`w-8 h-8 rounded-2xl flex items-center justify-center mb-2.5 transition-all ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>
+              <span className="text-base leading-none">{eq.icon}</span>
             </div>
-            <p className={`mt-1 text-xs leading-snug ${active ? 'text-white/70' : 'text-slate-400'}`}>{eq.hint}</p>
-            {active && (
-              <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-white/25 flex items-center justify-center">
-                <X size={9} className="text-white" />
-              </span>
-            )}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className={`text-[13px] font-bold truncate ${active ? 'text-white' : 'text-slate-900'}`}>{eq.shortLabel || eq.label}</p>
+                {eq.hint && <p className={`text-[10px] mt-0.5 leading-tight ${active ? 'text-white/70' : 'text-slate-400'}`}>{eq.hint}</p>}
+              </div>
+              {active && <Check size={15} className="text-white shrink-0 mt-0.5" />}
+            </div>
           </button>
         )
       })}
@@ -429,1763 +315,992 @@ function EquipmentSelector({ selected, onChange, compact = false, equipmentPrese
   )
 }
 
-// ─── FacilityTags ─────────────────────────────────────────────────────────────
-
-function FacilityTags({ facilities = [], compact = true, maxShow = 8, highlight = [], equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
-  if (!facilities || facilities.length === 0) {
-    return compact ? null : <p className="text-xs text-slate-400">ไม่มีข้อมูลอุปกรณ์</p>
-  }
-
-  const isHighlighted = (facilityName) => {
-    if (!highlight || highlight.length === 0) return false
-    const nameLower = facilityName.toLowerCase()
-    return highlight.some(key => {
-      const preset = findPreset(equipmentPresets, key)
-      if (!preset) return false
-      return preset.keywords.some(kw => nameLower.includes(kw.toLowerCase()))
-    })
-  }
-
-  if (compact) {
-    const shown = facilities.slice(0, maxShow)
-    const rest  = facilities.length - maxShow
-    return (
-      <div className="flex flex-wrap gap-1 mt-2">
-        {shown.map((f, i) => {
-          const hl = isHighlighted(f.name)
-          return (
-            <span
-              key={i}
-              className={`inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 font-medium border transition-all
-                ${hl
-                  ? 'bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200'
-                  : 'bg-slate-50 border-slate-200 text-slate-600'
-                }`}
-              title={`${f.name} ×${f.quantity}`}
-            >
-              <span className="text-sm leading-none">{getFacIcon(f.name)}</span>
-              {f.name}
-              {f.quantity > 1 && (
-                <span className={`rounded-full px-1 text-xs font-bold ${hl ? 'bg-blue-200 text-blue-600' : 'bg-slate-200 text-slate-500'}`}>×{f.quantity}</span>
-              )}
-            </span>
-          )
-        })}
-        {rest > 0 && (
-          <span className="text-xs text-slate-400 border border-slate-200 rounded-full px-2 py-0.5 bg-white">
-            +{rest} อื่นๆ
-          </span>
-        )}
-      </div>
-    )
-  }
-
-  // Full grid สำหรับ Step 3
+function FacilityTags({ facilities = [], maxShow = 3, highlight = [], equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
+  if (!facilities?.length) return null
+  const isHighlighted = (name) => highlight.some(key => {
+    const preset = findPreset(equipmentPresets, key)
+    return preset?.keywords.some(kw => name.toLowerCase().includes(kw.toLowerCase()))
+  })
+  const shown = facilities.slice(0, maxShow)
+  const rest = facilities.length - maxShow
   return (
-    <div className="grid grid-cols-2 gap-1.5">
-      {facilities.map((f, i) => {
+    <div className="flex flex-wrap gap-1">
+      {shown.map((f, i) => {
         const hl = isHighlighted(f.name)
         return (
-          <div
-            key={i}
-            className={`flex items-center gap-2 rounded-xl px-3 py-2 border transition-all
-              ${hl
-                ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-100'
-                : 'bg-slate-50 border-slate-100'
-              }`}
-          >
-            <span className="text-base flex-shrink-0">{getFacIcon(f.name)}</span>
-            <div className="min-w-0">
-              <p className={`text-xs font-semibold truncate leading-tight ${hl ? 'text-blue-700' : 'text-slate-700'}`}>{f.name}</p>
-              <p className="text-xs text-slate-400">จำนวน {f.quantity} ชิ้น</p>
-            </div>
-            {hl && <span className="ml-auto text-blue-400 flex-shrink-0"><CheckCircle size={12} /></span>}
-          </div>
+          <span key={i} className={`inline-flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 font-medium border max-w-full
+            ${hl ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+            <span className="text-xs leading-none">{getFacIcon(f.name)}</span>
+            <span className="truncate">{f.name}</span>
+          </span>
         )
       })}
+      {rest > 0 && <span className="text-[10px] text-slate-400 border border-slate-200 rounded-md px-1.5 py-0.5 bg-white">+{rest}</span>}
     </div>
   )
 }
 
-// ─── BookingTypeSelector ──────────────────────────────────────────────────────
-
-function BookingTypeSelector({ value, onChange, compact = false }) {
+function BookingTypeSelector({ value, onChange }) {
   const types = [
-    {
-      key: 'daily', icon: Coffee,
-      label: 'ห้องประชุม / รายวัน',
-      sub: 'จองใช้งานเป็นครั้ง เลือกวันและเวลาที่ต้องการ',
-      activeBg: 'bg-blue-700', activeBorder: 'border-blue-700',
-    },
-    {
-      key: 'term', icon: BookOpen,
-      label: 'จองทั้งเทอม',
-      sub: 'จองห้องเรียน/ห้อง Lecture ประจำทุกสัปดาห์',
-      activeBg: 'bg-indigo-700', activeBorder: 'border-indigo-700',
-    },
+    { key: 'daily', icon: Coffee, label: 'รายวัน', sub: 'เลือกวันและเวลา' },
+    { key: 'term', icon: BookOpen, label: 'ทั้งเทอม', sub: 'จองประจำทุกสัปดาห์' },
   ]
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {types.map(t => {
         const Icon = t.icon
         const active = value === t.key
+        const accent = active ? (t.key === 'term' ? 'from-indigo-600 to-violet-600 border-indigo-600' : 'from-blue-600 to-indigo-600 border-blue-600') : 'bg-white border-slate-200'
         return (
           <button key={t.key} onClick={() => onChange(t.key)}
-            className={`relative flex flex-col items-start gap-1.5 rounded-2xl border-2 transition-all duration-150 text-left
-              ${compact ? 'px-4 py-3' : 'px-5 py-4'}
-              ${active
-                ? `${t.activeBorder} ${t.activeBg} text-white shadow-lg`
-                : 'border-blue-100 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50'
-              }`}>
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0
-              ${active ? 'bg-white/20' : 'bg-blue-50'}`}>
-              <Icon size={16} className={active ? 'text-white' : 'text-blue-600'} />
+            className={`group relative overflow-hidden rounded-3xl border p-4 transition-all text-left min-h-[104px]
+              ${active ? `bg-gradient-to-br ${accent} text-white shadow-xl shadow-blue-200/70` : 'bg-white text-slate-700 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-lg'}`}>
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-5 ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>
+              <Icon size={18} className={active ? 'text-white' : 'text-blue-600'} />
             </div>
             <div>
-              <p className={`font-bold text-sm leading-tight ${active ? 'text-white' : 'text-slate-800'}`}>{t.label}</p>
-              {!compact && (
-                <p className={`text-xs mt-0.5 leading-snug ${active ? 'text-white/75' : 'text-slate-400'}`}>{t.sub}</p>
-              )}
+              <p className={`text-base font-bold leading-tight ${active ? 'text-white' : 'text-slate-900'}`}>{t.label}</p>
+              <p className={`text-xs mt-1.5 leading-snug ${active ? 'text-white/80' : 'text-slate-500'}`}>{t.sub}</p>
             </div>
-            {active && (
-              <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-white/25 flex items-center justify-center">
-                <CheckCircle size={12} className="text-white" />
-              </div>
-            )}
+            {active && <CheckCircle size={16} className="absolute top-3 right-3 text-white/90" />}
           </button>
         )
       })}
     </div>
   )
 }
-
-// ─── RoomStatusBadge ─────────────────────────────────────────────────────────
 
 function RoomStatusBadge({ status }) {
   const cfg = ROOM_STATUS[status] ?? ROOM_STATUS.available
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.cls}`}>
+    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border whitespace-nowrap ${cfg.cls}`}>
       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: cfg.dot }} />
       {cfg.label}
     </span>
   )
 }
 
-// ─── CheckInReminder ─────────────────────────────────────────────────────────
-
-function CheckInReminder({ startTime, compact = false }) {
+function CheckInReminder({ startTime }) {
   if (!startTime) return null
   return (
-    <div className={`checkin-pulse relative overflow-hidden border-2 border-amber-400
-      bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl shadow-md shadow-amber-100
-      ${compact ? 'px-4 py-3.5' : 'px-5 py-4'}`}>
-      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-amber-400 to-orange-400 rounded-l-2xl" />
-      <div className="flex items-start gap-3 ml-1">
-        <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center flex-shrink-0 shadow-sm shadow-amber-200">
-          <AlertTriangle size={18} color="#fff" strokeWidth={2.5} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-amber-900 font-extrabold text-sm leading-snug mb-1">⚠️ ในกรณีที่ไม่สามารถเข้าใช้งานห้องตามเวลาที่จองไว้ ขอความกรุณาดำเนินการยกเลิกการจองล่วงหน้า เพื่อให้ผู้อื่นสามารถใช้บริการต่อได้ ขอบคุณค่ะ/ครับ!</p>
-          <p className="text-amber-800 text-xs leading-relaxed">
-            
-          </p>
-          
-          </div>
-        </div>
-      </div>
-   
-  )
-}
-
-// ─── TermFilterBanner ────────────────────────────────────────────────────────
-
-function TermFilterBanner({ compact = false }) {
-  return (
-    <div className={`flex items-center gap-2.5 bg-indigo-50 border border-indigo-200 rounded-xl ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}>
-      <Filter size={13} className="text-indigo-600 flex-shrink-0" />
-      <p className={`text-indigo-700 font-semibold ${compact ? 'text-xs' : 'text-xs'}`}>
-        แสดงเฉพาะ <span className="font-extrabold">ห้องเรียน / ห้อง Lecture</span> สำหรับการจองทั้งเทอม
-      </p>
-    </div>
-  )
-}
-
-// ─── เลือกปีการศึกษา + ภาคเรียน (พ.ศ.) ─────────────────────────────────────
-function TermAcademicSelector({
-  academicYearBE, termNumber, termStart, termEnd, termName, customTermDates,
-  onSelectYear, onSelectTerm, onToggleCustom, onStartChange, onEndChange,
-  compact = false,
-}) {
-  const yearOptions = getAcademicYearOptions()
-  const meta = ACADEMIC_TERM_META[termNumber]
-
-  return (
-    <div className={`bg-white border border-indigo-100 rounded-2xl shadow-sm ${compact ? 'p-4' : 'p-5'}`}>
-      <SectionLabel icon={BookOpen}>ปีการศึกษา & ภาคการศึกษา</SectionLabel>
-      <p className="text-xs text-slate-500 mb-3">
-        เลือกปี พ.ศ. และภาคเรียน/ฤดูร้อน — ระบบกำหนดช่วงวันเริ่ม–สิ้นสุดให้อัตโนมัติ (ตามปฏิทิน ม.อุบล)
-      </p>
-
-      <label className="text-xs font-bold text-slate-600 mb-1.5 block">ปีการศึกษา (พ.ศ.)</label>
-      <div className="flex flex-wrap gap-2 mb-4">
-        {yearOptions.map(y => (
-          <button
-            key={y}
-            type="button"
-            onClick={() => onSelectYear(y)}
-            className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all
-              ${academicYearBE === y
-                ? 'bg-indigo-700 border-indigo-700 text-white shadow-sm'
-                : 'bg-white border-indigo-100 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50'}`}
-          >
-            {y}
-          </button>
-        ))}
-      </div>
-
-      <label className="text-xs font-bold text-slate-600 mb-1.5 block">ภาคการศึกษา</label>
-      <div className={`grid gap-2 mb-4 ${compact ? 'grid-cols-1' : 'grid-cols-3'}`}>
-        {ACADEMIC_TERM_IDS.map(n => {
-          const t = ACADEMIC_TERM_META[n]
-          const active = termNumber === n
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => onSelectTerm(n)}
-              className={`text-left rounded-xl border-2 p-3 transition-all
-                ${active
-                  ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-200'
-                  : 'border-indigo-100 bg-white hover:border-indigo-300 hover:bg-indigo-50/50'}`}
-            >
-              <p className={`text-sm font-extrabold ${active ? 'text-indigo-800' : 'text-slate-800'}`}>
-                {t.label}
-              </p>
-              <p className="text-xs text-indigo-600 font-semibold mt-0.5">{t.period}</p>
-              <p className="text-[11px] text-slate-500 mt-1">{t.desc}</p>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-3">
-        <p className="text-xs font-bold text-indigo-800 mb-1">สรุปการจองทั้งเทอม</p>
-        <p className="text-sm font-extrabold text-slate-900">{termName || buildTermName(academicYearBE, termNumber)}</p>
-        <p className="text-xs text-slate-600 mt-1">
-          {formatThaiDateFull(termStart)} – {formatThaiDateFull(termEnd)}
-          {meta && <span className="text-indigo-600 ml-1">({meta.period})</span>}
+    <div className="checkin-pulse relative overflow-hidden border border-amber-300 bg-amber-50 rounded-xl p-3 shadow-sm">
+      <div className="flex items-start gap-2">
+        <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+        <p className="text-amber-800 text-xs font-medium leading-snug">
+          ⚠️ หากไม่สามารถเข้าใช้งานได้ตามเวลาที่จอง กรุณายกเลิกล่วงหน้า เพื่อให้ผู้อื่นใช้บริการต่อได้
         </p>
       </div>
-
-      <button
-        type="button"
-        onClick={onToggleCustom}
-        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline-offset-2 hover:underline"
-      >
-        {customTermDates ? '← ใช้วันที่ตามปฏิทินมหาวิทยาลัย' : 'ปรับช่วงวันที่เอง (ขั้นสูง)'}
-      </button>
-
-      {customTermDates && (
-        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-indigo-100">
-          <div>
-            <label className="text-xs text-slate-500 mb-1 block">วันเริ่มเทอม <span className="text-red-400">*</span></label>
-            <input
-              type="date"
-              value={termStart}
-              onChange={e => onStartChange(e.target.value)}
-              className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-              style={{ fontFamily: 'inherit' }}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 mb-1 block">วันสิ้นสุดเทอม <span className="text-red-400">*</span></label>
-            <input
-              type="date"
-              value={termEnd}
-              onChange={e => onEndChange(e.target.value)}
-              className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-              style={{ fontFamily: 'inherit' }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
-// ─── SummaryTiles ─────────────────────────────────────────────────────────────
-
-function SummaryTiles({ rooms, layout = 'vertical' }) {
-  if (layout === 'grid') {
-    return (
-      <div className="grid grid-cols-2 gap-2 au1">
-        {SUMMARY_TIERS.map(s => {
-          const cfg   = FORECAST_CONFIG[s.level]
-          const count = rooms.filter(r => getDemandLevel(r) === s.level).length
-          return (
-            <div key={s.level} className={`border rounded-2xl py-3 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
-              <p className={`text-2xl font-extrabold ${cfg.numCls}`}>{count}</p>
-              <p className={`text-xs font-semibold mt-0.5 leading-tight px-1 ${cfg.textCls} opacity-90`}>{s.label}</p>
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
+function SummaryTiles({ rooms }) {
   return (
-    <div className="space-y-3 au1">
+    <div className="grid grid-cols-2 gap-2">
       {SUMMARY_TIERS.map(s => {
-        const cfg   = FORECAST_CONFIG[s.level]
+        const cfg = FORECAST_CONFIG[s.level]
         const count = rooms.filter(r => getDemandLevel(r) === s.level).length
         return (
-          <div key={s.level} className={`border rounded-2xl py-4 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
-            <p className={`text-3xl font-extrabold ${cfg.numCls}`}>{count}</p>
-            <p className={`text-xs font-semibold mt-1 ${cfg.textCls} opacity-80`}>{s.label}</p>
+          <div key={s.level} className={`border rounded-xl py-2 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
+            <p className={`text-xl font-extrabold ${cfg.numCls}`}>{count}</p>
+            <p className={`text-[10px] font-semibold leading-tight px-1 ${cfg.textCls} opacity-90`}>{s.label}</p>
           </div>
         )
       })}
-      <p className="text-xs text-slate-400 text-center">เรียงตาม AI Forecast</p>
     </div>
   )
 }
 
-// ─── แนะนำจองสลับห้อง (ครึ่งเทอม) ─────────────────────────────────────────────
-function SplitSuggestionList({ suggestions, onSelect }) {
-  if (!suggestions?.length) return null
-  return (
-    <div className="text-left mt-4 space-y-3 max-w-xl mx-auto">
-      <p className="text-xs font-bold text-violet-700 text-center">
-        💡 ไม่มีห้องว่างทั้งเทอม — เลือกแผนจองสลับห้องด้านล่าง
-      </p>
-      {suggestions.map((s, i) => (
-        <div key={i} className="bg-violet-50 border border-violet-200 rounded-xl p-4">
-          <div className="grid sm:grid-cols-2 gap-2 text-xs mb-3">
-            <div className="bg-white rounded-lg p-3 border border-violet-100">
-              <p className="font-bold text-violet-800 mb-1">เทอมแรก</p>
-              <p className="font-semibold text-slate-800">{s.first_half.room_name}</p>
-              <p className="text-slate-500 mt-0.5">
-                {formatDateShort(s.first_half.term_start)} – {formatDateShort(s.first_half.term_end)}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg p-3 border border-violet-100">
-              <p className="font-bold text-violet-800 mb-1">เทอมหลัง</p>
-              <p className="font-semibold text-slate-800">{s.second_half.room_name}</p>
-              <p className="text-slate-500 mt-0.5">
-                {formatDateShort(s.second_half.term_start)} – {formatDateShort(s.second_half.term_end)}
-              </p>
-            </div>
-          </div>
-          <button type="button" onClick={() => onSelect(s)}
-            className="w-full bg-indigo-700 hover:bg-indigo-800 text-white text-sm font-bold py-2.5 rounded-xl transition-colors">
-            เลือกแผนนี้และไปยืนยันการจอง →
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── แนะนำห้องใกล้เคียง (จองรายวัน) ───────────────────────────────────────────
-function DynamicSimilarList({ rooms, onSelect, compact = false }) {
-  if (!rooms?.length) return null
-  return (
-    <div className={`text-left mt-4 space-y-3 ${compact ? '' : 'max-w-xl mx-auto'}`}>
-      <p className="text-xs font-bold text-blue-700 text-center">
-        💡 ไม่พบห้องตรงเงื่อนไข — ห้องใกล้เคียงด้านล่างว่างและจองได้ทันที
-      </p>
-      {rooms.map((room, idx) => (
-        <div
-          key={room.id}
-          className="bg-blue-50 border border-blue-200 rounded-xl p-4 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all"
-          onClick={() => onSelect(room)}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="font-bold text-slate-900">{room.name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง
-              </p>
-              {room.recommendation_reason && (
-                <p className="text-xs text-blue-700 mt-1.5 font-medium">{room.recommendation_reason}</p>
-              )}
-            </div>
-            <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full px-2 py-0.5 font-bold whitespace-nowrap">
-              จองได้เลย
-            </span>
-          </div>
-          <button type="button"
-            className="w-full mt-3 bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold py-2 rounded-xl transition-colors">
-            เลือกห้องนี้และไปยืนยันการจอง →
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── RoomCard ─────────────────────────────────────────────────────────────────
-
-function RoomCard({ room, idx, onClick, compact = false, isTermMode = false, selectedEquipments = [], equipmentPresets = FALLBACK_EQUIPMENT_PRESETS }) {
+function RoomCard({ room, onClick, isTermMode, selectedEquipments, equipmentPresets }) {
   const level = getDemandLevel(room)
-  const cfg   = FORECAST_CONFIG[level]
-  const isTop = idx === 0 && (level === 'low' || level === 'none')
-
+  const cfg = FORECAST_CONFIG[level]
   return (
-    <div
-      className={`bg-white border border-blue-100 rounded-2xl cursor-pointer
-        hover:shadow-lg hover:shadow-blue-100 hover:-translate-y-0.5 transition-all duration-150
-        ${compact ? 'px-4 py-4' : 'px-6 py-5'}`}
-      style={{ borderLeftWidth: 4, borderLeftColor: cfg.dotColor }}
-      onClick={onClick}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          {isTop && (
-            <span className="inline-block bg-yellow-100 text-yellow-800 border border-yellow-300 text-xs font-bold rounded-full px-2.5 py-0.5 mb-2">แนะนำ</span>
-          )}
-          {room.is_similar_recommendation && (
-            <span className="inline-block bg-sky-100 text-sky-800 border border-sky-300 text-xs font-bold rounded-full px-2.5 py-0.5 mb-2">ใกล้เคียง</span>
-          )}
-          <div className="flex items-center gap-1.5 flex-wrap mb-1">
-            <span className={`font-bold text-slate-900 ${compact ? 'text-sm' : 'text-base'}`}>{room.name}</span>
-            <RoomStatusBadge status={room.status} />
-            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${cfg.badgeCls}`}>{cfg.badge}</span>
-            {isTermMode && (
-              <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-full px-2 py-0.5 font-semibold">
-                {room.room_type}
-              </span>
-            )}
-            {room.forecast?.has_forecast === false && (
-              <span className="text-xs text-slate-400 border border-slate-200 rounded-full px-2 py-0.5">ไม่มีข้อมูล AI</span>
-            )}
-          </div>
-          <p className="text-xs text-slate-500 mb-1">
-            {room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง
-            {!compact && ` · ${room.room_type}`}
-          </p>
-          {room.description && (
-            <p className="text-xs text-slate-400 mb-1.5 line-clamp-1">{room.description}</p>
-          )}
-          {level !== 'none' && (
-            <p className={`text-xs font-semibold ${cfg.subCls} mb-1`}>{cfg.sub}</p>
-          )}
-          {room.recommendation_reason && (
-            <p className="text-xs text-blue-600 font-medium mb-1">{room.recommendation_reason}</p>
-          )}
-          {/* อุปกรณ์ — highlight ตัวที่ผู้ใช้เลือก */}
-          <FacilityTags
-            facilities={room.facilities}
-            compact={true}
-            maxShow={compact ? 4 : 8}
-            highlight={selectedEquipments}
-            equipmentPresets={equipmentPresets}
-          />
+    <div onClick={onClick} className="bg-white border border-slate-200 rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all flex gap-3 group" style={{ borderLeftWidth: 3, borderLeftColor: cfg.dotColor }}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="font-bold text-slate-900 text-sm truncate group-hover:text-blue-700 transition-colors">{room.name}</span>
+          <RoomStatusBadge status={room.status} />
+          {level !== 'none' && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cfg.badgeCls}`}>{cfg.badge}</span>}
         </div>
-        <ChevronRight size={14} className="text-blue-200 flex-shrink-0 mt-1" />
+        <p className="text-xs text-slate-500 truncate mb-1.5">{room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง</p>
+        <FacilityTags facilities={room.facilities} maxShow={3} highlight={selectedEquipments} equipmentPresets={equipmentPresets} />
+      </div>
+      <div className="flex flex-col items-end justify-center flex-shrink-0">
+        <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
       </div>
     </div>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DESKTOP LAYOUT
-// ═══════════════════════════════════════════════════════════════════════════════
+function SuggestedRoomCard({ room, onSelect, bookingType, attendees, selectedEquipments, equipmentPresets }) {
+  const level = getDemandLevel(room)
+  const cfg = FORECAST_CONFIG[level]
+  const reason = room.recommendation_reason || 'ห้องใกล้เคียงที่พร้อมจอง'
 
-function DesktopLayout({ step, setStep, navigate, bookingType, setBookingType, formProps, resultProps, confirmProps }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-lg hover:border-blue-200 transition-all group">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500" />
+      <div className="bg-gradient-to-br from-slate-50 via-white to-blue-50/70 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                <Sparkles size={10} /> แผนสอง
+              </span>
+              {level !== 'none' && <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${cfg.badgeCls}`}>{cfg.badge}</span>}
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-base sm:text-lg truncate group-hover:text-blue-700 transition-colors">{room.name}</span>
+                <p className="text-xs text-slate-500 mt-1 truncate">
+                  {room.building_name} · ชั้น {room.floor} · รองรับ {room.capacity} ที่นั่ง
+                </p>
+              </div>
+              <RoomStatusBadge status={room.status} />
+            </div>
+
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white/80 p-3">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">เหตุผลที่แนะนำ</p>
+              <p className="text-xs text-slate-700 leading-relaxed">{reason}</p>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                <Users size={10} /> {attendees} คน
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                <Building2 size={10} /> ชั้น {room.floor}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                <CheckCircle size={10} /> จุได้ {room.capacity} คน
+              </span>
+            </div>
+
+            <div className="mt-3">
+              <FacilityTags facilities={room.facilities} maxShow={3} highlight={selectedEquipments} equipmentPresets={equipmentPresets} />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+          <span className="inline-flex items-center gap-1 font-semibold bg-white border border-slate-200 rounded-full px-2.5 py-1">
+            <ArrowRight size={10} /> พร้อมจองต่อทันที
+          </span>
+          {bookingType === 'term' && (
+            <span className="inline-flex items-center gap-1 font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2.5 py-1">
+              ทั้งเทอม
+            </span>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={`w-full ${bookingType === 'term' ? 'bg-indigo-700 hover:bg-indigo-800' : 'bg-blue-700 hover:bg-blue-800'} text-white py-3 font-bold text-sm flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all`}
+      >
+        <CheckCircle size={14} /> เลือกห้องนี้เพื่อจองทันที
+      </button>
+    </div>
+  )
+}
+
+// ─── Main Layout ─────────────────────────────────────────────────────────────
+function AppLayout({ step, setStep, navigate, location, bookingType, setBookingType, formProps, resultProps, confirmProps, onReset, embedded = false }) {
   const {
-    attendees, setAttendees, date, setDate,
-    startTime, setStartTime, duration, setDuration,
-    building, setBuilding, endTime, loading, handleSearch, error,
-    dayOfWeek, setDayOfWeek,
-    termStart, termEnd, termName,
-    academicYearBE, termNumber, customTermDates,
-    applyAcademicTerm, toggleCustomTermDates,
-    handleCustomTermStart, handleCustomTermEnd,
-    selectedEquipments, setSelectedEquipments,
-    equipmentPresets,
-    buildings,
+    attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration,
+    building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error,
+    dayOfWeek, setDayOfWeek, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings,
   } = formProps
-  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit,
-    similarRooms, onSelectSimilar } = resultProps
-  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success,
-    splitPlan, splitBookResult, onCancelSplit } = confirmProps
+  const { rooms, setSelectedRoom, setSplitPlan, similarRooms } = resultProps
+  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit } = confirmProps
 
   const isTermMode = bookingType === 'term'
-  const accentBg   = isTermMode ? 'bg-indigo-700' : 'bg-blue-700'
-  const accentHov  = isTermMode ? 'hover:bg-indigo-800' : 'hover:bg-blue-800'
-  const accentShadow = isTermMode ? 'shadow-indigo-200' : 'shadow-blue-200'
+  const accentBg = isTermMode ? 'from-indigo-600 to-violet-600' : 'from-blue-600 to-indigo-600'
+  const accentHov = isTermMode ? 'hover:from-indigo-700 hover:to-violet-700' : 'hover:from-blue-700 hover:to-indigo-700'
+  const buildingOptions = buildings.filter(b => {
+    const q = (buildingQuery || '').trim().toLowerCase()
+    if (!q) return true
+    return String(b.label || '').toLowerCase().includes(q)
+  })
+  const visibleRooms = rooms.slice(0, 3)
+  const visibleSimilarRooms = similarRooms.slice(0, 2)
+  const selectedBuildingLabel = buildings.find(b => b.code === building)?.label || 'ทั้งหมด'
+  const navItems = [
+    { key: 'home', icon: Home, label: 'Home', active: location === '/' || location === '/dashboard', onClick: () => navigate('/') },
+    { key: 'booking', icon: CalendarDays, label: 'Booking', active: location === '/search', onClick: () => navigate('/search') },
+  ]
+  const chipsSummary = [
+    { label: 'ประเภท', value: isTermMode ? 'ทั้งเทอม' : 'รายวัน', tone: isTermMode ? 'text-indigo-700' : 'text-blue-700' },
+    { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
+    { label: isTermMode ? 'วัน' : 'วันที่', value: isTermMode ? (dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : 'ยังไม่เลือก') : formatDateShort(date) },
+    { label: 'เวลา', value: startTime ? `${startTime} - ${endTime || '...'}` : 'ยังไม่เลือก' },
+    { label: 'อาคาร', value: selectedBuildingLabel },
+    { label: 'อุปกรณ์', value: `${selectedEquipments.length} รายการ` },
+  ]
 
   if (success) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+    <div className="min-h-screen w-full bg-[#F8FAFC] flex items-center justify-center px-4" style={{ fontFamily: "'Inter','Prompt','Sarabun',sans-serif" }}>
       <style>{ANIM}</style>
-      <div className="bg-white border border-blue-100 rounded-3xl p-12 text-center max-w-lg w-full shadow-2xl si">
-        <div className={`w-20 h-20 rounded-full ${accentBg} flex items-center justify-center mx-auto mb-6 shadow-xl ${accentShadow}`}>
-          <CheckCircle size={38} color="#fff" />
-        </div>
-        <div className="h-1 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-6" />
-        <p className="text-2xl font-extrabold text-slate-900 mb-2">จองสำเร็จแล้ว</p>
-        {splitBookResult ? (
-          <div className="text-left space-y-3 mb-4">
-            <p className="text-sm text-center text-indigo-700 font-semibold">จองสลับห้อง 2 ช่วงเรียบร้อย</p>
-            <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-xs">
-              <p className="font-bold text-violet-800">เทอมแรก · {splitBookResult.first_booking?.room_name}</p>
-              <p className="text-slate-600">{formatDateShort(splitBookResult.first_booking?.term_start)} – {formatDateShort(splitBookResult.first_booking?.term_end)}</p>
-            </div>
-            <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-xs">
-              <p className="font-bold text-violet-800">เทอมหลัง · {splitBookResult.second_booking?.room_name}</p>
-              <p className="text-slate-600">{formatDateShort(splitBookResult.second_booking?.term_start)} – {formatDateShort(splitBookResult.second_booking?.term_end)}</p>
-            </div>
-            <p className="text-sm text-slate-500 text-center">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
-          </div>
-        ) : (
-          <>
-            <p className={`text-lg font-bold mb-4 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
-            {isTermMode
-              ? (
-                <>
-                  <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
-                  {termStart && termEnd && (
-                    <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
-                  )}
-                  {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
-                </>
-              )
-              : <p className="text-sm text-slate-500">{formatDate(date)} · {startTime} – {endTime} น.</p>
-            }
-          </>
-        )}
-        <p className="text-sm text-slate-500 mt-1">{attendees} ผู้เข้าร่วม</p>
-        {!splitBookResult && bookingType !== 'term' && (
-          <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
-            <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
-            <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
-          </div>
-        )}
-        <button onClick={() => navigate('/')}
-          className={`mt-5 w-full ${accentBg} ${accentHov} text-white rounded-2xl py-4 font-bold text-sm transition-all shadow-lg ${accentShadow} active:scale-95`}>
-          กลับหน้าหลัก
-        </button>
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="min-h-screen bg-slate-100" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
-      <style>{ANIM}</style>
-
-      {/* Top bar */}
-      <div className={`${accentBg} shadow-lg shadow-blue-900/20`}>
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-4">
-          <button onClick={() => step === 1 ? navigate('/') : setStep(step - 1)}
-            className="flex items-center gap-2 text-white/80 hover:text-white text-sm font-medium transition-colors">
-            <ArrowLeft size={15} />
-            {step === 1 ? 'หน้าหลัก' : 'ย้อนกลับ'}
-          </button>
-          <div className="h-5 w-px bg-white/20" />
-          <div className="flex items-center gap-2">
-            <span className="bg-white/15 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-              {isTermMode ? <><BookOpen size={10} />ทั้งเทอม</> : <><Coffee size={10} />รายวัน</>}
-            </span>
-            <span className="text-white font-bold text-sm">
-              {step === 1 ? 'เลือกเงื่อนไข' : step === 2 ? `ผลการค้นหา · ${rooms.length} ห้อง` : 'ยืนยันการจอง'}
-            </span>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            {[1,2,3].map(s => (
-              <div key={s} className="flex items-center gap-1.5">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all
-                  ${step >= s ? 'bg-white text-blue-700' : 'bg-white/20 text-white/60'}`}>{s}</div>
-                <span className={`text-xs hidden lg:block transition-colors ${step >= s ? 'text-white' : 'text-white/50'}`}>
-                  {s === 1 ? 'เลือกเงื่อนไข' : s === 2 ? 'เลือกห้อง' : 'ยืนยัน'}
-                </span>
-                {s < 3 && <div className={`w-8 h-px ${step > s ? 'bg-white' : 'bg-white/25'}`} />}
-              </div>
-            ))}
+      <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)] overflow-hidden">
+        <div className={`h-36 bg-gradient-to-br ${accentBg} relative overflow-hidden`}>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.25),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.16),transparent_32%)]" />
+          <div className="absolute -right-8 -top-8 w-36 h-36 rounded-full bg-white/10 blur-2xl" />
+          <div className="absolute left-6 top-6 w-12 h-12 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white">
+            <CheckCircle size={24} />
           </div>
         </div>
-        <div className="h-0.5 bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-300" />
-      </div>
-
-      {error && (
-        <div className="max-w-7xl mx-auto px-6 pt-4">
-          <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl af">{error}</div>
-        </div>
-      )}
-
-      {/* ── STEP 1 ── */}
-      {step === 1 && (
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="grid grid-cols-3 gap-6">
-            <div className="col-span-2 space-y-5">
-
-              <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au">
-                <SectionLabel>ประเภทการจอง</SectionLabel>
-                <BookingTypeSelector value={bookingType} onChange={v => { setBookingType(v); setDayOfWeek(null) }} />
-                {isTermMode && (
-                  <div className="mt-3"><TermFilterBanner /></div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
-                <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au1">
-                  <SectionLabel icon={Users}>จำนวนผู้เข้าร่วม</SectionLabel>
-                  <div className="flex items-center gap-4 mb-4">
-                    <button onClick={() => setAttendees(Math.max(1, attendees - 1))}
-                      className="w-10 h-10 rounded-xl border-2 border-blue-100 bg-blue-50 text-blue-600 text-xl font-bold flex items-center justify-center hover:bg-blue-100 transition-all active:scale-90">−</button>
-                    <div className="flex-1 text-center">
-                      <span className="text-5xl font-extrabold text-slate-900">{attendees}</span>
-                      <span className="text-sm text-slate-400 ml-2">คน</span>
-                    </div>
-                    <button onClick={() => setAttendees(attendees + 1)}
-                      className={`w-10 h-10 rounded-xl ${accentBg} text-white text-xl font-bold flex items-center justify-center ${accentHov} shadow-sm ${accentShadow} active:scale-90`}>+</button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ATTENDEES_PRESETS.map(n => <Chip key={n} active={attendees === n} onClick={() => setAttendees(n)}>{n} คน</Chip>)}
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  {isTermMode ? (
-                    <div className="bg-white border border-indigo-100 rounded-2xl p-6 shadow-sm au2">
-                      <SectionLabel icon={Calendar}>วันในสัปดาห์</SectionLabel>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {DAYS_OF_WEEK.map(d => (
-                          <button key={d.value} onClick={() => setDayOfWeek(d.value)}
-                            className={`py-2.5 rounded-xl text-xs font-bold border-2 transition-all duration-150
-                              ${dayOfWeek === d.value
-                                ? 'bg-indigo-700 border-indigo-700 text-white shadow-sm'
-                                : 'bg-white border-indigo-100 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'}`}>
-                            {d.label}
-                          </button>
-                        ))}
-                      </div>
-                      {dayOfWeek != null && (
-                        <p className="mt-2 text-xs text-indigo-600 font-semibold">ทุก{getDayLabel(dayOfWeek)}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au2">
-                      <SectionLabel icon={Calendar}>วันที่</SectionLabel>
-                      <input type="date" value={date} min={new Date().toISOString().split('T')[0]}
-                        onChange={e => setDate(e.target.value)}
-                        className="w-full border-2 border-blue-100 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-blue-50/40 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all"
-                        style={{fontFamily:"inherit"}} />
-                    </div>
-                  )}
-
-                  <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
-                    <SectionLabel icon={MapPin}>อาคาร</SectionLabel>
-                    <div className="flex flex-wrap gap-1.5">
-                      {buildings.map(b => <Chip key={b.code} active={building === b.code} onClick={() => setBuilding(b.code)}>{b.label}</Chip>)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {isTermMode && (
-                <TermAcademicSelector
-                  academicYearBE={academicYearBE}
-                  termNumber={termNumber}
-                  termStart={termStart}
-                  termEnd={termEnd}
-                  termName={termName}
-                  customTermDates={customTermDates}
-                  onSelectYear={y => applyAcademicTerm(y, termNumber)}
-                  onSelectTerm={t => applyAcademicTerm(academicYearBE, t)}
-                  onToggleCustom={toggleCustomTermDates}
-                  onStartChange={handleCustomTermStart}
-                  onEndChange={handleCustomTermEnd}
-                />
-              )}
-
-              <div className={`bg-white rounded-2xl p-6 shadow-sm au3 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
-                <SectionLabel icon={Clock}>เวลา</SectionLabel>
-                <div className="grid grid-cols-8 gap-2 mb-4">
-                  {TIME_SLOTS.map(t => (
-                    <button key={t} onClick={() => setStartTime(t)}
-                      className={`py-2.5 rounded-xl text-xs font-semibold border-2 transition-all duration-150
-                        ${startTime === t
-                          ? `${accentBg} border-transparent text-white shadow-sm`
-                          : 'bg-white border-blue-100 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1"><Clock size={10} />ระยะเวลา</span>
-                  <div className="flex gap-1.5">
-                    {DURATIONS.map(d => <Chip key={d.hours} active={duration === d.hours} onClick={() => setDuration(d.hours)}>{d.label}</Chip>)}
-                  </div>
-                  {startTime && (
-                    <div className={`ml-auto ${accentBg} rounded-xl px-5 py-2 si`}>
-                      <span className="text-sm font-bold text-white">{startTime} – {endTime} น.</span>
-                      <span className="text-white/60 text-xs ml-3">
-                        {isTermMode && dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : formatDateShort(date)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── อุปกรณ์ที่ต้องการ ── */}
-              <div className={`bg-white rounded-2xl p-6 shadow-sm au4 border ${isTermMode ? 'border-indigo-100' : 'border-blue-100'}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <SectionLabel>อุปกรณ์ที่ต้องการ</SectionLabel>
-                  {selectedEquipments.length > 0 && (
-                    <button
-                      onClick={() => setSelectedEquipments([])}
-                      className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
-                    >
-                      <X size={11} />ล้างทั้งหมด
-                    </button>
-                  )}
-                </div>
-                <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} equipmentPresets={equipmentPresets} />
-                {selectedEquipments.length > 0 && (
-                  <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-                    <Filter size={11} className="text-blue-500 flex-shrink-0" />
-                    <p className="text-xs text-blue-600 font-semibold">
-                      กรองเฉพาะห้องที่มี: {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.label).join(', ')}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-            {/* Summary sidebar */}
-            <div className="au4">
-              <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm sticky top-20">
-                <p className="text-base font-bold text-slate-900 mb-1">สรุปการค้นหา</p>
-                <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-4" />
-                <div className="space-y-3 mb-6 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">ประเภท</span>
-                    <span className={`font-bold ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{isTermMode ? 'ทั้งเทอม' : 'รายวัน'}</span>
-                  </div>
-                  {isTermMode && (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">ห้อง</span>
-                        <span className="font-bold text-indigo-600 text-xs">เฉพาะห้องเรียน/Lecture</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">ชื่อเทอม</span>
-                        <span className="font-bold text-slate-800 text-xs truncate max-w-[120px]">{termName || '—'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">ช่วงเทอม</span>
-                        <span className="font-bold text-slate-800 text-xs">
-                          {termStart && termEnd ? `${formatDateShort(termStart)}–${formatDateShort(termEnd)}` : '—'}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-between"><span className="text-slate-500">ผู้เข้าร่วม</span><span className="font-bold text-slate-800">{attendees} คน</span></div>
-                  {isTermMode
-                    ? <div className="flex justify-between"><span className="text-slate-500">วัน</span><span className="font-bold text-slate-800">{dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : '—'}</span></div>
-                    : <div className="flex justify-between"><span className="text-slate-500">วันที่</span><span className="font-bold text-slate-800">{formatDateShort(date)}</span></div>
-                  }
-                  <div className="flex justify-between"><span className="text-slate-500">เวลา</span><span className="font-bold text-slate-800">{startTime ? `${startTime}–${endTime}` : '—'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">อาคาร</span><span className="font-bold text-slate-800">{buildings.find(b => b.code === building)?.label || 'ทั้งหมด'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">ขนาดห้อง</span><span className="font-bold text-slate-800">{attendees}–{attendees + CAPACITY_BUFFER} คน</span></div>
-                  {selectedEquipments.length > 0 && (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-slate-500">อุปกรณ์ที่ต้องการ</span>
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {selectedEquipments.map(k => {
-                          const eq = findPreset(equipmentPresets, k)
-                          return (
-                            <span key={k} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full px-2 py-0.5 text-xs font-semibold">
-                              {eq?.icon} {eq?.label}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <button onClick={handleSearch} disabled={loading}
-                  className={`w-full ${accentBg} ${accentHov} disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg ${accentShadow} transition-all active:scale-95 disabled:cursor-not-allowed`}>
-                  {loading
-                    ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />ค้นหา...</>
-                    : <><Search size={15} />ค้นหาห้องว่าง</>}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── STEP 2 ── */}
-      {step === 2 && (
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className={`${accentBg} rounded-2xl px-6 py-4 flex items-center justify-between mb-6 shadow-md ${accentShadow} au`}>
-            <div className="flex gap-6 items-center flex-wrap">
-              <span className="text-white font-bold">{attendees} คน</span>
-              {isTermMode
-                ? <span className="text-white/80 text-sm">ทุก{getDayLabel(dayOfWeek)}</span>
-                : <span className="text-white/80 text-sm">{formatDateShort(date)}</span>
-              }
-              <span className="text-white/80 text-sm">{startTime}–{endTime}</span>
-              {building && <span className="text-white/80 text-sm">{buildings.find(b=>b.code===building)?.label}</span>}
-              <span className="text-white/80 text-sm">จุ {attendees}–{attendees + CAPACITY_BUFFER} คน</span>
-              {isTermMode && termName && (
-                <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2.5 py-1">{termName}</span>
-              )}
-              {isTermMode && (
-                <span className="bg-white/15 text-white text-xs font-bold rounded-full px-2.5 py-1 flex items-center gap-1">
-                  <Filter size={10} />ห้องเรียน / Lecture เท่านั้น
-                </span>
-              )}
-              {selectedEquipments.length > 0 && (
-                <span className="bg-white/15 text-white text-xs font-bold rounded-full px-2.5 py-1 flex items-center gap-1">
-                  <Filter size={10} />
-                  {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.icon).join(' ')}
-                  {selectedEquipments.length} อุปกรณ์
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1.5">
-              <Zap size={11} />AI Forecast
-            </div>
-          </div>
-
-          <div className="grid grid-cols-4 gap-6">
-            <SummaryTiles rooms={rooms} layout="vertical" />
-            <div className="col-span-3 space-y-3 au2">
-              {rooms.length === 0 ? (
-                <div className="bg-white border border-blue-100 rounded-2xl py-10 px-6 text-center">
-                  <Building2 size={40} className="text-blue-200 mx-auto mb-4" />
-                  <p className="font-semibold text-blue-700 mb-2">
-                    {isTermMode ? 'ไม่พบห้องว่างทั้งเทอม' : 'ไม่พบห้องว่างที่เหมาะสม'}
-                  </p>
-                  {isTermMode ? (
-                    <SplitSuggestionList suggestions={splitSuggestions} onSelect={onSelectSplit} />
-                  ) : (
-                    <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} />
-                  )}
-                  <p className="text-xs text-slate-400 mb-4 mt-4">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
-                  <button onClick={() => setStep(1)} className="text-sm text-blue-600 hover:underline">← ค้นหาใหม่</button>
-                </div>
-              ) : (
-                <>
-                  {rooms.map((room, idx) => (
-                    <RoomCard key={room.id} room={room} idx={idx} isTermMode={isTermMode}
-                      selectedEquipments={selectedEquipments}
-                      equipmentPresets={equipmentPresets}
-                      onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
-                  ))}
-                  {!isTermMode && similarRooms.length > 0 && (
-                    <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} />
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── STEP 3 ── */}
-      {step === 3 && (splitPlan || selectedRoom) && (() => {
-        if (splitPlan) {
-          const fh = splitPlan.first_half
-          const sh = splitPlan.second_half
-          return (
-            <div className="max-w-3xl mx-auto px-6 py-8">
-              <div className="mb-4 au">
-                <button type="button" onClick={onCancelSplit} className="text-sm text-slate-500 hover:text-indigo-700">← กลับเลือกแผนอื่น</button>
-              </div>
-              <div className="bg-white border border-indigo-100 rounded-2xl p-6 shadow-sm au1">
-                <SectionLabel icon={BookOpen}>ยืนยันจองสลับห้อง (2 ช่วง)</SectionLabel>
-                <div className="h-0.5 bg-gradient-to-r from-violet-300 to-indigo-500 rounded-full mb-4" />
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
-                    <p className="text-xs font-bold text-violet-800 mb-1">เทอมแรก</p>
-                    <p className="text-lg font-bold text-slate-900">{fh.room_name}</p>
-                    <p className="text-xs text-slate-500">{formatDateShort(fh.term_start)} – {formatDateShort(fh.term_end)}</p>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                    <p className="text-xs font-bold text-indigo-800 mb-1">เทอมหลัง</p>
-                    <p className="text-lg font-bold text-slate-900">{sh.room_name}</p>
-                    <p className="text-xs text-slate-500">{formatDateShort(sh.term_start)} – {formatDateShort(sh.term_end)}</p>
-                  </div>
-                </div>
-                <div className="border border-blue-50 rounded-xl overflow-hidden mb-4 text-sm">
-                  {[
-                    { label: 'วัน', value: `ทุก${getDayLabel(dayOfWeek)}` },
-                    { label: 'เวลา', value: `${startTime} – ${endTime} น.` },
-                    { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
-                    { label: 'เทอม', value: termName || '—' },
-                  ].map((r, i) => (
-                    <div key={i} className="flex justify-between px-4 py-2.5 border-b border-blue-50 last:border-0">
-                      <span className="text-slate-500 text-xs">{r.label}</span>
-                      <span className="font-semibold text-slate-800">{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-                <label className="block text-xs font-bold text-slate-600 mb-2">ชื่อวิชา / กิจกรรม *</label>
-                <input type="text" autoFocus value={title} onChange={e => setTitle(e.target.value)}
-                  placeholder="เช่น วิชา CS101"
-                  className="w-full border-2 border-indigo-100 rounded-xl px-4 py-3 text-sm mb-4 outline-none focus:border-indigo-500" />
-                <button type="button" onClick={handleBook} disabled={bookingLoading || !title.trim()}
-                  className="w-full bg-indigo-700 hover:bg-indigo-800 disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold flex items-center justify-center gap-2">
-                  {bookingLoading ? 'กำลังจอง 2 ช่วง...' : 'ยืนยันจองทั้ง 2 ช่วง'}
-                </button>
-              </div>
-            </div>
-          )
-        }
-
-        const level = getDemandLevel(selectedRoom)
-        const cfg   = FORECAST_CONFIG[level]
-        return (
-          <div className="max-w-3xl mx-auto px-6 py-8">
-            <div className="mb-6 au"><CheckInReminder startTime={startTime} /></div>
-            <div className="grid grid-cols-2 gap-6">
-
-              {/* left */}
-              <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm au1">
-                <SectionLabel icon={Building2}>ห้องที่เลือก</SectionLabel>
-                <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-4" />
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <p className="text-lg font-bold text-slate-900">{selectedRoom.name}</p>
-                    <RoomStatusBadge status={selectedRoom.status} />
-                  </div>
-                  <p className="text-xs text-slate-500">{selectedRoom.building_name} · ชั้น {selectedRoom.floor} · {selectedRoom.room_type}</p>
-                  {selectedRoom.description && <p className="text-xs text-slate-400 mt-1">{selectedRoom.description}</p>}
-                </div>
-
-                {/* booking detail table */}
-                <div className="border-2 border-blue-50 rounded-xl overflow-hidden mb-4">
-                  {[
-                    { label: 'ประเภท',      value: isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน' },
-                    isTermMode
-                      ? { label: 'วัน',       value: `ทุก${getDayLabel(dayOfWeek)}` }
-                      : { label: 'วันที่',    value: formatDate(date) },
-                    { label: 'เวลา',         value: `${startTime} – ${endTime} น.` },
-                    { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
-                    { label: 'ความจุห้อง',  value: `${selectedRoom.capacity} คน` },
-                    ...(isTermMode && termName ? [{ label: 'เทอม', value: termName }] : []),
-                    ...(isTermMode && termStart && termEnd
-                      ? [{ label: 'ช่วงเทอม', value: `${formatDateShort(termStart)} – ${formatDateShort(termEnd)}` }]
-                      : []),
-                  ].map((r, i) => (
-                    <div key={i} className="flex justify-between px-4 py-3 bg-white border-b border-blue-50 last:border-0">
-                      <span className="text-xs text-slate-500">{r.label}</span>
-                      <span className="text-sm font-semibold text-slate-800">{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* อุปกรณ์ในห้อง — highlight ตามที่เลือก */}
-                {selectedRoom.facilities?.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                      <span>🔧</span>อุปกรณ์ในห้อง
-                      <span className="text-slate-300 font-normal">({selectedRoom.facilities.length} รายการ)</span>
-                      {selectedEquipments.length > 0 && (
-                        <span className="text-blue-500 font-semibold normal-case tracking-normal">· ไฮไลต์อุปกรณ์ที่เลือก</span>
-                      )}
-                    </p>
-                    <FacilityTags
-                      facilities={selectedRoom.facilities}
-                      compact={false}
-                      highlight={selectedEquipments}
-                      equipmentPresets={equipmentPresets}
-                    />
-                  </div>
-                )}
-
-                {cfg.badge !== '—' && (
-                  <div className={`flex items-center gap-2.5 rounded-xl px-4 py-3 ${cfg.pillCls}`}>
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cfg.dotColor }} />
-                    <span className={`text-xs font-bold ${cfg.textCls}`}>{cfg.badge}</span>
-                    <span className={`text-xs ${cfg.subCls} opacity-80`}>— {cfg.sub}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* right */}
-              <div className="space-y-5 au2">
-                <div className="bg-white border border-blue-100 rounded-2xl p-6 shadow-sm">
-                  <SectionLabel>{isTermMode ? 'ชื่อวิชา / กิจกรรม' : 'หัวข้อการประชุม'}</SectionLabel>
-                  <input type="text" autoFocus
-                    placeholder={isTermMode ? 'เช่น วิชา CS101, กิจกรรมชมรม...' : 'เช่น ประชุมกลุ่ม, นำเสนองาน...'}
-                    value={title} onChange={e => setTitle(e.target.value)}
-                    className="w-full border-2 border-blue-100 rounded-xl px-4 py-3 text-sm text-slate-800 bg-blue-50/40 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all placeholder:text-slate-400"
-                    style={{fontFamily:"inherit"}} />
-                </div>
-                <button onClick={handleBook} disabled={bookingLoading}
-                  className={`w-full ${accentBg} ${accentHov} disabled:bg-slate-400 text-white rounded-2xl py-5 font-bold text-base flex items-center justify-center gap-3 shadow-xl ${accentShadow} transition-all active:scale-95 disabled:cursor-not-allowed`}>
-                  {bookingLoading
-                    ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />กำลังจอง...</>
-                    : <><CheckCircle size={18} />{isTermMode ? 'ยืนยันจองทั้งเทอม' : 'ยืนยันการจอง'}</>}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MOBILE LAYOUT
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function MobileLayout({ step, setStep, navigate, bookingType, setBookingType, formProps, resultProps, confirmProps }) {
-  const {
-    attendees, setAttendees, date, setDate,
-    startTime, setStartTime, duration, setDuration,
-    building, setBuilding, endTime, loading, handleSearch, error,
-    dayOfWeek, setDayOfWeek,
-    termStart, termEnd, termName,
-    academicYearBE, termNumber, customTermDates,
-    applyAcademicTerm, toggleCustomTermDates,
-    handleCustomTermStart, handleCustomTermEnd,
-    selectedEquipments, setSelectedEquipments,
-    equipmentPresets,
-    buildings,
-  } = formProps
-  const { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit,
-    similarRooms, onSelectSimilar } = resultProps
-  const { selectedRoom, title, setTitle, bookingLoading, handleBook, success,
-    splitPlan, splitBookResult, onCancelSplit } = confirmProps
-
-  const isTermMode   = bookingType === 'term'
-  const accentBg     = isTermMode ? 'bg-indigo-700' : 'bg-blue-700'
-  const accentHov    = isTermMode ? 'hover:bg-indigo-800' : 'hover:bg-blue-800'
-  const accentShadow = isTermMode ? 'shadow-indigo-200' : 'shadow-blue-200'
-
-  if (success) return (
-    <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4"
-      style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
-      <style>{ANIM}</style>
-      <div className="bg-white border border-blue-100 rounded-3xl p-8 text-center max-w-sm w-full shadow-xl si">
-        <div className={`w-16 h-16 rounded-full ${accentBg} flex items-center justify-center mx-auto mb-5 shadow-lg ${accentShadow}`}>
-          <CheckCircle size={30} color="#fff" />
-        </div>
-        <div className="h-1 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-5" />
-        <p className="text-xl font-extrabold text-slate-900 mb-1.5">จองสำเร็จแล้ว</p>
-        {splitBookResult ? (
-          <div className="text-left space-y-2 mb-3 text-xs">
-            <p className="text-center text-indigo-700 font-semibold text-sm">จองสลับห้อง 2 ช่วง</p>
-            <div className="bg-violet-50 rounded-lg p-2 border border-violet-100">
-              <p className="font-bold">เทอมแรก · {splitBookResult.first_booking?.room_name}</p>
-              <p className="text-slate-500">{formatDateShort(splitBookResult.first_booking?.term_start)} – {formatDateShort(splitBookResult.first_booking?.term_end)}</p>
-            </div>
-            <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
-              <p className="font-bold">เทอมหลัง · {splitBookResult.second_booking?.room_name}</p>
-              <p className="text-slate-500">{formatDateShort(splitBookResult.second_booking?.term_start)} – {formatDateShort(splitBookResult.second_booking?.term_end)}</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className={`text-base font-bold mb-3 ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
-            {isTermMode
-              ? (
-                <>
-                  <p className="text-sm text-slate-500">ทุก{getDayLabel(dayOfWeek)} · {startTime} – {endTime} น.</p>
-                  {termStart && termEnd && (
-                    <p className="text-xs text-slate-400 mt-1">{formatDateShort(termStart)} – {formatDateShort(termEnd)}</p>
-                  )}
-                  {termName && <p className="text-xs text-indigo-600 font-semibold mt-1">{termName}</p>}
-                </>
-              )
-              : <p className="text-sm text-slate-500">{formatDateShort(date)} · {startTime} – {endTime} น.</p>
-            }
-          </>
-        )}
-        <p className="text-sm text-slate-500 mt-0.5">{attendees} คน</p>
-        <div className="mt-5 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-left">
-          <p className="text-amber-800 text-xs font-bold mb-0.5">⚠️ อย่าลืม! กด Check-in ภายใน 15 นาที</p>
-          <p className="text-amber-700 text-xs">หลังเวลา {startTime} น. มิฉะนั้นการจองจะถูกยกเลิกอัตโนมัติ</p>
-        </div>
-        <button onClick={() => navigate('/')}
-          className={`mt-5 w-full ${accentBg} text-white rounded-xl py-3.5 text-sm font-bold shadow-md ${accentShadow} active:scale-95`}>
-          กลับหน้าหลัก
-        </button>
-      </div>
-    </div>
-  )
-
-  const stepTitle = step === 1 ? 'ค้นหาห้อง'
-                  : step === 2 ? `ผลการค้นหา · ${rooms.length} ห้อง`
-                  : 'ยืนยันการจอง'
-
-  return (
-    <div className="min-h-screen bg-blue-50" style={{fontFamily:"'Sarabun','Noto Sans Thai',sans-serif"}}>
-      <style>{ANIM}</style>
-
-      <div className={`${accentBg} sticky top-0 z-50 shadow-lg shadow-blue-900/20`}>
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => step === 1 ? navigate('/') : setStep(step - 1)}
-            className="w-8 h-8 rounded-lg border border-white/20 bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors flex-shrink-0">
-            <ArrowLeft size={15} />
-          </button>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-white leading-tight">{stepTitle}</p>
-            <p className="text-xs text-white/60">{isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน'} · ขั้นตอนที่ {step}/3</p>
-          </div>
-          <div className="flex gap-1.5">
-            {[1,2,3].map(s => (
-              <div key={s} className="h-1.5 rounded-full transition-all duration-300"
-                style={{ width: s === step ? 20 : 6, background: step >= s ? '#fff' : 'rgba(255,255,255,.25)' }} />
-            ))}
-          </div>
-        </div>
-        <div className="h-0.5 bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-300" />
-      </div>
-
-      <div className="max-w-lg mx-auto px-4 py-4 pb-12 space-y-3">
-        {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl af">{error}</div>}
-
-        {/* ── STEP 1 ── */}
-        {step === 1 && (
-          <>
-            <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au">
-              <SectionLabel>ประเภทการจอง</SectionLabel>
-              <BookingTypeSelector value={bookingType} onChange={v => { setBookingType(v); setDayOfWeek(null) }} compact />
-              {isTermMode && (
-                <div className="mt-3"><TermFilterBanner compact /></div>
-              )}
-            </div>
-
-            <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au1">
-              <SectionLabel icon={Users}>จำนวนผู้เข้าร่วม</SectionLabel>
-              <div className="flex items-center gap-4 mb-4">
-                <button onClick={() => setAttendees(Math.max(1, attendees - 1))}
-                  className="w-10 h-10 rounded-xl border-2 border-blue-100 bg-blue-50 text-blue-600 text-xl font-bold flex items-center justify-center hover:bg-blue-100 transition-all active:scale-90">−</button>
-                <div className="flex-1 text-center">
-                  <span className="text-5xl font-extrabold text-slate-900">{attendees}</span>
-                  <span className="text-sm text-slate-400 ml-2">คน</span>
-                </div>
-                <button onClick={() => setAttendees(attendees + 1)}
-                  className={`w-10 h-10 rounded-xl ${accentBg} text-white text-xl font-bold flex items-center justify-center ${accentHov} shadow-sm ${accentShadow} active:scale-90`}>+</button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {ATTENDEES_PRESETS.map(n => <Chip key={n} active={attendees === n} onClick={() => setAttendees(n)}>{n} คน</Chip>)}
-              </div>
-            </div>
-
-            {isTermMode ? (
-              <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au2">
-                <SectionLabel icon={Calendar}>วันในสัปดาห์</SectionLabel>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {DAYS_OF_WEEK.map(d => (
-                    <button key={d.value} onClick={() => setDayOfWeek(d.value)}
-                      className={`py-2.5 rounded-xl text-xs font-bold border-2 transition-all duration-150
-                        ${dayOfWeek === d.value
-                          ? 'bg-indigo-700 border-indigo-700 text-white shadow-sm'
-                          : 'bg-white border-indigo-100 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'}`}>
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-                {dayOfWeek != null && (
-                  <p className="mt-2 text-xs text-indigo-600 font-semibold">ทุก{getDayLabel(dayOfWeek)}</p>
-                )}
-              </div>
-            ) : (
-              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au2">
-                <SectionLabel icon={Calendar}>วันที่</SectionLabel>
-                <input type="date" value={date} min={new Date().toISOString().split('T')[0]}
-                  onChange={e => setDate(e.target.value)}
-                  className="w-full border-2 border-blue-100 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-blue-50/40 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all"
-                  style={{fontFamily:"inherit"}} />
-              </div>
-            )}
-
-            {isTermMode && (
-              <TermAcademicSelector
-                compact
-                academicYearBE={academicYearBE}
-                termNumber={termNumber}
-                termStart={termStart}
-                termEnd={termEnd}
-                termName={termName}
-                customTermDates={customTermDates}
-                onSelectYear={y => applyAcademicTerm(y, termNumber)}
-                onSelectTerm={t => applyAcademicTerm(academicYearBE, t)}
-                onToggleCustom={toggleCustomTermDates}
-                onStartChange={handleCustomTermStart}
-                onEndChange={handleCustomTermEnd}
-              />
-            )}
-
-            <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
-              <SectionLabel icon={Clock}>เวลาเริ่มต้น</SectionLabel>
-              <div className="grid grid-cols-4 gap-1.5 mb-4">
-                {TIME_SLOTS.map(t => (
-                  <button key={t} onClick={() => setStartTime(t)}
-                    className={`py-2.5 rounded-xl text-xs font-semibold border-2 transition-all duration-150
-                      ${startTime === t
-                        ? `${accentBg} border-transparent text-white shadow-sm`
-                        : 'bg-white border-blue-100 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2.5 flex items-center gap-1.5"><Clock size={10} />ระยะเวลา</p>
-              <div className="flex gap-1.5">
-                {DURATIONS.map(d => <Chip key={d.hours} active={duration === d.hours} onClick={() => setDuration(d.hours)} className="flex-1 justify-center">{d.label}</Chip>)}
-              </div>
-              {startTime && (
-                <div className={`mt-3 ${accentBg} rounded-xl px-4 py-3 flex justify-between items-center si`}>
-                  <span className="text-sm font-bold text-white">{startTime} – {endTime} น.</span>
-                  <span className="text-xs text-white/60">
-                    {isTermMode && dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : formatDateShort(date)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
-              <SectionLabel icon={MapPin}>อาคาร</SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {buildings.map(b => <Chip key={b.code} active={building === b.code} onClick={() => setBuilding(b.code)}>{b.label}</Chip>)}
-              </div>
-            </div>
-
-            {/* ── อุปกรณ์ที่ต้องการ (mobile) ── */}
-            <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au3">
-              <div className="flex items-center justify-between mb-3">
-                <SectionLabel>อุปกรณ์ที่ต้องการ</SectionLabel>
-                {selectedEquipments.length > 0 && (
-                  <button
-                    onClick={() => setSelectedEquipments([])}
-                    className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
-                  >
-                    <X size={11} />ล้าง
-                  </button>
-                )}
-              </div>
-              <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} compact equipmentPresets={equipmentPresets} />
-              {selectedEquipments.length > 0 && (
-                <div className="mt-2.5 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-                  <Filter size={10} className="text-blue-500 flex-shrink-0" />
-                  <p className="text-xs text-blue-600 font-semibold">
-                    มี: {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.label).join(', ')}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <button onClick={handleSearch} disabled={loading}
-              className={`au4 w-full ${accentBg} ${accentHov} disabled:bg-slate-400 text-white rounded-2xl py-4 text-sm font-bold flex items-center justify-center gap-2.5 shadow-lg ${accentShadow} transition-all active:scale-95 disabled:cursor-not-allowed`}>
-              {loading
-                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />ค้นหา...</>
-                : <><Search size={15} />ค้นหาห้องว่าง</>}
+        <div className="p-8 -mt-10">
+          <div className="rounded-[24px] bg-white border border-slate-200 shadow-sm p-6">
+            <p className="text-xs font-bold uppercase tracking-[0.28em] text-slate-400 mb-2">Booking complete</p>
+            <h2 className="text-2xl font-bold text-slate-900">จองสำเร็จแล้ว</h2>
+            <p className={`mt-3 text-lg font-semibold ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              {isTermMode ? `ทุก${getDayLabel(dayOfWeek)} · ${startTime} - ${endTime} น.` : `${formatDate(date)} · ${startTime} - ${endTime} น.`}
+            </p>
+            <button
+              onClick={() => navigate('/')}
+              className={`mt-6 w-full rounded-2xl py-3.5 text-sm font-bold text-white bg-gradient-to-r ${accentBg} shadow-lg shadow-blue-200/70 hover:shadow-xl transition-all`}
+            >
+              กลับหน้าหลัก
             </button>
-          </>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const showChrome = !embedded
+
+  return (
+    <div className="min-h-screen w-full bg-[#F8FAFC] text-slate-900 overflow-hidden" style={{ fontFamily: "'Inter','Prompt','Sarabun',sans-serif" }}>
+      <style>{ANIM}</style>
+      <div className="min-h-screen flex">
+        {showChrome && (
+        <aside className="hidden xl:flex w-24 flex-col items-center py-5 border-r border-slate-200/80 bg-white/75 backdrop-blur-xl">
+          <div className="w-12 h-12 rounded-[20px] bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-200">
+            <LayoutDashboard size={22} />
+          </div>
+          <div className="mt-6 flex flex-col gap-2.5 w-full px-3">
+            {navItems.map(item => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={item.onClick}
+                  className={`w-full rounded-[20px] px-3 py-3 border transition-all ${item.active ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-transparent text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+                >
+                  <Icon size={22} className="mx-auto" />
+                  <span className="sr-only">{item.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </aside>
         )}
 
-        {/* ── STEP 2 ── */}
-        {step === 2 && (
-          <>
-            <div className={`${accentBg} rounded-2xl px-4 py-3 flex items-center justify-between flex-wrap gap-2 shadow-md ${accentShadow} au`}>
-              <div className="flex gap-3 flex-wrap items-center text-sm">
-                <span className="font-bold text-white">{attendees} คน</span>
-                {isTermMode
-                  ? <span className="text-white/80 text-xs">ทุก{getDayLabel(dayOfWeek)}</span>
-                  : <span className="text-white/80 text-xs">{formatDateShort(date)}</span>
-                }
-                <span className="text-white/80 text-xs">{startTime}–{endTime}</span>
-                <span className="text-white/80 text-xs">จุ {attendees}–{attendees + CAPACITY_BUFFER} คน</span>
-                {isTermMode && (
-                  <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2 py-0.5 flex items-center gap-1">
-                    <Filter size={9} />ห้องเรียน/Lecture
-                  </span>
-                )}
-                {selectedEquipments.length > 0 && (
-                  <span className="bg-white/15 text-white text-xs font-semibold rounded-full px-2 py-0.5 flex items-center gap-1">
-                    <Filter size={9} />
-                    {selectedEquipments.map(k => findPreset(equipmentPresets, k)?.icon).join('')}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 bg-yellow-300 text-yellow-900 text-xs font-bold rounded-full px-3 py-1">
-                <Zap size={10} />AI
-              </div>
-            </div>
-
-            {rooms.length > 0 && <SummaryTiles rooms={rooms} layout="grid" />}
-
-            {rooms.length === 0 ? (
-              <div className="bg-white border border-blue-100 rounded-2xl py-10 px-4 text-center au">
-                <Building2 size={32} className="text-blue-200 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-blue-700 mb-1">
-                  {isTermMode ? 'ไม่พบห้องว่างทั้งเทอม' : 'ไม่พบห้องว่างที่เหมาะสม'}
-                </p>
-                {isTermMode ? (
-                  <SplitSuggestionList suggestions={splitSuggestions} onSelect={onSelectSplit} />
-                ) : (
-                  <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} compact />
-                )}
-                <p className="text-xs text-slate-400 mb-3 mt-3">สำหรับ {attendees}–{attendees + CAPACITY_BUFFER} คน</p>
-                <button onClick={() => setStep(1)} className="text-xs text-blue-600 hover:underline">← ค้นหาใหม่</button>
-              </div>
-            ) : (
-              <>
-                {rooms.map((room, idx) => (
-                  <RoomCard key={room.id} room={room} idx={idx} compact isTermMode={isTermMode}
-                    selectedEquipments={selectedEquipments}
-                    equipmentPresets={equipmentPresets}
-                    onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }} />
-                ))}
-                {!isTermMode && similarRooms.length > 0 && (
-                  <DynamicSimilarList rooms={similarRooms} onSelect={onSelectSimilar} compact />
-                )}
-              </>
-            )}
-          </>
-        )}
-
-        {/* ── STEP 3 ── */}
-        {step === 3 && (splitPlan || selectedRoom) && (() => {
-          if (splitPlan) {
-            const fh = splitPlan.first_half
-            const sh = splitPlan.second_half
-            return (
-              <>
-                <button type="button" onClick={onCancelSplit} className="text-xs text-slate-500 mb-2">← กลับเลือกแผน</button>
-                <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm au1">
-                  <SectionLabel icon={BookOpen}>ยืนยันจองสลับห้อง</SectionLabel>
-                  <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                    <div className="bg-violet-50 rounded-lg p-2 border border-violet-100">
-                      <p className="font-bold text-violet-800">เทอมแรก</p>
-                      <p className="font-semibold">{fh.room_name}</p>
-                    </div>
-                    <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
-                      <p className="font-bold text-indigo-800">เทอมหลัง</p>
-                      <p className="font-semibold">{sh.room_name}</p>
-                    </div>
+        <div className="flex-1 min-w-0 flex flex-col">
+          {showChrome && (
+          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+            <div className="px-4 sm:px-6 lg:px-8 py-2.5">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-[18px] bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-200 shrink-0">
+                    <Building2 size={20} />
                   </div>
-                  <input type="text" value={title} onChange={e => setTitle(e.target.value)}
-                    placeholder="ชื่อวิชา / กิจกรรม *"
-                    className="w-full border-2 border-indigo-100 rounded-xl px-3 py-2.5 text-sm mb-3" />
-                  <button type="button" onClick={handleBook} disabled={bookingLoading || !title.trim()}
-                    className="w-full bg-indigo-700 text-white rounded-xl py-3.5 text-sm font-bold disabled:bg-slate-400">
-                    {bookingLoading ? 'กำลังจอง...' : 'ยืนยันจองทั้ง 2 ช่วง'}
+                  <div className="min-w-0">
+                    <p className="text-base font-bold leading-tight truncate">จองห้องประชุม</p>
+                    <p className="text-xs text-slate-500 truncate">ระบบจองห้องประชุมออนไลน์</p>
+                  </div>
+                </div>
+
+                  <div className="hidden lg:flex flex-1 justify-center">
+                    <div className="flex items-center gap-2.5 rounded-full border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm">
+                    {[
+                      { n: 1, label: 'เลือกเงื่อนไข' },
+                      { n: 2, label: 'เลือกห้องประชุม' },
+                      { n: 3, label: 'ยืนยันการจอง' },
+                    ].map((item, index) => (
+                      <div key={item.n} className="flex items-center gap-3">
+                        <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold ${step >= item.n ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-500'}`}>
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${step >= item.n ? 'bg-white/15' : 'bg-white text-slate-500'}`}>{item.n}</span>
+                          {item.label}
+                        </div>
+                        {index < 2 && <span className="w-10 h-px bg-slate-200" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  <button type="button" className="w-10 h-10 rounded-2xl border border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-colors flex items-center justify-center relative">
+                    <Bell size={17} />
+                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500" />
+                  </button>
+                  <button type="button" className="hidden sm:flex items-center gap-3 rounded-[20px] border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-200 to-slate-300" />
+                    <div className="text-left">
+                      <p className="text-sm font-semibold leading-tight">ผู้ใช้ระบบ</p>
+                      <p className="text-xs text-slate-500 leading-tight">Meeting Room</p>
+                    </div>
+                    <ChevronDown size={16} className="text-slate-400" />
                   </button>
                 </div>
-              </>
-            )
-          }
+              </div>
+            </div>
+          </header>
+          )}
 
-          const level = getDemandLevel(selectedRoom)
-          const cfg   = FORECAST_CONFIG[level]
-          return (
-            <>
-              <div className="au"><CheckInReminder startTime={startTime} compact /></div>
-
-              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au1">
-                <SectionLabel icon={Building2}>ห้องที่เลือก</SectionLabel>
-                <div className="h-0.5 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-full mb-4" />
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                    <p className="text-base font-bold text-slate-900">{selectedRoom.name}</p>
-                    <RoomStatusBadge status={selectedRoom.status} />
-                  </div>
-                  <p className="text-xs text-slate-500">{selectedRoom.building_name} · ชั้น {selectedRoom.floor} · {selectedRoom.room_type}</p>
-                  {selectedRoom.description && <p className="text-xs text-slate-400 mt-1">{selectedRoom.description}</p>}
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-6 lg:px-8 py-3">
+            <div className="max-w-[1600px] mx-auto w-full min-h-0">
+              {error && (
+                <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm au">
+                  {error}
                 </div>
+              )}
 
-                {/* booking detail table */}
-                <div className="border-2 border-blue-50 rounded-xl overflow-hidden mb-4">
-                  {[
-                    { label: 'ประเภท',      value: isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน' },
-                    isTermMode
-                      ? { label: 'วัน',       value: `ทุก${getDayLabel(dayOfWeek)}` }
-                      : { label: 'วันที่',    value: formatDate(date) },
-                    { label: 'เวลา',         value: `${startTime}–${endTime} น.` },
-                    { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
-                    { label: 'ความจุห้อง',  value: `${selectedRoom.capacity} คน` },
-                    ...(isTermMode && termName ? [{ label: 'เทอม', value: termName }] : []),
-                    ...(isTermMode && termStart && termEnd
-                      ? [{ label: 'ช่วงเทอม', value: `${formatDateShort(termStart)} – ${formatDateShort(termEnd)}` }]
-                      : []),
-                  ].map((r, i) => (
-                    <div key={i} className="flex justify-between px-4 py-2.5 bg-white border-b border-blue-50 last:border-0">
-                      <span className="text-xs text-slate-500">{r.label}</span>
-                      <span className="text-sm font-semibold text-slate-800">{r.value}</span>
+              {step === 1 && (
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px] min-h-0">
+                  <div className="space-y-3 min-h-0">
+                    <section className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] overflow-hidden au">
+                      <div className="px-4 py-2 border-b border-slate-100 bg-gradient-to-r from-blue-50 via-white to-indigo-50">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-400 mb-1">Booking Type</p>
+                        <h2 className="text-base font-bold text-slate-900">ประเภทการจอง</h2>
+                        <p className="mt-0.5 text-xs text-slate-500">เลือกรูปแบบที่ตรงกับงานของคุณ</p>
+                      </div>
+                      <div className="p-3">
+                        <BookingTypeSelector value={bookingType} onChange={v => { setBookingType(v); setDayOfWeek(null) }} />
+                      </div>
+                    </section>
+
+                    <section className="grid gap-3 lg:grid-cols-2 min-h-0">
+                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3 au1">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Participants</p>
+                            <h3 className="text-base font-bold text-slate-900">ผู้เข้าร่วม</h3>
+                          </div>
+                          <div className="rounded-2xl bg-blue-50 px-4 py-1.5 text-right border border-blue-100">
+                            <p className="text-[11px] text-slate-500">จำนวนที่เลือก</p>
+                            <p className="text-xl font-bold text-blue-700 leading-none">{attendees}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between rounded-[18px] border border-slate-200 bg-slate-50/80 px-4 py-2 mb-2.5">
+                          <button onClick={() => setAttendees(Math.max(1, attendees - 1))} className="w-9 h-9 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:border-blue-200 hover:text-blue-700 transition-colors flex items-center justify-center text-2xl font-light shadow-sm">−</button>
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-slate-900 leading-none">{attendees}</p>
+                            <p className="text-sm text-slate-500 mt-1">คน</p>
+                          </div>
+                          <button onClick={() => setAttendees(attendees + 1)} className="w-9 h-9 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:shadow-blue-200 transition-all flex items-center justify-center text-2xl font-light">+</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ATTENDEES_PRESETS.map(n => (
+                            <button key={n} onClick={() => setAttendees(n)} className={`min-w-12 rounded-full px-3 py-1.5 text-sm font-semibold border transition-all ${attendees === n ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'}`}>
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3 au2">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Calendar</p>
+                        <h3 className="text-base font-bold text-slate-900 mb-3">{isTermMode ? 'วันในสัปดาห์' : 'วันที่'}</h3>
+                        {isTermMode ? (
+                          <div className="grid grid-cols-7 gap-1.5">
+                            {DAYS_OF_WEEK.map(d => (
+                              <button
+                                key={d.value}
+                                onClick={() => setDayOfWeek(d.value)}
+                                className={`rounded-2xl border px-2 py-2.5 text-sm font-semibold transition-all ${dayOfWeek === d.value ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
+                              >
+                                <span className="block text-[11px] opacity-80">{d.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-2">
+                            <input
+                              type="date"
+                              value={date}
+                              min={new Date().toISOString().split('T')[0]}
+                              onChange={e => setDate(e.target.value)}
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="grid gap-4 lg:grid-cols-2 min-h-0">
+                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3.5 au2">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Building Selection</p>
+                            <h3 className="text-base font-bold text-slate-900">อาคาร / ห้อง</h3>
+                          </div>
+                          <MapPin size={18} className="text-blue-600" />
+                        </div>
+                        <div className="relative mb-2.5">
+                          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={buildingQuery || ''}
+                            onChange={e => setBuildingQuery(e.target.value)}
+                            placeholder="ค้นหาอาคาร"
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                          />
+                        </div>
+                        <div className="max-h-36 overflow-hidden pr-1">
+                          <div className="flex flex-wrap gap-1.5">
+                            {buildingOptions.map(b => (
+                              <button
+                                key={b.code}
+                                onClick={() => setBuilding(b.code)}
+                                className={`rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-all ${building === b.code ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
+                              >
+                                {b.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3.5 au3">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Time Selection</p>
+                            <h3 className="text-base font-bold text-slate-900">เวลา และ ระยะเวลา</h3>
+                          </div>
+                          <Clock size={18} className="text-blue-600" />
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                          {TIME_SLOTS.map(t => (
+                            <button
+                              key={t}
+                              onClick={() => setStartTime(t)}
+                              className={`rounded-2xl border px-3 py-2.5 text-sm font-semibold transition-all ${startTime === t ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2.5">
+                          <p className="mb-3 text-sm font-semibold text-slate-600">ระยะเวลา</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                            {DURATIONS.map(d => (
+                              <button
+                                key={d.hours}
+                                onClick={() => setDuration(d.hours)}
+                                className={`rounded-2xl border px-3 py-2.5 text-sm font-semibold transition-all ${duration === d.hours ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                              >
+                                {d.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3 au3 min-h-0">
+                      <div className="flex items-center justify-between gap-3 mb-2.5">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Equipment</p>
+                          <h3 className="text-base font-bold text-slate-900">อุปกรณ์ที่ต้องการ</h3>
+                        </div>
+                        {selectedEquipments.length > 0 && (
+                          <button onClick={() => setSelectedEquipments([])} className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-100 transition-colors">
+                            <RefreshCw size={14} /> ล้างทั้งหมด
+                          </button>
+                        )}
+                      </div>
+                      <EquipmentSelector selected={selectedEquipments} onChange={setSelectedEquipments} equipmentPresets={equipmentPresets} />
+                    </section>
+                  </div>
+
+                  <aside className="xl:sticky xl:top-24 h-fit self-start">
+                      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+                      <div className={`relative overflow-hidden bg-gradient-to-br ${accentBg} p-3.5 text-white`}>
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.20),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.14),transparent_32%)]" />
+                        <div className="relative flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.28em] text-white/70 mb-2">Summary</p>
+                            <h3 className="text-lg font-bold">สรุปการค้นหา</h3>
+                            <p className="mt-2 text-sm text-white/80">ตรวจสอบเงื่อนไขก่อนค้นหาห้องว่าง</p>
+                          </div>
+                          <div className="rounded-[22px] border border-white/20 bg-white/12 p-3">
+                            <CalendarDays size={24} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3">
+                        <div className="space-y-1.5">
+                          {chipsSummary.map(item => (
+                            <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5">
+                              <span className="text-sm text-slate-500">{item.label}</span>
+                              <span className={`text-sm font-semibold text-right ${item.tone || 'text-slate-900'} truncate`}>{item.value}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {selectedEquipments.length > 0 && (
+                            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="mb-3 text-sm font-semibold text-slate-700">อุปกรณ์ที่เลือก</p>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedEquipments.map(k => {
+                                const eq = findPreset(equipmentPresets, k)
+                                return (
+                                  <span key={k} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                                    {eq?.icon} {eq?.shortLabel || eq?.label}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-3 space-y-2">
+                          <button
+                            onClick={handleSearch}
+                            disabled={loading}
+                            className={`w-full rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-200 transition-all ${accentHov} disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none flex items-center justify-center gap-2`}
+                          >
+                            {loading ? <><div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> กำลังค้นหา...</> : <><Search size={18} /> ค้นหาห้องว่าง</>}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={onReset}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <RefreshCw size={18} /> Reset filters
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                  </aside>
                 </div>
+              )}
 
-                {/* อุปกรณ์ในห้อง */}
-                {selectedRoom.facilities?.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                      <span>🔧</span>อุปกรณ์ในห้อง
-                      <span className="text-slate-300 font-normal">({selectedRoom.facilities.length} รายการ)</span>
-                    </p>
-                    <FacilityTags
-                      facilities={selectedRoom.facilities}
-                      compact={false}
-                      highlight={selectedEquipments}
-                      equipmentPresets={equipmentPresets}
-                    />
+              {step === 2 && (
+                <div className="space-y-3 min-h-0">
+                  <div className={`rounded-[26px] bg-gradient-to-r ${accentBg} p-3.5 sm:p-4 text-white shadow-xl shadow-blue-200/60`}>
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                      <span className="rounded-full bg-white/15 px-3 py-1.5">{attendees} คน</span>
+                      <span className="rounded-full bg-white/15 px-3 py-1.5">{isTermMode ? `ทุก${getDayLabel(dayOfWeek)}` : formatDateShort(date)}</span>
+                      <span className="rounded-full bg-white/15 px-3 py-1.5">{startTime} - {endTime}</span>
+                      {selectedEquipments.length > 0 && <span className="rounded-full bg-white/15 px-3 py-1.5">{selectedEquipments.length} อุปกรณ์</span>}
+                    </div>
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xl font-bold">ผลการค้นหาห้องว่าง</p>
+                        <p className="text-sm text-white/75">แตะห้องที่ต้องการเพื่อยืนยันการจอง</p>
+                      </div>
+                      <button onClick={() => setStep(1)} className="rounded-2xl bg-white/15 px-4 py-2.5 text-sm font-semibold hover:bg-white/25 transition-colors">
+                        แก้ไขเงื่อนไข
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                {cfg.badge !== '—' && (
-                  <div className={`flex items-center gap-2 rounded-xl px-4 py-3 ${cfg.pillCls}`}>
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cfg.dotColor }} />
-                    <span className={`text-xs font-bold ${cfg.textCls}`}>{cfg.badge} — {cfg.sub}</span>
+                  <div className="grid gap-4 xl:grid-cols-[250px_minmax(0,1fr)] min-h-0">
+                    <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-3.5 overflow-hidden">
+                      <SummaryTiles rooms={rooms} />
+                    </div>
+                    <div className="space-y-3 min-h-0">
+                      {rooms.length === 0 ? (
+                        <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-5 text-center">
+                          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                            <Sparkles size={28} />
+                          </div>
+                          <h3 className="text-xl font-bold text-slate-900">ไม่พบห้องตรงเงื่อนไข</h3>
+                          <p className="mt-2 text-sm text-slate-500">ลองปรับเวลา อาคาร หรือจำนวนผู้เข้าร่วม แล้วค้นหาใหม่อีกครั้ง</p>
+                          {similarRooms.length > 0 && <p className="mt-4 text-xs text-slate-400">ระบบมีแผนสองด้านล่างให้เลือก</p>}
+                        </div>
+                      ) : (
+                        visibleRooms.map(room => (
+                          <RoomCard
+                            key={room.id}
+                            room={room}
+                            isTermMode={isTermMode}
+                            selectedEquipments={selectedEquipments}
+                            equipmentPresets={equipmentPresets}
+                            onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }}
+                          />
+                        ))
+                      )}
+
+                      {rooms.length === 0 && visibleSimilarRooms.length > 0 && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-lg font-bold text-slate-900">แผนสอง</p>
+                              <p className="text-sm text-slate-500">ห้องใกล้เคียงที่พร้อมจอง</p>
+                            </div>
+                            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{similarRooms.length} ตัวเลือก</span>
+                          </div>
+                          {visibleSimilarRooms.map(room => (
+                            <SuggestedRoomCard
+                              key={room.id}
+                              room={room}
+                              bookingType={bookingType}
+                              attendees={attendees}
+                              selectedEquipments={selectedEquipments}
+                              equipmentPresets={equipmentPresets}
+                              onSelect={() => { setSplitPlan(null); setSelectedRoom(room); setTitle(''); setStep(3) }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm au2">
-                <SectionLabel>{isTermMode ? 'ชื่อวิชา / กิจกรรม' : 'หัวข้อการประชุม'}</SectionLabel>
-                <input type="text" autoFocus
-                  placeholder={isTermMode ? 'เช่น วิชา CS101, กิจกรรมชมรม...' : 'เช่น ประชุมกลุ่ม, นำเสนองาน...'}
-                  value={title} onChange={e => setTitle(e.target.value)}
-                  className="w-full border-2 border-blue-100 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-blue-50/40 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all placeholder:text-slate-400"
-                  style={{fontFamily:"inherit"}} />
-              </div>
+              {step === 3 && (splitPlan || selectedRoom) && (() => {
+                if (splitPlan) {
+                  const fh = splitPlan.first_half; const sh = splitPlan.second_half
+                  return (
+                    <div className="max-w-3xl mx-auto">
+                      <button type="button" onClick={onCancelSplit} className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-700">
+                        <ArrowLeft size={14} /> กลับเลือกแผนอื่น
+                      </button>
+                      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-6 sm:p-7">
+                        <SectionLabel icon={BookOpen}>ยืนยันจองสลับห้อง (2 ช่วง)</SectionLabel>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+                            <p className="text-xs font-bold text-violet-700 mb-1">เทอมแรก</p>
+                            <p className="text-base font-bold text-slate-900 truncate">{fh.room_name}</p>
+                            <p className="text-xs text-slate-500 mt-1">{formatDateShort(fh.term_start)} - {formatDateShort(fh.term_end)}</p>
+                          </div>
+                          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                            <p className="text-xs font-bold text-indigo-700 mb-1">เทอมหลัง</p>
+                            <p className="text-base font-bold text-slate-900 truncate">{sh.room_name}</p>
+                            <p className="text-xs text-slate-500 mt-1">{formatDateShort(sh.term_start)} - {formatDateShort(sh.term_end)}</p>
+                          </div>
+                        </div>
+                        <label className="mt-5 block text-sm font-semibold text-slate-700 mb-2">ชื่อวิชา / กิจกรรม *</label>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={title}
+                          onChange={e => setTitle(e.target.value)}
+                          placeholder="เช่น วิชา CS101"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleBook}
+                          disabled={bookingLoading || !title.trim()}
+                          className={`mt-5 w-full rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-4 text-base font-bold text-white shadow-lg shadow-blue-200 disabled:bg-slate-300 disabled:shadow-none`}
+                        >
+                          {bookingLoading ? 'กำลังจอง...' : 'ยืนยันจองทั้ง 2 ช่วง'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                }
 
-              <button onClick={handleBook} disabled={bookingLoading}
-                className={`au3 w-full ${accentBg} ${accentHov} disabled:bg-slate-400 text-white rounded-2xl py-4 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg ${accentShadow} transition-all active:scale-95 disabled:cursor-not-allowed`}>
-                {bookingLoading
-                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />กำลังจอง...</>
-                  : <><CheckCircle size={15} />{isTermMode ? 'ยืนยันจองทั้งเทอม' : 'ยืนยันการจอง'}</>}
-              </button>
-            </>
-          )
-        })()}
+                return (
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                    <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-5 sm:p-6 space-y-3.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <SectionLabel icon={Building2}>รายละเอียดห้อง</SectionLabel>
+                        <RoomStatusBadge status={selectedRoom.status} />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-slate-900 break-words">{selectedRoom.name}</h2>
+                        <p className="mt-1 text-sm text-slate-500">{selectedRoom.building_name} · ชั้น {selectedRoom.floor} · {selectedRoom.room_type}</p>
+                      </div>
+                      <div className="grid gap-2.5 rounded-[24px] border border-slate-200 bg-slate-50 p-3.5 text-sm">
+                        <div className="flex justify-between gap-4"><span className="text-slate-500">ประเภท</span><span className="font-semibold text-slate-900">{isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน'}</span></div>
+                        <div className="flex justify-between gap-4"><span className="text-slate-500">วัน/วันที่</span><span className="font-semibold text-slate-900">{isTermMode ? `ทุก${getDayLabel(dayOfWeek)}` : formatDate(date)}</span></div>
+                        <div className="flex justify-between gap-4"><span className="text-slate-500">เวลา</span><span className="font-semibold text-slate-900">{startTime} - {endTime} น.</span></div>
+                        <div className="flex justify-between gap-4"><span className="text-slate-500">ผู้เข้าร่วม</span><span className="font-semibold text-slate-900">{attendees} คน (ความจุ {selectedRoom.capacity})</span></div>
+                      </div>
+                      {selectedRoom.facilities?.length > 0 && (
+                        <div>
+                          <p className="mb-3 text-xs font-bold uppercase tracking-[0.24em] text-slate-400">อุปกรณ์ในห้อง</p>
+                          <FacilityTags facilities={selectedRoom.facilities} maxShow={8} highlight={selectedEquipments} equipmentPresets={equipmentPresets} />
+                        </div>
+                      )}
+                    </div>
+
+                      <div className="space-y-4">
+                      <CheckInReminder startTime={startTime} />
+                      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-5 sm:p-6">
+                        <SectionLabel>{isTermMode ? 'ชื่อวิชา / กิจกรรม' : 'หัวข้อการประชุม'}</SectionLabel>
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder={isTermMode ? 'เช่น วิชา CS101' : 'เช่น ประชุมกลุ่ม'}
+                          value={title}
+                          onChange={e => setTitle(e.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-base outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                        />
+                        <button
+                          onClick={handleBook}
+                          disabled={bookingLoading}
+                          className={`mt-4 w-full rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-200 disabled:bg-slate-300 disabled:shadow-none`}
+                        >
+                          {bookingLoading ? <><div className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> กำลังจอง...</> : <><CheckCircle size={18} /> ยืนยันการจอง</>}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ROOT
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Root Component ──────────────────────────────────────────────────────────
+export default function SearchPage({ embedded = false }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const searchState = location.state || {}
+  const [step, setStep] = useState(1)
+  const [bookingType, setBookingType] = useState('daily')
+  const [attendees, setAttendees] = useState(5)
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [dayOfWeek, setDayOfWeek] = useState(null)
+  const [startTime, setStartTime] = useState('')
+  const [duration, setDuration] = useState(1)
+  const [building, setBuilding] = useState('')
+  const [buildingQuery, setBuildingQuery] = useState('')
+  const [rooms, setRooms] = useState([])
+  const [selectedRoom, setSelectedRoom] = useState(null)
+  const [title, setTitle] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [buildings, setBuildings] = useState(DEFAULT_BUILDINGS)
+  const [bookingLoading, setBookingLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
 
-export default function SearchPage() {
-  const navigate  = useNavigate()
-  const isMobile  = useDevice()
-  const [step, setStep]                           = useState(1)
-  const [bookingType, setBookingType]             = useState('daily')
-  const [attendees, setAttendees]                 = useState(5)
-  const [date, setDate]                           = useState(new Date().toISOString().split('T')[0])
-  const [dayOfWeek, setDayOfWeek]                 = useState(null)
-  const [startTime, setStartTime]                 = useState('')
-  const [duration, setDuration]                   = useState(1)
-  const [building, setBuilding]                   = useState('')
-  const [rooms, setRooms]                         = useState([])
-  const [selectedRoom, setSelectedRoom]           = useState(null)
-  const [title, setTitle]                         = useState('')
-  const [loading, setLoading]                     = useState(false)
-  const [buildings, setBuildings]                 = useState(DEFAULT_BUILDINGS)
-
-  const [bookingLoading, setBookingLoading]       = useState(false)
-  const [success, setSuccess]                     = useState(false)
-  const [error, setError]                         = useState('')
   const _initYear = getDefaultAcademicYearBE()
   const _initTerm = getDefaultTermNumber()
   const _initDates = getTermDateRange(_initYear, _initTerm)
-  const [academicYearBE, setAcademicYearBE]       = useState(_initYear)
-  const [termNumber, setTermNumber]               = useState(_initTerm)
-  const [customTermDates, setCustomTermDates]     = useState(false)
-  const [termStart, setTermStart]                 = useState(_initDates.start)
-  const [termEnd, setTermEnd]                     = useState(_initDates.end)
-  const [termName, setTermName]                   = useState(buildTermName(_initYear, _initTerm))
+  const [academicYearBE, setAcademicYearBE] = useState(_initYear)
+  const [termNumber, setTermNumber] = useState(_initTerm)
+  const [termStart, setTermStart] = useState(_initDates.start)
+  const [termEnd, setTermEnd] = useState(_initDates.end)
+  const [termName, setTermName] = useState(buildTermName(_initYear, _initTerm))
   const [selectedEquipments, setSelectedEquipments] = useState([])
-  const [splitSuggestions, setSplitSuggestions]     = useState([])
-  const [similarRooms, setSimilarRooms]           = useState([])
-  const [splitPlan, setSplitPlan]                     = useState(null)
-  const [splitBookResult, setSplitBookResult]         = useState(null)
-  const [equipmentPresets, setEquipmentPresets]       = useState(FALLBACK_EQUIPMENT_PRESETS)
+  const [similarRooms, setSimilarRooms] = useState([])
+  const [splitPlan, setSplitPlan] = useState(null)
+  const [equipmentPresets, setEquipmentPresets] = useState(FALLBACK_EQUIPMENT_PRESETS)
 
-  const onSelectSplit = (suggestion) => {
-    setSplitPlan(suggestion)
+  const onCancelSplit = () => { setSplitPlan(null); setStep(2) }
+  const handleReset = () => {
+    setStep(1)
+    setBookingType('daily')
+    setAttendees(5)
+    setDate(new Date().toISOString().split('T')[0])
+    setDayOfWeek(null)
+    setStartTime('')
+    setDuration(1)
+    setBuilding('')
+    setBuildingQuery('')
+    setRooms([])
     setSelectedRoom(null)
     setTitle('')
-    setStep(3)
-  }
-
-  const onSelectSimilar = (room) => {
+    setSelectedEquipments([])
+    setSimilarRooms([])
     setSplitPlan(null)
-    setSelectedRoom(room)
-    setTitle('')
-    setStep(3)
-  }
-
-  const onCancelSplit = () => {
-    setSplitPlan(null)
-    setStep(2)
+    setError('')
   }
 
   useEffect(() => {
-    api.get('rooms/equipment-filters/')
-      .then(res => {
-        const filters = res.data?.filters
-        if (filters?.length) setEquipmentPresets(filters)
-      })
-      .catch(() => { /* ใช้ fallback */ })
+    api.get('rooms/equipment-filters/').then(res => {
+      if (res.data?.filters?.length) setEquipmentPresets(res.data.filters)
+    }).catch(() => {})
   }, [])
 
-  // โหลดรายการอาคารจาก backend
   useEffect(() => {
-    api.get('buildings/')
-      .then(res => {
-        const data = res.data?.results ?? res.data ?? []
-        const mapped = [{ code: '', label: 'ทั้งหมด' }, ...data.map(b => ({ code: b.code || b.id, label: b.name }))]
-        setBuildings(mapped)
-      })
-      .catch(() => { /* เก็บ default */ })
+    api.get('buildings/').then(res => {
+      const data = res.data?.results ?? res.data ?? []
+      setBuildings([{ code: '', label: 'ทั้งหมด' }, ...data.map(b => ({ code: b.code || b.id, label: b.name }))])
+    }).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const applyQuickRoom = async () => {
+      const quickRoom = searchState.quickRoom
+      const quickSearch = (searchState.quickSearch || '').trim()
+
+      if (!quickRoom && !quickSearch) return
+
+      const resolvedRoom = quickRoom || await (async () => {
+        try {
+          const res = await api.get('/rooms/suggestions/', {
+            params: { q: quickSearch, limit: 1 },
+          })
+          const suggestions = Array.isArray(res.data) ? res.data : []
+          return suggestions[0] || null
+        } catch {
+          return null
+        }
+      })()
+
+      if (!active || !resolvedRoom) return
+
+      setRooms([resolvedRoom])
+      setSimilarRooms([])
+      setSplitPlan(null)
+      setSelectedRoom(resolvedRoom)
+      setStep(3)
+      if (resolvedRoom.building_code !== undefined) {
+        setBuilding(resolvedRoom.building_code || '')
+      }
+    }
+
+    applyQuickRoom()
+    return () => { active = false }
+  }, [searchState.quickRoom, searchState.quickSearch])
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
   const applyAcademicTerm = (yearBE, termNum) => {
     const { start, end } = getTermDateRange(yearBE, termNum)
-    setAcademicYearBE(yearBE)
-    setTermNumber(termNum)
-    setTermStart(start)
-    setTermEnd(end)
+    setAcademicYearBE(yearBE); setTermNumber(termNum); setTermStart(start); setTermEnd(end)
     setTermName(buildTermName(yearBE, termNum))
-    setCustomTermDates(false)
   }
 
-  const toggleCustomTermDates = () => {
-    if (customTermDates) {
-      applyAcademicTerm(academicYearBE, termNumber)
-    } else {
-      setCustomTermDates(true)
+  useEffect(() => { if (bookingType === 'term') applyAcademicTerm(getDefaultAcademicYearBE(), getDefaultTermNumber()) }, [bookingType])
+
+  const fetchSimilarRooms = async (basePayload) => {
+    if (bookingType === 'daily') {
+      try {
+        const recRes = await api.post('/rooms/dynamic-recommend/', basePayload)
+        return (Array.isArray(recRes.data?.suggestions) ? recRes.data.suggestions : []).slice(0, 3)
+      } catch {
+        return []
+      }
     }
-  }
 
-  const handleCustomTermStart = v => {
-    setCustomTermDates(true)
-    setTermStart(v)
-  }
-
-  const handleCustomTermEnd = v => {
-    setCustomTermDates(true)
-    setTermEnd(v)
-  }
-
-  useEffect(() => {
-    if (bookingType === 'term') {
-      applyAcademicTerm(getDefaultAcademicYearBE(), getDefaultTermNumber())
-    }
-  }, [bookingType])
-
- const handleSearch = async () => {
-  if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
-  if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
-  if (bookingType === 'term' && !termStart) { setError('กรุณาเลือกวันเริ่มเทอม'); return }
-  if (bookingType === 'term' && !termEnd) { setError('กรุณาเลือกวันสิ้นสุดเทอม'); return }
-  if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
-
-  setError(''); setLoading(true)
-  try {
-    const payload = {
-      attendees,
-      start_time: startTime,
-      end_time: endTime,
-      building_code: building || undefined,
-      booking_type: bookingType === 'term' ? 'term' : 'dynamic',
-      ...(bookingType === 'term'
-        ? {
-            day_of_week: dayOfWeek,
-            term_start: termStart,
-            term_end: termEnd,
-            term_name: termName || buildTermName(academicYearBE, termNumber),
+    try {
+      const fallbackPayload = {
+        ...basePayload,
+        attendees: 1,
+        building_code: undefined,
+      }
+      const recRes = await api.post('/rooms/search/', fallbackPayload)
+      const candidates = Array.isArray(recRes.data) ? recRes.data : []
+      return candidates
+        .filter(room => Number(room.capacity) >= attendees)
+        .map(room => {
+          const { score, reason } = scoreFallbackRoom(room, {
+            attendees,
+            building,
+            bookingType,
+            selectedEquipments,
+            equipmentPresets,
+          })
+          return {
+            ...room,
+            is_similar_recommendation: true,
+            recommendation_score: score,
+            recommendation_reason: reason,
           }
-        : { date }
-      ),
-    }
-
-    const res = await api.post('/rooms/search/', payload)
-
-    let filtered = res.data.filter(r =>
-      r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER
-    )
-
-    if (bookingType === 'term') {
-      filtered = filtered.filter(r => isClassroomType(r))
-    }
-
-    if (selectedEquipments.length > 0) {
-      filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments, equipmentPresets))
-    }
-
-    setRooms(filtered)
-    setSplitSuggestions([])
-    setSimilarRooms([])
-    setSplitPlan(null)
-
-    if (bookingType === 'term' && filtered.length === 0) {
-      try {
-        const splitRes = await api.post('term-bookings/split-recommend/', {
-          day_of_week: dayOfWeek,
-          start_time: startTime,
-          end_time: endTime,
-          term_start: termStart,
-          term_end: termEnd,
-          attendees,
-          room: selectedRoom?.id,
         })
-        setSplitSuggestions(splitRes.data.suggestions || [])
-      } catch { /* ไม่มีคำแนะนำสลับห้อง */ }
+        .filter(room => bookingType !== 'term' || isClassroomType(room))
+        .sort((a, b) => (b.recommendation_score || 0) - (a.recommendation_score || 0) || (a.capacity - b.capacity))
+        .slice(0, 3)
+    } catch {
+      return []
     }
-
-    if (bookingType !== 'term' && filtered.length === 0) {
-      try {
-        const recPayload = {
-          attendees: parseInt(attendees, 10),
-          date,
-          start_time: startTime,
-          end_time: endTime,
-          booking_type: 'dynamic',
-        }
-        if (building) recPayload.building_code = building
-        const recRes = await api.post('/rooms/dynamic-recommend/', recPayload)
-        setSimilarRooms(recRes.data.suggestions || [])
-      } catch { /* ไม่มีห้องใกล้เคียง */ }
-    }
-
-    // มีห้องแต่ไม่มี AI forecast — เติมห้องใกล้เคียงเพิ่มให้เลือกจองได้ทันที
-    if (bookingType !== 'term' && filtered.length > 0
-        && filtered.every(r => r.forecast?.has_forecast === false)) {
-      try {
-        const recPayload = {
-          attendees: parseInt(attendees, 10),
-          date,
-          start_time: startTime,
-          end_time: endTime,
-          booking_type: 'dynamic',
-        }
-        if (building) recPayload.building_code = building
-        const recRes = await api.post('/rooms/dynamic-recommend/', recPayload)
-        const extra = (recRes.data.suggestions || []).filter(
-          s => !filtered.some(r => r.id === s.id)
-        )
-        if (extra.length) setSimilarRooms(extra)
-      } catch { /* ignore */ }
-    }
-
-    setStep(2)
-  } catch (err) {
-    console.log('error full:', err)
-    console.log('error message:', err.message)
-    setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
-  } finally {
-    setLoading(false)
-  }
-}
-
-const handleBook = async () => {
-  if (!splitPlan && !selectedRoom) {
-    setError('ไม่พบห้องที่เลือก กรุณาเลือกห้องใหม่')
-    return
-  }
-  if (!title.trim()) {
-    setError('กรุณากรอกชื่อวิชา / กิจกรรม')
-    return
   }
 
-  setBookingLoading(true)
-  setError('')
+  const fetchSplitRecommendation = async (basePayload) => {
+    if (bookingType !== 'term') return null
+    try {
+      const res = await api.post('term-bookings/split-recommend/', basePayload)
+      return res.data || null
+    } catch {
+      return null
+    }
+  }
 
-  try {
-    let response
-
-    if (bookingType === 'term' && splitPlan) {
-      const fh = splitPlan.first_half
-      const sh = splitPlan.second_half
-      response = await api.post('term-bookings/split-book/', {
-        subject_name: title.trim(),
-        subject_code: 'N/A',
-        attendees: parseInt(attendees, 10),
-        day_of_week: dayOfWeek,
-        start_time: startTime,
-        end_time: endTime,
-        term_name: termName,
-        note: `จองสลับห้อง: ${fh.room_name} → ${sh.room_name}`,
-        first_room_id: fh.room_id,
-        first_term_start: fh.term_start,
-        first_term_end: fh.term_end,
-        second_room_id: sh.room_id,
-        second_term_start: sh.term_start,
-        second_term_end: sh.term_end,
-      })
-      setSplitBookResult(response.data)
-      setSplitPlan(null)
-    } else if (bookingType === 'term') {
-      const termPayload = {
-        room: selectedRoom.id,
-        subject_name: title,
-        subject_code: 'N/A',
-        attendees: parseInt(attendees),
-        day_of_week: dayOfWeek,
-        start_time: startTime,
-        end_time: endTime,
-        term_start: termStart,
-        term_end: termEnd,
-        term_name: termName,
-        note: '',
+  const handleSearch = async () => {
+    if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
+    if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
+    if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
+    setError(''); setLoading(true)
+    try {
+      const payload = {
+        attendees, start_time: startTime, end_time: endTime, building_code: building || undefined,
+        booking_type: bookingType === 'term' ? 'term' : 'dynamic',
+        ...(bookingType === 'term' ? { day_of_week: dayOfWeek, term_start: termStart, term_end: termEnd, term_name: termName || buildTermName(academicYearBE, termNumber) } : { date })
       }
-      response = await api.post('term-bookings/', termPayload)
-    } else {
-      const dynamicPayload = {
-        room: selectedRoom.id,
-        title: title,
-        attendees: parseInt(attendees),
-        start_time: `${date}T${startTime}:00`,
-        end_time: `${date}T${endTime}:00`,
-        note: '',
+      const res = await api.post('/rooms/search/', payload)
+      const roomsData = Array.isArray(res.data) ? res.data : []
+      let filtered = roomsData.filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
+      if (bookingType === 'term') filtered = filtered.filter(r => isClassroomType(r))
+      if (selectedEquipments.length > 0) filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments, equipmentPresets))
+
+      if (bookingType === 'term' && filtered.length === 0) {
+        const splitRec = await fetchSplitRecommendation(payload)
+        if (splitRec?.recommended_split?.first_half && splitRec?.recommended_split?.second_half) {
+          setRooms([])
+          setSimilarRooms([])
+          setSplitPlan(splitRec.recommended_split)
+          setStep(3)
+          return
+        }
       }
-      response = await api.post('bookings/', dynamicPayload)
-    }
 
-    if (response.status === 201 || response.status === 200) {
-      setSuccess(true)
-    } else {
-      setError('จองไม่สำเร็จ กรุณาลองใหม่')
-    }
-  } catch (err) {
-    const errorData = err.response?.data
-    const msg = err.code === 'ECONNABORTED'
-      ? 'การจองใช้เวลานานเกินไป กรุณาตรวจสอบรายการจองของฉัน หรือลองใหม่อีกครั้ง'
-      : errorData ? JSON.stringify(errorData) : 'เกิดข้อผิดพลาด กรุณาลองใหม่'
-    setError(msg)
-  } finally {
-    setBookingLoading(false)
-  }
-}
+      const similar = filtered.length === 0 ? await fetchSimilarRooms(payload) : []
 
-  const shared = {
-    bookingType, setBookingType,
-    formProps: {
-      attendees, setAttendees, date, setDate,
-      startTime, setStartTime, duration, setDuration,
-      building, setBuilding, endTime, loading, handleSearch, error,
-      dayOfWeek, setDayOfWeek,
-      termStart, termEnd, termName,
-      academicYearBE, termNumber, customTermDates,
-      applyAcademicTerm, toggleCustomTermDates,
-      handleCustomTermStart, handleCustomTermEnd,
-      selectedEquipments, setSelectedEquipments,
-      equipmentPresets,
-      buildings,
-    },
-    resultProps:  { rooms, setSelectedRoom, setSplitPlan, splitSuggestions, onSelectSplit, similarRooms, onSelectSimilar },
-    confirmProps: {
-      selectedRoom, title, setTitle, bookingLoading, handleBook, success,
-      splitPlan, splitBookResult, onCancelSplit,
-    },
+      setRooms(filtered); setSimilarRooms(similar); setSplitPlan(null)
+      setStep(2)
+    } catch (err) {
+      setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  return isMobile
-    ? <MobileLayout step={step} setStep={setStep} navigate={navigate} {...shared} />
-    : <DesktopLayout step={step} setStep={setStep} navigate={navigate} {...shared} />
+  const handleBook = async () => {
+    if (!splitPlan && !selectedRoom) { setError('ไม่พบห้องที่เลือก'); return }
+    if (!title.trim()) { setError('กรุณากรอกชื่อวิชา / กิจกรรม'); return }
+    setBookingLoading(true); setError('')
+    try {
+      let response
+      if (bookingType === 'term' && splitPlan) {
+        response = await api.post('term-bookings/split-book/', {
+          subject_name: title.trim(), attendees: parseInt(attendees, 10), day_of_week: dayOfWeek,
+          start_time: startTime, end_time: endTime, term_name: termName,
+          first_room_id: splitPlan.first_half.room_id, first_term_start: splitPlan.first_half.term_start, first_term_end: splitPlan.first_half.term_end,
+          second_room_id: splitPlan.second_half.room_id, second_term_start: splitPlan.second_half.term_start, second_term_end: splitPlan.second_half.term_end,
+        })
+        setSplitPlan(null)
+      } else if (bookingType === 'term') {
+        response = await api.post('term-bookings/', { room: selectedRoom.id, subject_name: title, attendees: parseInt(attendees), day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, term_start: termStart, term_end: termEnd, term_name: termName })
+      } else {
+        response = await api.post('bookings/', { room: selectedRoom.id, title: title, attendees: parseInt(attendees), start_time: `${date}T${startTime}:00`, end_time: `${date}T${endTime}:00` })
+      }
+      if (response.status === 201 || response.status === 200) setSuccess(true)
+      else setError('จองไม่สำเร็จ กรุณาลองใหม่')
+    } catch (err) {
+      setError(err.response?.data ? JSON.stringify(err.response.data) : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+    } finally {
+      setBookingLoading(false)
+    }
+  }
+
+  return (
+    <AppLayout
+      step={step} setStep={setStep} navigate={navigate} location={location.pathname}
+      bookingType={bookingType} setBookingType={setBookingType}
+      formProps={{ attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error, dayOfWeek, setDayOfWeek, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings }}
+      resultProps={{ rooms, setSelectedRoom, setSplitPlan, similarRooms }}
+      confirmProps={{ selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit }}
+      onReset={handleReset}
+      embedded={embedded}
+    />
+  )
 }

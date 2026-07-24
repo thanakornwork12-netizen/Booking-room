@@ -1,4 +1,6 @@
 import pandas as pd
+import re
+from difflib import SequenceMatcher
 from django.utils import timezone
 from django.db.models import Count, Q
 from datetime import datetime, date as date_type, timedelta
@@ -20,6 +22,7 @@ from .models import (
 )
 from .serializers import (
     UserSerializer, RegisterSerializer,
+    ChangePasswordSerializer, DeleteAccountSerializer,
     BuildingSerializer,
     RoomSerializer, RoomListSerializer, RoomSearchSerializer,
     TermBookingSerializer, TermBookingCreateSerializer,
@@ -47,6 +50,33 @@ class ProfileView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save(update_fields=['password'])
+
+        return Response({'detail': 'เปลี่ยนรหัสผ่านสำเร็จ'})
+
+
+class DeleteAccountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = DeleteAccountSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        user.delete()
+
+        return Response({'detail': 'ลบบัญชีผู้ใช้สำเร็จ'})
 
 
 # ============================================================
@@ -90,6 +120,46 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
             return self._search_dynamic(d, request)
         else:
             return self._search_term(d, request)
+
+    @action(detail=False, methods=['get'], url_path='suggestions')
+    def suggestions(self, request):
+        q = (request.query_params.get('q') or '').strip()
+        limit = request.query_params.get('limit', 8)
+        try:
+            limit = max(1, min(int(limit), 20))
+        except (TypeError, ValueError):
+            limit = 8
+
+        rooms = list(
+            Room.objects.filter(is_active=True)
+            .select_related('building')
+            .order_by('building__name', 'name')
+        )
+
+        if not q:
+            picked = rooms[:limit]
+        else:
+            scored = []
+            for room in rooms:
+                score = self._score_suggestion(room, q)
+                if score > 0:
+                    scored.append((score, room))
+            scored.sort(key=lambda item: (-item[0], item[1].building.name if item[1].building else '', item[1].name))
+            picked = [room for _, room in scored[:limit]]
+
+        return Response([
+            {
+                'id': room.id,
+                'name': room.name,
+                'building_name': room.building.name if room.building else 'ไม่ระบุอาคาร',
+                'building_code': room.building.code if room.building else '',
+                'floor': room.floor,
+                'capacity': room.capacity,
+                'room_type': room.room_type,
+                'status': room.status,
+            }
+            for room in picked
+        ])
 
     def _search_dynamic(self, d, request):
         target_date = d['date']
@@ -228,6 +298,37 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 
         result.sort(key=lambda r: level_order.get(r['forecast']['demand_level'], 0))
         return result
+
+    def _score_suggestion(self, room, query):
+        haystacks = [
+            room.name or '',
+            room.building.name if room.building else '',
+            room.building.code if room.building else '',
+            room.room_type or '',
+            f"{room.name or ''} {room.building.name if room.building else ''} {room.building.code if room.building else ''}",
+        ]
+        q = self._normalize_query(query)
+        if not q:
+            return 0.0
+
+        best = 0.0
+        for text in haystacks:
+            candidate = self._normalize_query(text)
+            if not candidate:
+                continue
+            ratio = SequenceMatcher(None, q, candidate).ratio()
+            best = max(best, ratio)
+            if q in candidate:
+                best = max(best, min(1.0, ratio + 0.35))
+            q_tokens = set(q.split())
+            if q_tokens:
+                candidate_tokens = set(candidate.split())
+                overlap = len(q_tokens & candidate_tokens) / len(q_tokens)
+                best = max(best, ratio * 0.7 + overlap * 0.3)
+        return round(best, 4)
+
+    def _normalize_query(self, value):
+        return re.sub(r'\s+', ' ', (value or '').strip().lower())
 
     def _blocked_room_ids(self, target_date, start_time, end_time):
         """ห้องที่ถูกจอง/ซ่อมบำรุง/จองเทอม ในช่วงเวลาที่ระบุ"""
@@ -612,6 +713,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         เมื่อห้องเดียวไม่ว่างตลอดเทอม
         """
         room_id    = request.data.get('room')
+        building_code = request.data.get('building_code')
         dow        = request.data.get('day_of_week')
         start_time = request.data.get('start_time')
         end_time   = request.data.get('end_time')
@@ -626,67 +728,142 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         try:
             t_start = date_type.fromisoformat(str(term_start))
             t_end   = date_type.fromisoformat(str(term_end))
-            from datetime import time as time_type
             st = datetime.strptime(str(start_time), '%H:%M').time() if len(str(start_time)) <= 5 \
                  else datetime.strptime(str(start_time), '%H:%M:%S').time()
             et = datetime.strptime(str(end_time), '%H:%M').time() if len(str(end_time)) <= 5 \
                  else datetime.strptime(str(end_time), '%H:%M:%S').time()
+            preferred_room_id = int(room_id) if room_id not in (None, '') else None
         except ValueError as e:
             return Response({'error': f'รูปแบบวันที่/เวลาไม่ถูกต้อง: {e}'}, status=400)
+        except TypeError:
+            preferred_room_id = None
 
         mid = t_start + (t_end - t_start) // 2
+        first_end = mid
+        second_start = mid + timedelta(days=1)
 
-        def find_available_rooms(period_start, period_end):
-            booked = TermBooking.objects.filter(
+        preferred_room = None
+        if preferred_room_id is not None:
+            preferred_room = Room.objects.filter(
+                id=preferred_room_id, is_active=True, status='available'
+            ).select_related('building').first()
+
+        def is_room_blocked(room_obj, period_start, period_end):
+            return TermBooking.objects.filter(
+                room=room_obj,
                 day_of_week=dow, status='active',
                 term_start__lte=period_end, term_end__gte=period_start,
-            ).exclude(start_time__gte=et).exclude(end_time__lte=st).values_list('room_id', flat=True)
-            qs = Room.objects.filter(
-                is_active=True, status='available', capacity__gte=attendees,
-            ).exclude(id__in=booked).select_related('building')
-            if room_id:
-                preferred = qs.filter(id=room_id).first()
-                if preferred and preferred.id not in booked:
-                    return list(qs.order_by('capacity')[:5])
-            return list(qs.order_by('capacity')[:5])
+            ).exclude(start_time__gte=et).exclude(end_time__lte=st).exists()
 
-        first_rooms  = find_available_rooms(t_start, mid)
-        second_rooms = find_available_rooms(mid + timedelta(days=1), t_end)
+        def room_score(room_obj, period_start, period_end):
+            if is_room_blocked(room_obj, period_start, period_end):
+                return None
+            gap = max(0, int(room_obj.capacity or 0) - int(attendees))
+            score = 0
 
-        primary_conflict = bool(room_id and room_id not in [r.id for r in first_rooms])
+            # ความจุใกล้เคียงคือดีที่สุด
+            if gap == 0:
+                score += 45
+            elif gap <= 3:
+                score += 38
+            elif gap <= 8:
+                score += 30
+            elif gap <= 15:
+                score += 22
+            else:
+                score += max(8, 18 - min(gap, 25) // 2)
+
+            # ห้องที่อยู่ในอาคารเดียวกับห้องเดิม/อาคารที่เลือก ให้คะแนนเพิ่ม
+            if preferred_room and preferred_room.building_id == room_obj.building_id:
+                score += 14
+            if building_code and room_obj.building and room_obj.building.code == building_code:
+                score += 18
+            elif building_code and room_obj.building and room_obj.building.code != building_code:
+                score += 2
+
+            # ถ้าจองทั้งเทอม ควรเลือกห้องเรียนมากกว่าห้องพิเศษ
+            room_type = (room_obj.room_type or '').lower()
+            if any(k in room_type for k in ['classroom', 'lecture', 'ห้องเรียน']):
+                score += 10
+
+            # ให้ห้องที่ผู้ใช้ระบุไว้เป็นตัวเลือกนำ ถ้ามันยังใช้ได้ในครึ่งช่วงนั้น
+            if preferred_room and room_obj.id == preferred_room.id:
+                score += 30
+            elif preferred_room and room_obj.building_id == preferred_room.building_id:
+                score += 6
+
+            return score
+
+        base_qs = Room.objects.filter(
+            is_active=True,
+            status='available',
+            capacity__gte=attendees,
+        ).select_related('building')
+        if building_code:
+            preferred_rooms = list(base_qs.filter(building__code=building_code).order_by('capacity', 'name'))
+            other_rooms = list(base_qs.exclude(building__code=building_code).order_by('capacity', 'name'))
+            candidates = preferred_rooms + other_rooms
+        else:
+            candidates = list(base_qs.order_by('capacity', 'name'))
+
+        def rank_candidates(period_start, period_end):
+            ranked = []
+            for room_obj in candidates:
+                score = room_score(room_obj, period_start, period_end)
+                if score is None:
+                    continue
+                ranked.append((score, room_obj))
+            ranked.sort(key=lambda item: (-item[0], item[1].capacity or 0, item[1].name))
+            return ranked[:8]
+
+        first_rooms = rank_candidates(t_start, first_end)
+        second_rooms = rank_candidates(second_start, t_end)
 
         suggestions = []
-        if first_rooms and second_rooms:
-            for r1 in first_rooms[:3]:
-                for r2 in second_rooms[:3]:
-                    if r1.id == r2.id:
-                        continue
-                    suggestions.append({
-                        'first_half': {
-                            'room_id': r1.id, 'room_name': r1.name,
-                            'building': r1.building.name, 'term_start': str(t_start), 'term_end': str(mid),
-                        },
-                        'second_half': {
-                            'room_id': r2.id, 'room_name': r2.name,
-                            'building': r2.building.name,
-                            'term_start': str(mid + timedelta(days=1)), 'term_end': str(t_end),
-                        },
-                        'message': (
-                            f'เทอมแรก ({t_start}–{mid}): ห้อง {r1.name} | '
-                            f'เทอมหลัง ({mid + timedelta(days=1)}–{t_end}): ห้อง {r2.name}'
-                        ),
-                    })
-                    if len(suggestions) >= 5:
-                        break
-                if len(suggestions) >= 5:
+        for first_score, r1 in first_rooms:
+            for second_score, r2 in second_rooms:
+                if r1.id == r2.id:
+                    continue
+                pair_score = first_score + second_score
+                if r1.building_id == r2.building_id:
+                    pair_score += 8
+                if preferred_room and r1.id == preferred_room.id:
+                    pair_score += 10
+                if preferred_room and r2.id == preferred_room.id:
+                    pair_score += 10
+                suggestions.append({
+                    'score': pair_score,
+                    'first_half': {
+                        'room_id': r1.id, 'room_name': r1.name,
+                        'building': r1.building.name if r1.building else 'ไม่ระบุ',
+                        'term_start': str(t_start), 'term_end': str(first_end),
+                    },
+                    'second_half': {
+                        'room_id': r2.id, 'room_name': r2.name,
+                        'building': r2.building.name if r2.building else 'ไม่ระบุ',
+                        'term_start': str(second_start), 'term_end': str(t_end),
+                    },
+                    'message': (
+                        f'เทอมแรก ({t_start}–{first_end}): ห้อง {r1.name} | '
+                        f'เทอมหลัง ({second_start}–{t_end}): ห้อง {r2.name}'
+                    ),
+                })
+                if len(suggestions) >= 8:
                     break
+            if len(suggestions) >= 8:
+                break
+
+        suggestions.sort(key=lambda item: item['score'], reverse=True)
+        best_split = suggestions[0] if suggestions else None
 
         return Response({
-            'needs_split':    primary_conflict or not first_rooms,
+            'needs_split':    True,
             'term_midpoint':  str(mid),
+            'recommended_split': best_split,
             'suggestions':    suggestions,
-            'first_half_rooms':  [{'id': r.id, 'name': r.name} for r in first_rooms],
-            'second_half_rooms': [{'id': r.id, 'name': r.name} for r in second_rooms],
+            'first_half_rooms':  [{'id': r.id, 'name': r.name, 'score': score} for score, r in first_rooms],
+            'second_half_rooms': [{'id': r.id, 'name': r.name, 'score': score} for score, r in second_rooms],
+            'split_reason': 'ห้องเป้าหมายไม่ว่างตลอดเทอม จึงแนะนำแผนจองสลับห้อง',
         })
 
     @action(detail=False, methods=['post'], url_path='split-book')
@@ -1087,20 +1264,80 @@ class MaintenanceSlotsView(APIView):
         min_hrs  = int(request.query_params.get('min_hours', 3))
         days     = int(request.query_params.get('days', 14))
 
-        import sys, os, importlib.util
-        fc_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ml', 'saved', 'forecast.py')
-        spec = importlib.util.spec_from_file_location('forecast', fc_path)
-        fc_mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(fc_mod)
-        find_maintenance_slots = fc_mod.find_maintenance_slots
-
-        slots = find_maintenance_slots(
+        slots = _find_maintenance_slots(
             room_id=int(room_id) if room_id else None,
             max_demand=max_dem,
             min_consecutive_hours=min_hrs,
             days_ahead=days,
         )
         return Response({'slots': slots, 'count': len(slots)})
+
+
+def _find_maintenance_slots(
+    room_id: int | None = None,
+    max_demand: float = 0.10,
+    min_consecutive_hours: int = 3,
+    days_ahead: int = 14,
+) -> list[dict]:
+    """
+    คัดกรองช่วงเวลาที่ demand ต่ำติดกันจาก DemandForecast โดยตรง
+    ไม่ต้อง import โมดูล ML หนัก ๆ ใน request path
+    """
+    today = timezone.localdate()
+    end = today + timedelta(days=days_ahead)
+
+    qs = DemandForecast.objects.filter(
+        forecast_date__gte=today,
+        forecast_date__lte=end,
+        predicted_demand__lt=max_demand,
+    ).select_related('room').order_by('room_id', 'forecast_date', 'hour')
+
+    if room_id:
+        qs = qs.filter(room_id=room_id)
+
+    slots = []
+    current = None
+
+    for fc in qs:
+        key = (fc.room_id, fc.forecast_date)
+        if current and current['key'] == key and fc.hour == current['last_hour'] + 1:
+            current['hours'].append(fc.hour)
+            current['demands'].append(float(fc.predicted_demand))
+            current['last_hour'] = fc.hour
+        else:
+            if current and len(current['hours']) >= min_consecutive_hours:
+                slots.append(_finalize_maintenance_slot(current))
+            current = {
+                'key': key,
+                'room_id': fc.room_id,
+                'room_name': fc.room.name,
+                'date': fc.forecast_date,
+                'hours': [fc.hour],
+                'demands': [float(fc.predicted_demand)],
+                'last_hour': fc.hour,
+            }
+
+    if current and len(current['hours']) >= min_consecutive_hours:
+        slots.append(_finalize_maintenance_slot(current))
+
+    return sorted(slots, key=lambda s: (s['date'], s['start_hour']))
+
+
+def _finalize_maintenance_slot(current: dict) -> dict:
+    hrs = current['hours']
+    return {
+        'room_id': current['room_id'],
+        'room_name': current['room_name'],
+        'date': str(current['date']),
+        'start_hour': min(hrs),
+        'end_hour': max(hrs) + 1,
+        'hours': hrs,
+        'avg_demand': round(sum(current['demands']) / len(current['demands']), 4),
+        'label': (
+            f"{current['room_name']} | {current['date']} "
+            f"{min(hrs):02d}:00–{max(hrs) + 1:02d}:00"
+        ),
+    }
 
 
 class MaintenanceBlockViewSet(viewsets.ModelViewSet):

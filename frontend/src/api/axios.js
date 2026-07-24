@@ -86,6 +86,16 @@ export function logout() {
   _clearAndRedirect()
 }
 
+export async function changePassword(payload) {
+  const res = await api.post('auth/change-password/', payload)
+  return res.data
+}
+
+export async function deleteAccount(payload) {
+  const res = await api.post('auth/delete-account/', payload)
+  return res.data
+}
+
 // ── Helper: ดึงข้อมูล user จาก localStorage ───────────────────────────────
 export function getUser() {
   try {

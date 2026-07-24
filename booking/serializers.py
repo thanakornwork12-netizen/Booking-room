@@ -52,6 +52,77 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=6)
+    new_password2 = serializers.CharField(write_only=True, min_length=6)
+
+    def validate(self, data):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError('กรุณาเข้าสู่ระบบก่อน')
+
+        if not user.has_usable_password():
+            raise serializers.ValidationError({
+                'old_password': 'บัญชีนี้ใช้รหัสผ่านจาก LDAP กรุณาเปลี่ยนรหัสผ่านที่ระบบมหาวิทยาลัย'
+            })
+
+        if data['new_password'] != data['new_password2']:
+            raise serializers.ValidationError({
+                'new_password': 'รหัสผ่านใหม่ไม่ตรงกัน'
+            })
+
+        if not user.check_password(data['old_password']):
+            raise serializers.ValidationError({
+                'old_password': 'รหัสผ่านเดิมไม่ถูกต้อง'
+            })
+
+        if data['old_password'] == data['new_password']:
+            raise serializers.ValidationError({
+                'new_password': 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม'
+            })
+
+        return data
+
+
+class DeleteAccountSerializer(serializers.Serializer):
+    confirm_username = serializers.CharField(write_only=True)
+    confirm_text = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True, default='')
+
+    def validate(self, data):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError('กรุณาเข้าสู่ระบบก่อน')
+
+        if data['confirm_username'].strip() != user.username:
+            raise serializers.ValidationError({
+                'confirm_username': 'ชื่อผู้ใช้ไม่ตรงกับบัญชีปัจจุบัน'
+            })
+
+        if data['confirm_text'].strip().upper() != 'DELETE':
+            raise serializers.ValidationError({
+                'confirm_text': 'กรุณาพิมพ์ DELETE เพื่อยืนยัน'
+            })
+
+        if user.has_usable_password():
+            password = data.get('password', '')
+            if not password:
+                raise serializers.ValidationError({
+                    'password': 'กรุณากรอกรหัสผ่านเพื่อยืนยันการลบบัญชี'
+                })
+            if not user.check_password(password):
+                raise serializers.ValidationError({
+                    'password': 'รหัสผ่านไม่ถูกต้อง'
+                })
+
+        return data
+
+
 # ============================================================
 # BUILDING
 # ============================================================
@@ -404,59 +475,7 @@ class RoomUsageStatSerializer(serializers.ModelSerializer):
 
 # ============================================================
 # LDAP JWT AUTH
-# เพิ่มตรงนี้ — ไม่แตะโค้ดเก่าด้านบนเลย
 # ============================================================
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
-from .ldap_auth import authenticate_ldap
-
-
-class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """
-    แทนที่ default JWT serializer
-    ใช้ LDAP ของมหาวิทยาลัยตรวจสอบ credential แทน database
-    username = รหัสนักศึกษา เช่น 66114640275
-    password = รหัสผ่านที่ user กรอกจากหน้า login โดยตรง
-    """
-
-    def validate(self, attrs):
-        username = attrs.get(self.username_field, '').strip()
-        password = attrs.get('password', '')
-
-        # ── ส่ง credential ที่รับมาจาก login form ไปตรวจกับ LDAP ──
-        ldap_user = authenticate_ldap(username, password)
-
-        if not ldap_user:
-            raise serializers.ValidationError(
-                {'detail': 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'}
-            )
-
-        # ── สร้างหรืออัปเดต Django user (ไม่เก็บ password ใน DB) ──
-        user, created = User.objects.get_or_create(username=username)
-
-        # อัปเดตข้อมูลจาก LDAP ทุกครั้งที่ login
-        full_name  = ldap_user.get('full_name', '')
-        name_parts = full_name.split(' ', 1)
-        user.first_name = name_parts[0] if name_parts else ''
-        user.last_name  = name_parts[1] if len(name_parts) > 1 else ''
-        user.email      = ldap_user.get('email', '')
-        user.faculty    = ldap_user.get('department', '')
-        user.set_unusable_password()   # ไม่เก็บ password ใน database
-        user.save()
-
-        # ── สร้าง JWT token ──
-        refresh = RefreshToken.for_user(user)
-
-        return {
-            'access':     str(refresh.access_token),
-            'refresh':    str(refresh),
-            'username':   username,
-            'name':       full_name,
-            'email':      user.email,
-            'faculty':    user.faculty,
-            'role':       getattr(user, 'role', 'student'),
-            'is_new':     created,
-        }
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import serializers

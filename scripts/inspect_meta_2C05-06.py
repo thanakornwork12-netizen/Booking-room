@@ -1,5 +1,8 @@
 import joblib,sys
 from pathlib import Path
+
+# Plot generation and centralized logging are handled by ml/saved/generate_plots.py.
+# This script remains as a metadata inspection helper only.
 p=Path('ml/saved/saved_meta')/'2C05-06_meta.pkl'
 if not p.exists():
     print('META_MISSING')

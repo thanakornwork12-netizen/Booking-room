@@ -1,1 +1,141 @@
 @import "tailwindcss";
+
+/* ── Base resets ─────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    min-height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background:
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
+      radial-gradient(circle at top right, rgba(79, 70, 229, 0.08), transparent 24%),
+      #f8fafc;
+    color: #111827;
+    font-family: 'Inter', 'Prompt', 'Sarabun', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  #root {
+    min-height: 100dvh;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  ::selection {
+    background: rgba(37, 99, 235, 0.16);
+    color: #111827;
+  }
+}
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+:root {
+  --space-0: 0px;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-10: 40px;
+  --space-11: 44px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  --space-xs: var(--space-2);
+  --space-sm: var(--space-3);
+  --space-md: var(--space-4);
+  --space-lg: var(--space-6);
+  --space-xl: var(--space-8);
+
+  --container-pad-mobile: 8px;
+  --container-pad-desktop: 16px;
+
+  --label-font-size: 16px;
+  --label-font-size-mobile: 14px;
+  --card-padding: 20px;
+  --content-max-width: 100%;
+  --panel-max-width: 460px;
+  --dialog-max-width: 520px;
+  --popover-min-width: 220px;
+  --popover-max-width: 320px;
+}
+
+/* ── App shell + legacy utility classes ─────────────────────────────────────
+   Everything below is wrapped in `components`, a layer Tailwind registers
+   BEFORE `utilities`. That means any Tailwind class used in your JSX
+   (p-3, gap-2, w-9, ...) will always beat a same-named rule in here,
+   no matter where either rule physically sits in this file. This is what
+   stops your legacy classes from silently overriding sizing set in JSX.
+------------------------------------------------------------------------- */
+@layer components {
+
+  .app-container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding-left: 0;
+    padding-right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: 100dvh;
+    box-sizing: border-box;
+  }
+
+  .app-scrollable {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @media (min-width: 1024px) {
+    .app-container {
+      padding-left: 0;
+      padding-right: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .app-container {
+      padding-left: 0;
+      padding-right: 0;
+      max-width: 100%;
+    }
+    .label { font-size: var(--label-font-size-mobile); }
+  }
+
+  .group-gap { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+  .page-inner { width: 100%; max-width: var(--content-max-width); margin-left: auto; margin-right: auto; }
+  .panel { width: min(100%, var(--panel-max-width)); margin-left: auto; margin-right: auto; }
+  .dialog-panel { width: min(100%, var(--dialog-max-width)); margin-left: auto; margin-right: auto; }
+  .popover-panel { min-width: var(--popover-min-width); width: min(100%, var(--popover-max-width)); }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     PASTE YOUR REMAINING LEGACY UTILITY CLASSES HERE
+     (the ones your comment said were "kept as-is" — .p-0, .p-1, .gap-*,
+     .w-*, .h-*, etc.). Paste them inside this @layer components block,
+     exactly as they were. You do NOT need to rename or delete any of
+     them — putting them in this layer is enough to make Tailwind's own
+     utility classes win on any name collision.
+     ───────────────────────────────────────────────────────────────────── */
+  .p-0 { padding: var(--space-0); }
+
+}

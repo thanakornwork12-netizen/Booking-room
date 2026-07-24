@@ -25,12 +25,18 @@ Our forecasting system uses an **Ensemble approach** with 3 base models and a we
 | Parameter | Value |
 |-----------|-------|
 | **Input Sequence Length** | 14 days (lookback) |
-| **Epochs** | 60 |
-| **Batch Size** | 32 |
-| **Optimizer** | Adam (default learning rate) |
+| **Batch Size** | 16 / 32 |
+| **Optimizer** | Adam |
 | **Loss Function** | Mean Absolute Error (MAE) |
 | **Early Stopping** | Yes (patience=10, monitor='val_loss') |
 | **Scaling** | MinMaxScaler (per-column for features, separate for target) |
+
+### Hyperparameter Sets
+| Set | Epochs | Batch Size | Learning Rate | Hidden Units | Dropout | Notes |
+|-----|--------|------------|---------------|--------------|---------|-------|
+| **A** | 5 | 16 | 0.001 | 64 | 0.20 | Fast training, lowest budget |
+| **B** | 10 | 16 | 0.0005 | 64 | 0.20 | Balanced speed and stability |
+| **C** | 20 | 16 | 0.0005 | 128 | 0.25 | Higher capacity, more accurate if time allows |
 
 ### Data Requirements
 - **Minimum Training Samples**: lookback + 10 = 24 data points
@@ -43,13 +49,20 @@ Our forecasting system uses an **Ensemble approach** with 3 base models and a we
 ### Hyperparameters
 | Parameter | Value |
 |-----------|-------|
-| **n_estimators** | 180 |
-| **learning_rate** | 0.06 |
-| **max_depth** | 3 |
-| **num_leaves** | 8 |
-| **objective** | regression (MAE) |
+| **objective** | regression_l1 |
 | **metric** | mae |
 | **early_stopping_rounds** | 50 |
+| **feature_fraction** | 0.8 |
+| **bagging_fraction** | 0.8 |
+| **bagging_freq** | 5 |
+| **n_jobs** | -1 |
+
+### Hyperparameter Sets
+| Set | n_estimators | learning_rate | num_leaves | max_depth | Notes |
+|-----|--------------|---------------|------------|-----------|-------|
+| **A** | 20 | 0.05 | 31 | 6 | Fast training, low complexity |
+| **B** | 40 | 0.05 | 63 | 6 | Balanced accuracy/time |
+| **C** | 80 | 0.05 | 63 | 8 | Higher accuracy, moderate cost |
 
 ### Training
 - Train/val split: 80/20
@@ -60,25 +73,20 @@ Our forecasting system uses an **Ensemble approach** with 3 base models and a we
 
 ## 3. XGBoost (Base Model)
 
-### Hyperparameters (Variant 1)
+### Hyperparameters
 | Parameter | Value |
 |-----------|-------|
-| **n_estimators** | 140 |
-| **learning_rate** | 0.04 |
-| **max_depth** | 4 |
-| **subsample** | 0.7 |
-| **objective** | reg:squarederror |
+| **objective** | reg:absoluteerror |
+| **metric** | mae |
 | **early_stopping_rounds** | 50 |
+| **n_jobs** | -1 |
 
-### Hyperparameters (Variant 2)
-| Parameter | Value |
-|-----------|-------|
-| **n_estimators** | 140 |
-| **learning_rate** | 0.05 |
-| **max_depth** | 5 |
-| **subsample** | 0.8 |
-| **colsample_bytree** | 0.8 |
-| **early_stopping_rounds** | 50 |
+### Hyperparameter Sets
+| Set | n_estimators | learning_rate | max_depth | subsample | colsample_bytree | Notes |
+|-----|--------------|---------------|-----------|-----------|------------------|-------|
+| **A** | 20 | 0.05 | 4 | 0.80 | 0.80 | Fast training, low complexity |
+| **B** | 40 | 0.05 | 5 | 0.80 | 0.80 | Balanced accuracy/time |
+| **C** | 80 | 0.05 | 6 | 0.85 | 0.85 | Higher accuracy, moderate cost |
 
 ### Training
 - Train/val split: 80/20
@@ -143,11 +151,18 @@ Our forecasting system uses an **Ensemble approach** with 3 base models and a we
 ## 7. Output & Evaluation
 
 ### Generated Plots (5 Total Images)
-1. **LSTM Accuracy & Loss Curve** - Shows training progression across rooms
-2. **LightGBM Accuracy & Loss Curve** - Shows training progression across rooms
-3. **XGBoost Accuracy & Loss Curve** - Shows training progression across rooms
+1. **LSTM Accuracy & Loss Curve** - Shows training progression across rooms and hyperparameter sets
+2. **LightGBM Accuracy & Loss Curve** - Shows training progression across rooms and booster rounds
+3. **XGBoost Accuracy & Loss Curve** - Shows training progression across rooms and booster rounds
 4. **Ensemble Accuracy & Loss Curve** - Shows training progression across rooms
-5. **Model Overview Summary** - Comparison across all models
+5. **Model Overview Summary** - Comparison across all models and best candidate sets
+
+### Tracked Metrics
+- **Accuracy**: classification-style accuracy for high/med/low demand buckets
+- **Loss**: MAE for regression forecasting
+- **MAE**: mean absolute error on validation data
+- **RMSE**: root mean squared error
+- **R²**: explained variance score
 
 ### Metrics Summary File
 - **CSV Output**: `metrics_summary.csv` with per-room and aggregate metrics

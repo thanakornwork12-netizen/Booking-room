@@ -1,0 +1,917 @@
+import { useEffect, useMemo, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import {
+  Bell,
+  CalendarDays,
+  ChevronLeft,
+  ChevronDown,
+  AlertTriangle,
+  BookOpen,
+  KeyRound,
+  Loader2,
+  Menu,
+  Search,
+  LayoutDashboard,
+  Home,
+  UserCircle2,
+  Settings2,
+  LogOut,
+  Building2,
+  Trash2,
+  Phone,
+  Mail,
+  Globe,
+  ExternalLink,
+  MessageSquareMore,
+} from 'lucide-react'
+import api, { changePassword, deleteAccount, logout } from '../api/axios'
+
+const navItems = [
+  { to: '/', label: 'หน้าหลัก', icon: Home, exact: true },
+  { to: '/search', label: 'จองห้องประชุม', icon: Search },
+  { to: '/admin/dashboard', label: 'แดชบอร์ด', icon: LayoutDashboard },
+]
+
+const getUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('user') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const roleLabels = {
+  admin: 'ผู้ดูแลระบบ',
+  staff: 'เจ้าหน้าที่',
+  lecturer: 'อาจารย์',
+  student: 'นักศึกษา',
+}
+
+const supportInfo = {
+  organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
+  address: '85 ถ.สถลมาร์ค ต.เมืองศรีไค อ.วารินชำราบ จ.อุบลราชธานี 34190',
+  phone: '045-353102',
+  webmaster: '1502',
+  email: 'ocn@ubu.ac.th',
+  facebook: 'https://www.facebook.com/ocnfanpage/',
+  copyright: 'สงวนลิขสิทธิ์ พ.ศ. 2556 ตามพระราชบัญญัติลิขสิทธิ์ 2537',
+}
+
+function SettingsModal({ open, onClose, user }) {
+  const [activeTab, setActiveTab] = useState('password')
+  const [passwordForm, setPasswordForm] = useState({
+    old_password: '',
+    new_password: '',
+    new_password2: '',
+  })
+  const [deleteForm, setDeleteForm] = useState({
+    confirm_username: '',
+    confirm_text: '',
+    password: '',
+  })
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState({ type: '', text: '' })
+
+  useEffect(() => {
+    if (!open) return
+    setActiveTab('password')
+    setPasswordForm({
+      old_password: '',
+      new_password: '',
+      new_password2: '',
+    })
+    setDeleteForm({
+      confirm_username: user?.username || '',
+      confirm_text: '',
+      password: '',
+    })
+    setLoading(false)
+    setMessage({ type: '', text: '' })
+  }, [open, user?.username])
+
+  if (!open) return null
+
+  const getErrorText = (error, fallback) => {
+    const data = error?.response?.data
+    if (!data) return fallback
+    if (typeof data === 'string') return data
+    if (data.detail) return data.detail
+    const firstKey = Object.keys(data)[0]
+    const firstValue = data[firstKey]
+    if (Array.isArray(firstValue)) return firstValue[0]
+    if (typeof firstValue === 'string') return firstValue
+    return fallback
+  }
+
+  const submitChangePassword = async (event) => {
+    event.preventDefault()
+    setLoading(true)
+    setMessage({ type: '', text: '' })
+
+    try {
+      const res = await changePassword(passwordForm)
+      setMessage({ type: 'success', text: res?.detail || 'เปลี่ยนรหัสผ่านสำเร็จ' })
+      setPasswordForm({
+        old_password: '',
+        new_password: '',
+        new_password2: '',
+      })
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: getErrorText(error, 'เปลี่ยนรหัสผ่านไม่สำเร็จ'),
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const submitDeleteAccount = async (event) => {
+    event.preventDefault()
+    setLoading(true)
+    setMessage({ type: '', text: '' })
+
+    try {
+      const res = await deleteAccount(deleteForm)
+      setMessage({ type: 'success', text: res?.detail || 'ลบบัญชีสำเร็จ' })
+      logout()
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: getErrorText(error, 'ลบบัญชีไม่สำเร็จ'),
+      })
+      setLoading(false)
+    }
+  }
+
+  const note = 'ถ้าเป็นบัญชี LDAP ให้เปลี่ยนรหัสผ่านที่ระบบมหาวิทยาลัย ส่วนบัญชีที่สมัครในระบบนี้จะเปลี่ยนได้ทันที'
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full overflow-hidden rounded-t-[28px] border border-white/20 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.28)] sm:max-w-2xl sm:rounded-[28px]">
+        <div className="bg-gradient-to-r from-blue-700 via-blue-700 to-indigo-700 px-5 py-5 text-white sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-blue-100/80">Settings mode</p>
+              <h2 className="mt-1 text-2xl font-extrabold leading-tight">โหมดตั้งค่า</h2>
+              <p className="mt-1 text-sm text-blue-50/90">จัดการรหัสผ่านและลบบัญชีของคุณในที่เดียว</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="Close settings"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
+              {user?.username || 'unknown'}
+            </span>
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
+              {roleLabels[user?.role] || user?.role || 'ผู้ใช้ระบบ'}
+            </span>
+          </div>
+        </div>
+
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('password')}
+              className={`flex-1 rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
+                activeTab === 'password'
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'bg-transparent text-slate-500 hover:bg-white/70 hover:text-slate-800'
+              }`}
+            >
+              เปลี่ยนรหัสผ่าน
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('delete')}
+              className={`flex-1 rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
+                activeTab === 'delete'
+                  ? 'bg-white text-red-600 shadow-sm'
+                  : 'bg-transparent text-slate-500 hover:bg-white/70 hover:text-slate-800'
+              }`}
+            >
+              ลบบัญชี
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto p-4 sm:p-6">
+          {message.text && (
+            <div
+              className={`mb-4 rounded-2xl border px-4 py-3 text-sm ${
+                message.type === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-red-200 bg-red-50 text-red-700'
+              }`}
+            >
+              {message.text}
+            </div>
+          )}
+
+          {activeTab === 'password' && (
+            <form onSubmit={submitChangePassword} className="grid gap-4">
+              <div className="rounded-[24px] border border-blue-100 bg-blue-50/60 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-700 text-white">
+                    <KeyRound size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900">เปลี่ยนรหัสผ่าน</p>
+                    <p className="mt-1 text-xs leading-6 text-slate-600">{note}</p>
+                  </div>
+                </div>
+              </div>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">รหัสผ่านเดิม</span>
+                <input
+                  type="password"
+                  value={passwordForm.old_password}
+                  onChange={e => setPasswordForm(prev => ({ ...prev, old_password: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  placeholder="กรอกรหัสผ่านเดิม"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">รหัสผ่านใหม่</span>
+                <input
+                  type="password"
+                  value={passwordForm.new_password}
+                  onChange={e => setPasswordForm(prev => ({ ...prev, new_password: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  placeholder="อย่างน้อย 6 ตัวอักษร"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">ยืนยันรหัสผ่านใหม่</span>
+                <input
+                  type="password"
+                  value={passwordForm.new_password2}
+                  onChange={e => setPasswordForm(prev => ({ ...prev, new_password2: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  placeholder="พิมพ์รหัสผ่านใหม่อีกครั้ง"
+                />
+              </label>
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <p className="text-xs leading-6 text-slate-500">
+                  แนะนำให้ใช้รหัสผ่านที่เดายากและไม่ซ้ำกับบัญชีอื่น
+                </p>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
+                  บันทึกรหัสผ่าน
+                </button>
+              </div>
+            </form>
+          )}
+
+          {activeTab === 'delete' && (
+            <form onSubmit={submitDeleteAccount} className="grid gap-4">
+              <div className="rounded-[24px] border border-red-100 bg-red-50/70 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-red-600 text-white">
+                    <Trash2 size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900">ลบบัญชีผู้ใช้</p>
+                    <p className="mt-1 text-xs leading-6 text-slate-600">
+                      การลบบัญชีจะลบข้อมูลผู้ใช้และข้อมูลที่เกี่ยวข้องตามสิทธิ์ของระบบทันที และไม่สามารถกู้คืนได้
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-800">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  <p>
+                    เพื่อยืนยันการลบ ให้พิมพ์ชื่อผู้ใช้ของคุณให้ตรง และพิมพ์ <span className="font-bold">DELETE</span> ในช่องยืนยัน
+                  </p>
+                </div>
+              </div>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">ชื่อผู้ใช้</span>
+                <input
+                  type="text"
+                  value={deleteForm.confirm_username}
+                  onChange={e => setDeleteForm(prev => ({ ...prev, confirm_username: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                  placeholder="กรอกชื่อผู้ใช้ของคุณ"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">พิมพ์ DELETE เพื่อยืนยัน</span>
+                <input
+                  type="text"
+                  value={deleteForm.confirm_text}
+                  onChange={e => setDeleteForm(prev => ({ ...prev, confirm_text: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                  placeholder="DELETE"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">รหัสผ่านยืนยัน</span>
+                <input
+                  type="password"
+                  value={deleteForm.password}
+                  onChange={e => setDeleteForm(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                  placeholder="กรอกรหัสผ่านเดิม"
+                />
+              </label>
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <p className="text-xs leading-6 text-slate-500">
+                  ถ้าเป็นบัญชี LDAP ระบบจะข้ามการตรวจรหัสผ่านภายใน แต่ยังต้องยืนยันด้วยชื่อผู้ใช้และ DELETE
+                </p>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-200 transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  ลบบัญชี
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SupportModal({ open, onClose }) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full overflow-hidden rounded-t-[28px] border border-white/20 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.28)] sm:max-w-2xl sm:rounded-[28px]">
+        <div className="bg-gradient-to-r from-blue-700 via-blue-700 to-indigo-700 px-5 py-5 text-white sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-blue-100/80">Support</p>
+              <h2 className="mt-1 text-2xl font-extrabold leading-tight">ติดต่อผู้ดูแลระบบ</h2>
+              <p className="mt-1 text-sm text-blue-50/90">สำหรับปัญหา คำแนะนำ และการใช้งานระบบจองห้อง</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="Close support"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto p-4 sm:p-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-500">หน่วยงาน</p>
+              <p className="mt-2 text-sm font-bold text-slate-900">{supportInfo.organization}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{supportInfo.address}</p>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-500">ช่องทางติดต่อ</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <p className="flex items-center gap-2"><Phone size={16} className="text-blue-600" /> โทร. {supportInfo.phone}</p>
+                <p className="flex items-center gap-2"><MessageSquareMore size={16} className="text-blue-600" /> webmaster ภายใน {supportInfo.webmaster}</p>
+                <p className="flex items-center gap-2"><Mail size={16} className="text-blue-600" /> {supportInfo.email}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <a
+              href={supportInfo.facebook}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-[24px] border border-blue-100 bg-blue-50/70 p-4 transition hover:border-blue-200 hover:bg-blue-50"
+            >
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-500">Facebook</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">OCNfanpage</p>
+              <p className="mt-2 text-xs text-slate-500">เปิดเพจเพื่อดูข่าวสารและติดต่อเพิ่มเติม</p>
+            </a>
+            <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/70 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-500">แจ้งปัญหา</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">ติดต่อ webmaster เพื่อแจ้งปัญหา คำแนะนำ หรือข้อผิดพลาดของระบบ</p>
+            </div>
+            <div className="rounded-[24px] border border-amber-100 bg-amber-50/70 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-amber-500">หมายเหตุ</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{supportInfo.copyright}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-800"
+            >
+              <ExternalLink size={16} />
+              ปิดหน้าติดต่อ
+            </button>
+            <button
+              type="button"
+              onClick={() => window.open(`mailto:${supportInfo.email}`, '_blank')}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              <Mail size={16} />
+              ส่งอีเมลหา OCN
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GuideModal({ open, onClose, onGoBooking }) {
+  if (!open) return null
+
+  const steps = [
+    {
+      title: 'เริ่มจากแถบค้นหาด้านบน',
+      desc: 'พิมพ์ชื่อห้อง อาคาร หรือรหัสห้อง ระบบจะเดาคำที่พิมพ์ผิดและแสดงห้องที่ใกล้เคียงให้เลือก',
+    },
+    {
+      title: 'เลือกวัน เวลา และจำนวนผู้เข้าร่วม',
+      desc: 'จากหน้า จองห้องประชุม ให้กำหนดเงื่อนไขหลักก่อนกดค้นหา ระบบจะคัดห้องที่เหมาะสมให้ทันที',
+    },
+    {
+      title: 'ดูคำแนะนำจาก AI',
+      desc: 'ถ้าไม่พบห้องตรงเงื่อนไข ระบบจะเสนอห้องใกล้เคียงหรือห้องสำรองที่น่าจะใช้ได้แทน',
+    },
+    {
+      title: 'ยืนยันและติดตามผล',
+      desc: 'เมื่อเลือกห้องได้แล้ว กดยืนยันการจอง และกลับมาดูสถานะได้จากหน้าแรกหรือแดชบอร์ด',
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full overflow-hidden rounded-t-[28px] border border-white/20 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.28)] sm:max-w-3xl sm:rounded-[28px]">
+        <div className="bg-gradient-to-r from-blue-700 via-blue-700 to-indigo-700 px-5 py-5 text-white sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-blue-100/80">User guide</p>
+              <h2 className="mt-1 text-2xl font-extrabold leading-tight">คู่มือการใช้งาน</h2>
+              <p className="mt-1 text-sm text-blue-50/90">อ่านจบแล้วเริ่มใช้งานได้ทันที</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="Close guide"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto p-4 sm:p-6">
+          <div className="grid gap-3 md:grid-cols-2">
+            {steps.map((step, index) => (
+              <div key={step.title} className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-600 text-white text-sm font-bold">
+                  {index + 1}
+                </div>
+                <p className="text-sm font-bold text-slate-900">{step.title}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{step.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[24px] border border-blue-100 bg-blue-50/70 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-500">Tip</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">ถ้าพิมพ์ชื่อห้องผิด ระบบยังพยายามเดาห้องที่ใกล้เคียงให้</p>
+            </div>
+            <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/70 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-500">Shortcut</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">กด <span className="font-bold text-emerald-700">Enter</span> เพื่อค้นหาทันที</p>
+            </div>
+            <div className="rounded-[24px] border border-amber-100 bg-amber-50/70 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-amber-500">Help</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">ถ้าไม่พบห้อง ให้ลองเปลี่ยนเวลา หรือดูห้องแนะนำแทน</p>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={onGoBooking}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-800"
+            >
+              <BookOpen size={16} />
+              ไปหน้าจองห้องประชุม
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              ปิดคู่มือ
+            </button>
+          </div>
+
+          <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-500">ติดต่อผู้ดูแล</p>
+            <p className="mt-2 text-sm font-semibold text-slate-900">{supportInfo.organization}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{supportInfo.address}</p>
+            <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+              <p className="flex items-center gap-2"><Phone size={15} className="text-blue-600" /> โทร. {supportInfo.phone}</p>
+              <p className="flex items-center gap-2"><MessageSquareMore size={15} className="text-blue-600" /> webmaster {supportInfo.webmaster}</p>
+              <p className="flex items-center gap-2"><Mail size={15} className="text-blue-600" /> {supportInfo.email}</p>
+              <a href={supportInfo.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-700 hover:underline">
+                <Globe size={15} className="text-blue-600" />
+                OCNfanpage
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AppShell({ children }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isSupportOpen, setIsSupportOpen] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  const user = useMemo(() => getUser(), [location.pathname])
+  const displayName = user?.name || user?.full_name || user?.username || 'ผู้ใช้ระบบ'
+  const roleLabel = roleLabels[user?.role] || 'ผู้ใช้ระบบ'
+  const sectionLabel = useMemo(() => {
+    if (location.pathname === '/') return 'หน้าหลัก'
+    if (location.pathname.startsWith('/search')) return 'จองห้องประชุม'
+    if (location.pathname.startsWith('/admin/dashboard')) return 'รายงาน'
+    return 'ระบบจองห้องประชุม'
+  }, [location.pathname])
+
+  const quickLinks = [
+    {
+      key: 'guide',
+      label: 'คู่มือ',
+      icon: BookOpen,
+      onClick: () => navigate('/guide'),
+    },
+    {
+      key: 'settings',
+      label: 'ตั้งค่า',
+      icon: Settings2,
+      onClick: () => setIsSettingsOpen(true),
+    },
+    {
+      key: 'support',
+      label: 'ติดต่อผู้ดูแล',
+      icon: AlertTriangle,
+      onClick: () => setIsSupportOpen(true),
+    },
+  ]
+
+  useEffect(() => {
+    setIsMobileNavOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!searchText.trim()) {
+      setSearchSuggestions([])
+      setSearchLoading(false)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        const res = await api.get('/rooms/suggestions/', {
+          params: { q: searchText.trim(), limit: 6 },
+        })
+        const data = Array.isArray(res.data) ? res.data : []
+        setSearchSuggestions(data)
+      } catch {
+        setSearchSuggestions([])
+      } finally {
+        setSearchLoading(false)
+      }
+    }, 220)
+
+    return () => clearTimeout(timer)
+  }, [searchText])
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setIsMobileNavOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const isActive = (to, exact = false) => {
+    if (exact) return location.pathname === to
+    return location.pathname === to || location.pathname.startsWith(`${to}/`)
+  }
+
+  const sidebarWidthClass = 'lg:w-[300px]'
+
+  const runGlobalSearch = (payload) => {
+    const query = (payload || searchText || '').trim()
+    if (!query) return
+    const top = searchSuggestions[0]
+    navigate('/search', {
+      state: top
+        ? { quickRoom: top, quickSearch: query }
+        : { quickSearch: query },
+    })
+    setShowSuggestions(false)
+  }
+
+  return (
+    <div className="min-h-screen w-full bg-[linear-gradient(180deg,#f8fbff_0%,#f5f8fc_100%)] text-slate-900">
+      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 shadow-[0_8px_30px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+        <div className="mx-auto flex h-20 w-full max-w-[1600px] items-center gap-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_12px_28px_rgba(37,99,235,0.28)]">
+              <Building2 size={24} />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-lg font-extrabold leading-tight">ระบบจองห้องประชุม</p>
+              <p className="truncate text-sm font-semibold text-slate-500">มหาวิทยาลัยอุบลราชธานี</p>
+            </div>
+          </div>
+
+          <div className="hidden flex-1 justify-center md:flex">
+            <div className="relative w-full max-w-[420px]">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') runGlobalSearch()
+                }}
+                placeholder="ค้นหาห้องประชุม, รายการจอง..."
+                className="h-12 w-full rounded-full border border-slate-200 bg-slate-50/90 px-12 pr-4 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              />
+              <button
+                type="button"
+                onClick={() => runGlobalSearch()}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700"
+              >
+                ค้นหา
+              </button>
+            </div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
+              aria-label="Notifications"
+            >
+              <Bell size={19} />
+              <span className="absolute right-0 top-0 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">3</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
+              aria-label="Settings"
+            >
+              <Settings2 size={19} />
+            </button>
+
+            <div className="hidden lg:flex h-11 items-center gap-3 rounded-full border border-slate-200 bg-white px-3 pr-4 shadow-sm">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                <UserCircle2 size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold leading-tight">{displayName}</p>
+                <p className="truncate text-[11px] text-slate-500">{roleLabel}</p>
+              </div>
+              <ChevronDown size={16} className="text-slate-400" />
+            </div>
+
+            <button
+              type="button"
+              onClick={logout}
+              className="hidden h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700 lg:inline-flex"
+              aria-label="Logout"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+        <aside className={`hidden shrink-0 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] ${sidebarWidthClass}`}>
+          <div className="flex h-full w-full flex-col overflow-y-auto rounded-[28px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+            <div className="mb-3 flex items-center justify-between gap-2 px-1 pt-1">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-500">เมนู</p>
+                <p className="text-sm font-semibold text-slate-900">Sidebar</p>
+              </div>
+              <div className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-700">
+                {sectionLabel}
+              </div>
+            </div>
+
+            <nav className="flex flex-col gap-2">
+              {navItems.map(item => {
+                const Icon = item.icon
+                const active = isActive(item.to, item.exact)
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={`flex items-center gap-3 rounded-[22px] px-4 py-3.5 text-sm font-semibold transition-all ${
+                      active
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-[0_14px_28px_rgba(37,99,235,0.22)]'
+                        : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-all ${
+                      active ? 'bg-white/15' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      <Icon size={18} />
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </NavLink>
+                )
+              })}
+            </nav>
+
+            <div className="my-4 border-t border-slate-200/80" />
+
+            <div className="px-1">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-500">ทางลัด</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">Quick access</p>
+            </div>
+
+            <div className="mt-3 flex flex-col gap-2">
+              {quickLinks.map(item => {
+                const Icon = item.icon
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={item.onClick}
+                    className="flex items-center gap-3 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-600 transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                      <Icon size={17} />
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          <main className="min-h-[calc(100dvh-7.5rem)] px-0 py-0">
+            {children}
+          </main>
+        </div>
+      </div>
+
+      <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} />
+      <SupportModal open={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+
+      <button
+        type="button"
+        className="fixed bottom-4 left-4 z-50 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-700 text-white shadow-lg shadow-blue-200 lg:hidden"
+        onClick={() => setIsMobileNavOpen(true)}
+        aria-label="Open navigation"
+      >
+        <Menu size={18} />
+      </button>
+
+      {isMobileNavOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+            aria-label="Close navigation overlay"
+            onClick={() => setIsMobileNavOpen(false)}
+          />
+          <div className="absolute left-0 top-0 flex h-full w-[86vw] max-w-xs flex-col bg-white shadow-2xl">
+            <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">Sidebar</p>
+                <p className="truncate text-[11px] text-slate-500">UBU</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600"
+                onClick={() => setIsMobileNavOpen(false)}
+                aria-label="Close navigation"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            </div>
+            <nav className="flex flex-1 flex-col gap-2 p-4">
+              {navItems.map(item => {
+                const Icon = item.icon
+                const active = isActive(item.to, item.exact)
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold ${
+                      active ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <Icon size={17} />
+                    {item.label}
+                  </NavLink>
+                )
+              })}
+            </nav>
+            <div className="border-t border-slate-200 px-4 py-4">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-500">Quick access</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {quickLinks.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={item.onClick}
+                      className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs font-semibold text-slate-700"
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                        <Icon size={17} />
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="border-t border-slate-200 p-4">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.clear()
+                  navigate('/login')
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+              >
+                <LogOut size={16} />
+                ออกจากระบบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="border-t border-slate-200/80 bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2 px-4 py-4 text-xs text-slate-500 sm:px-6 lg:px-8">
+          <p className="font-semibold text-slate-700">{supportInfo.organization}</p>
+          <p>{supportInfo.address}</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span>โทร. {supportInfo.phone}</span>
+            <span>webmaster {supportInfo.webmaster}</span>
+            <span>{supportInfo.email}</span>
+            <a href={supportInfo.facebook} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+              OCNfanpage
+            </a>
+          </div>
+          <p>{supportInfo.copyright}</p>
+        </div>
+      </footer>
+
+    </div>
+  )
+}
+
+export default AppShell

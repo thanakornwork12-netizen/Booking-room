@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .serializers import LDAPTokenObtainPairSerializer
 from .views import (
     RegisterView, ProfileView,
+    ChangePasswordView, DeleteAccountView,
     BuildingViewSet, RoomViewSet,
     TermBookingViewSet, BookingViewSet,
     NotificationViewSet, DemandForecastViewSet,
@@ -40,6 +41,8 @@ urlpatterns = [
     path('auth/login/',    LDAPTokenObtainPairView.as_view(), name='login'),    # ← เปลี่ยนตรงนี้
     path('auth/refresh/',  TokenRefreshView.as_view(),        name='token_refresh'),
     path('auth/profile/',  ProfileView.as_view(),             name='profile'),
+    path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
+    path('auth/delete-account/',   DeleteAccountView.as_view(),  name='delete_account'),
 
     # Dashboard + Export
     path('dashboard/',     DashboardView.as_view(),           name='dashboard'),

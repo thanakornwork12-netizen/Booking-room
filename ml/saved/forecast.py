@@ -15,13 +15,13 @@
 #                         ▼
 #  ┌──────────────────────────────────────────────────────────────────┐
 #  │  Ensemble Weighting – Layer 2                                    │
-#  │  Weighted blend – LSTM เป็นหลัก, LGB/XGB เป็นตัวเสริม          │
+#  │  Weighted blend – LSTM 20% | LGB 40% | XGB 40%                  │
 #  └──────────────────────────────────────────────────────────────────┘
 #
 #  Pipeline แบบเรียบง่าย (เน้นความแม่นสูงสุด):
 #    1. LSTM (Primary) → จับ temporal/seasonal
 #    2. LightGBM + XGBoost (Support) → เสริมโครงสร้าง
-#    3. Weighted blend → รวมเป็น Ensemble (LSTM ถ่วงน้ำหนัก ~60%)
+#    3. Weighted blend → รวมเป็น Ensemble (LSTM 20%, LGB 40%, XGB 40%)
 #    4. ไม่มี robust/fallback/calibration gates — train ทุกห้องด้วย flow เดียวกัน
 #
 #  วิธีใช้:
@@ -37,10 +37,11 @@ import os, sys, warnings, argparse, random
 _CURRENT_DIR_FOR_ENV = os.path.dirname(os.path.abspath(__file__))
 os.environ.setdefault('DISABLE_DJANGO_SCHEDULER', '1')
 
+import json
 import numpy as np
 import pandas as pd
 import joblib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from sklearn.metrics import (
     mean_absolute_error, r2_score, mean_squared_error,
     accuracy_score, f1_score, recall_score, precision_score,
@@ -78,7 +79,8 @@ try:
     import tensorflow as tf
     from tensorflow.keras.models import Sequential
     from tensorflow.keras.layers import LSTM, Dense, Dropout
-    from tensorflow.keras.callbacks import EarlyStopping, Callback
+    from tensorflow.keras.callbacks import EarlyStopping, Callback, ReduceLROnPlateau
+    from tensorflow.keras.optimizers import Adam
     LSTM_AVAILABLE = True
 except ImportError:
     LSTM_AVAILABLE = False
@@ -87,27 +89,220 @@ except ImportError:
 else:
     tf.random.set_seed(42)
 
+# ── Hyperparameter Set Configuration (A/B/C) ──────────────────────────────────
+PARAM_SETS = {
+    'A': {
+        'name': 'A - Fast (Baseline)',
+        'lstm_epochs': 20, 'lstm_batch': 16,
+        'lstm_lookback': 20,
+        'lgb_estimators': 20, 'lgb_depth': 6, 'lgb_leaves': 31, 'lgb_lr': 0.15,
+        'xgb_estimators': 20, 'xgb_depth': 5, 'xgb_lr': 0.15,
+    },
+    'B': {
+        'name': 'B - Balanced',
+        'lstm_epochs': 50, 'lstm_batch': 8,
+        'lstm_lookback': 40,
+        'lgb_estimators': 50, 'lgb_depth': 8, 'lgb_leaves': 63, 'lgb_lr': 0.06,
+        'xgb_estimators': 50, 'xgb_depth': 6, 'xgb_lr': 0.06,
+    },
+    'C': {
+        'name': 'C - High Quality',
+        'lstm_epochs': 70, 'lstm_batch': 4,
+        'lstm_lookback': 70,
+        'lgb_estimators': 70, 'lgb_depth': 10, 'lgb_leaves': 127, 'lgb_lr': 0.04,
+        'xgb_estimators': 70, 'xgb_depth': 8, 'xgb_lr': 0.04,
+    },
+}
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 MIN_DAYS      = 30   # จำนวน booking ขั้นต่ำต่อห้อง (ข้อมูลจริง ~700+ ต่อห้อง)
 MIN_UNIQUE_DAYS = 14  # จำนวนวันที่มีการใช้งานขั้นต่ำ
 FORECAST_DAYS = 14
-LSTM_LOOKBACK = 14
-# Increase training budget a bit so LSTM has room to learn seasonality
-LSTM_EPOCHS   = 60           # from 30
-LSTM_BATCH    = 32
-LSTM_PATIENCE = 10           # from 5
+LSTM_LOOKBACK = 30  # ↑ ขยายจาก 14 → 30 เพื่อจับ seasonal patterns
+# Set current parameter set (will be overridden by --param-set argument)
+CURRENT_PARAM_SET = 'B'
+LSTM_EPOCHS   = PARAM_SETS['B']['lstm_epochs']
+LSTM_BATCH    = PARAM_SETS['B']['lstm_batch']
+LSTM_LOOKBACK_OVERRIDE = PARAM_SETS['B'].get('lstm_lookback', LSTM_LOOKBACK)
+LSTM_PATIENCE = 15  # ↑ ขยายจาก 10 → 15
+DISABLE_EARLY_STOPPING = False
 MODEL_DIR     = os.path.join(CURRENT_DIR, "saved_models")
 META_DIR      = os.path.join(CURRENT_DIR, "saved_meta")
 METRICS_DIR   = os.path.join(CURRENT_DIR, "metrics_plots")
+TRAINING_HISTORY_LOG = os.path.join(METRICS_DIR, "training_history.jsonl")
+RUN_ID = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(META_DIR,  exist_ok=True)
 os.makedirs(METRICS_DIR, exist_ok=True)
 
-# ── น้ำหนัก Prior (LSTM = Primary) ────────────────────────────────────────────
-LSTM_WEIGHT_PRIOR = 0.60
-LGB_WEIGHT_PRIOR  = 0.22
-XGB_WEIGHT_PRIOR  = 0.18
+
+def _room_artifact_dir(room) -> str:
+    room_id = getattr(room, 'id', room)
+    return os.path.join(MODEL_DIR, str(room_id))
+
+
+def _room_artifact_path(room, filename: str) -> str:
+    return os.path.join(_room_artifact_dir(room), filename)
+
+def _normalize_training_history_key(key):
+    if not isinstance(key, str):
+        return None
+    key = key.strip().lower()
+    if key in {'accuracy', 'acc', 'train_accuracy'}:
+        return 'train_acc'
+    if key in {'val_accuracy', 'valid_accuracy', 'val_acc'}:
+        return 'val_acc'
+    if key in {'loss', 'train_loss', 'mae'}:
+        return 'train_loss'
+    if key in {'val_loss', 'valid_loss', 'val_mae'}:
+        return 'val_loss'
+    return None
+
+def _normalize_training_history_metrics(history: dict):
+    preferred_keys = {
+        'train_acc': ['train_accuracy', 'accuracy', 'acc'],
+        'val_acc': ['valid_accuracy', 'val_accuracy', 'val_acc'],
+        'train_loss': ['train_loss', 'loss', 'mae'],
+        'val_loss': ['valid_loss', 'val_loss', 'val_mae'],
+    }
+    metrics = {}
+    for output_key, candidate_keys in preferred_keys.items():
+        for key in candidate_keys:
+            values = history.get(key)
+            if isinstance(values, (list, np.ndarray)) and len(values) > 0:
+                metrics[output_key] = np.asarray(values, dtype=float)
+                break
+    return metrics
+
+
+def _fill_missing_history_metrics(metrics: dict, other_metrics: list):
+    required_keys = ['train_acc', 'val_acc', 'train_loss', 'val_loss']
+    lengths = []
+    for key in required_keys:
+        values = metrics.get(key)
+        if not isinstance(values, (list, np.ndarray)):
+            return {}
+        lengths.append(len(values))
+    if not lengths:
+        return {}
+
+    max_epochs = min(lengths)
+    if max_epochs == 0:
+        return {}
+
+    return {
+        key: np.asarray(metrics[key], dtype=float)[:max_epochs]
+        for key in required_keys
+    }
+
+
+def _build_training_history_records(model_name: str, history: dict, room_name: str, param_set: str, other_metrics: list):
+    if not isinstance(history, dict):
+        history = {}
+    metrics = _normalize_training_history_metrics(history)
+    if not metrics:
+        return []
+
+    max_epochs = max((len(vals) for vals in metrics.values()), default=0)
+    if max_epochs == 0:
+        return []
+
+    records = []
+    timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+    skipped = 0
+
+    for epoch_idx in range(max_epochs):
+        values = []
+        for key in ['train_acc', 'val_acc', 'train_loss', 'val_loss']:
+            arr = metrics.get(key)
+            if arr is None or epoch_idx >= len(arr) or not np.isfinite(arr[epoch_idx]):
+                values = None
+                break
+            values.append(float(arr[epoch_idx]))
+        if values is None:
+            skipped += 1
+            continue
+
+        record = {
+            'timestamp': timestamp,
+            'run_id': RUN_ID,
+            'param_set': str(param_set).upper(),
+            'room': str(room_name),
+            'model': str(model_name).lower(),
+            'epoch': epoch_idx + 1,
+            'train_acc': values[0],
+            'val_acc': values[1],
+            'train_loss': values[2],
+            'val_loss': values[3],
+        }
+        records.append(record)
+
+    if skipped:
+        warnings.warn(
+            f"Skipping {skipped} training-history epoch(s) for {model_name}/{room_name}/{param_set} "
+            "because some metrics were missing or non-finite."
+        )
+    return records
+
+def _append_training_history_log(room, result):
+    room_name = getattr(room, 'name', None) or str(getattr(room, 'id', ''))
+    lstm_metrics = _normalize_training_history_metrics(result.get('lstm_history') or {})
+    lgb_metrics = _normalize_training_history_metrics(result.get('lgb_history') or {})
+    xgb_metrics = _normalize_training_history_metrics(result.get('xgb_history') or {})
+
+    records = []
+    records.extend(_build_training_history_records('lstm', result.get('lstm_history') or {}, room_name, CURRENT_PARAM_SET, [lgb_metrics, xgb_metrics]))
+    records.extend(_build_training_history_records('lightgbm', result.get('lgb_history') or {}, room_name, CURRENT_PARAM_SET, [lstm_metrics, xgb_metrics]))
+    records.extend(_build_training_history_records('xgboost', result.get('xgb_history') or {}, room_name, CURRENT_PARAM_SET, [lstm_metrics, lgb_metrics]))
+    # Append ensemble single-step summary if available (ensures ensemble presence in log)
+    try:
+        ensemble_summary = result.get('model_metrics', {}).get('ensemble') if isinstance(result.get('model_metrics'), dict) else None
+        if ensemble_summary:
+            cls = ensemble_summary.get('classification', {}) or {}
+            reg = ensemble_summary.get('regression', {}) or {}
+            # prefer classification accuracy/loss, fallback to regression metrics
+            acc = None
+            loss = None
+            if isinstance(cls.get('accuracy'), (int, float)):
+                acc = float(cls.get('accuracy'))
+            if isinstance(cls.get('loss'), (int, float)):
+                loss = float(cls.get('loss'))
+            if acc is None:
+                # try regression 'r2'/'mae' presence — use inverse mapping for loss
+                if isinstance(reg.get('mae'), (int, float)):
+                    loss = float(reg.get('mae'))
+            if acc is None and isinstance(reg.get('r2'), (int, float)):
+                # no accuracy, but we can set acc to NaN-equivalent None
+                acc = None
+            if acc is not None and loss is not None:
+                rec = {
+                    'timestamp': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'run_id': RUN_ID,
+                    'param_set': str(CURRENT_PARAM_SET).upper(),
+                    'room': str(room_name),
+                    'model': 'ensemble',
+                    'epoch': 1,
+                    'train_acc': float(acc),
+                    'val_acc': float(acc),
+                    'train_loss': float(loss),
+                    'val_loss': float(loss),
+                }
+                records.append(rec)
+    except Exception:
+        # don't allow logging failures to break training flow
+        pass
+    if not records:
+        return False
+    with open(TRAINING_HISTORY_LOG, 'a', encoding='utf-8') as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    return True
+
+# ── น้ำหนัก Prior (ปรับเป็น LSTM 20% | LGB 40% | XGB 40%) ───────────────────
+LSTM_WEIGHT_PRIOR = 0.20
+LGB_WEIGHT_PRIOR  = 0.40
+XGB_WEIGHT_PRIOR  = 0.40
 
 # Ensemble gating / label sensitivity tuning
 LSTM_R2_MIN_WEIGHT = 0.0
@@ -452,11 +647,11 @@ def build_cold_start_training_models(room, combined, schedule, use_log=False):
         y_te,
         {'lightgbm': lgb_val, 'xgboost': xgb_val},
         primary='lightgbm',
-        base_prior={'lightgbm': 0.55, 'xgboost': 0.45},
+        base_prior={'lightgbm': 0.50, 'xgboost': 0.50},
     )
     meta_val = _blend_predictions({'lightgbm': lgb_val, 'xgboost': xgb_val}, ensemble_weights)
     lstm_model, lstm_scaler, lstm_history = None, None, None
-    if LSTM_AVAILABLE and not use_log and len(y_tr) >= LSTM_LOOKBACK + 10:
+    if LSTM_AVAILABLE and len(y_tr) >= LSTM_LOOKBACK + 10:
         lstm_model, lstm_scaler, lstm_history = train_lstm(y_tr, y_te, lookback=LSTM_LOOKBACK,
                                                            epochs=LSTM_EPOCHS, patience=LSTM_PATIENCE)
         if lstm_model is not None:
@@ -681,29 +876,69 @@ def print_classification_metrics(metrics: dict, room_name: str, room_id: int | N
 
 class LSTMClassificationHistoryCallback(Callback):
     """Compute classification accuracy/loss for training and validation per epoch."""
-    def __init__(self, x_train, y_train, x_val, y_val, thr_high, thr_med, peak_ref):
+    def __init__(self, x_train, y_train_raw, x_val, y_val_raw, scaler_y, thr_high, thr_med, peak_ref, lookback=0):
         super().__init__()
         self.x_train = x_train
-        self.y_train = np.asarray(y_train, dtype=float)
+        self.y_train_raw = np.asarray(y_train_raw, dtype=float)
         self.x_val = x_val
-        self.y_val = np.asarray(y_val, dtype=float)
+        self.y_val_raw = np.asarray(y_val_raw, dtype=float)
+        self.scaler_y = scaler_y
         self.thr_high = float(thr_high)
         self.thr_med = float(thr_med)
         self.peak_ref = float(peak_ref)
+        self.lookback = int(lookback)
+        self.train_accuracy_history = []
+        self.val_accuracy_history = []
+        self.train_loss_history = []
+        self.val_loss_history = []
+
+    def _inverse_transform(self, values):
+        if self.scaler_y is None:
+            return np.asarray(values, dtype=float)
+        try:
+            inv = self.scaler_y.inverse_transform(np.asarray(values, dtype=float).reshape(-1, 1)).flatten()
+            return np.maximum(0.0, inv)
+        except Exception:
+            return np.asarray(values, dtype=float)
+
+    def _align_raw_targets(self, y_pred, y_raw):
+        if len(y_raw) == len(y_pred):
+            return y_raw
+        if len(y_raw) > len(y_pred):
+            if len(y_raw) - len(y_pred) == self.lookback:
+                return y_raw[self.lookback:]
+            return y_raw[-len(y_pred):]
+        return y_raw
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         try:
             y_train_pred = self.model.predict(self.x_train, verbose=0).flatten()
             y_val_pred = self.model.predict(self.x_val, verbose=0).flatten()
-            train_cls = compute_classification_metrics(self.y_train, y_train_pred, self.thr_high, self.thr_med, self.peak_ref)
-            val_cls = compute_classification_metrics(self.y_val, y_val_pred, self.thr_high, self.thr_med, self.peak_ref)
+            y_train_pred_raw = self._inverse_transform(y_train_pred)
+            y_val_pred_raw = self._inverse_transform(y_val_pred)
+            y_train_target = self._align_raw_targets(y_train_pred, self.y_train_raw)
+            y_val_target = self._align_raw_targets(y_val_pred, self.y_val_raw)
+
+            train_cls = compute_classification_metrics(y_train_target, y_train_pred_raw, self.thr_high, self.thr_med, self.peak_ref)
+            val_cls = compute_classification_metrics(y_val_target, y_val_pred_raw, self.thr_high, self.thr_med, self.peak_ref)
+
+            train_loss = float(mean_absolute_error(y_train_target, y_train_pred_raw))
+            val_loss = float(mean_absolute_error(y_val_target, y_val_pred_raw))
+
             logs['accuracy'] = train_cls['accuracy']
             logs['val_accuracy'] = val_cls['accuracy']
+            logs['train_loss'] = train_loss
+            logs['val_loss'] = val_loss
             logs['class_loss'] = train_cls['loss']
             logs['val_class_loss'] = val_cls['loss']
             logs['class_f1'] = train_cls['f1']
             logs['val_class_f1'] = val_cls['f1']
+
+            self.train_accuracy_history.append(train_cls['accuracy'])
+            self.val_accuracy_history.append(val_cls['accuracy'])
+            self.train_loss_history.append(train_loss)
+            self.val_loss_history.append(val_loss)
         except Exception:
             pass
 
@@ -1019,35 +1254,66 @@ def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
     peak_ref = float(np.percentile(all_original_y, 95)) or 1.0
     thr_high, thr_med = compute_adaptive_thresholds(pd.Series(all_original_y), peak_ref)
     input_cols = X_tr.shape[2]
+    
+    # ✅ RIGHT-SIZED LSTM ARCHITECTURE: smaller capacity to match small per-room datasets
+    # (3-layer, 128-unit stack overfit/oscillated on datasets of only a few hundred rows —
+    #  a single LSTM layer converges more smoothly on this data size)
     model = Sequential([
-        LSTM(64, return_sequences=True, input_shape=(lookback, input_cols)),
-        Dropout(0.2),
-        LSTM(32, return_sequences=False),
+        LSTM(48, return_sequences=False, input_shape=(lookback, input_cols)),
         Dropout(0.2),
         Dense(16, activation='relu'),
         Dense(1),
     ])
-    model.compile(optimizer='adam', loss='mae', metrics=['mae'])
-    # Early stop on val_loss plateau: regression task ต้องใช้ loss ไม่ใช่ accuracy
-    es = EarlyStopping(monitor='val_loss', mode='min', patience=patience,
-                       restore_best_weights=True, verbose=0)
+    
+    # ✅ GENTLER OPTIMIZER: lower initial LR + clipping (no deprecated `decay` arg —
+    # LR scheduling is handled entirely by ReduceLROnPlateau below)
+    optimizer = Adam(learning_rate=0.0005, clipvalue=1.0)
+    model.compile(optimizer=optimizer, loss='mae', metrics=['mae'])
+    
+    # ✅ EARLY STOPPING + LEARNING RATE SCHEDULER
+    callbacks = []
+    if not DISABLE_EARLY_STOPPING:
+        es = EarlyStopping(monitor='val_loss', mode='min', patience=patience,
+                           restore_best_weights=True, verbose=0)
+        callbacks.append(es)
+        
+        # Reduce learning rate on plateau (important for convergence!)
+        reduce_lr = ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,       # ลด LR ลง 50%
+            patience=8,       # หลัง 8 epochs ที่ไม่ improve (เดิม 5 — ตัดสินใจเร็วไป ทำให้ plateau นาน)
+            min_lr=1e-5,
+            verbose=0
+        )
+        callbacks.append(reduce_lr)
     cls_cb = LSTMClassificationHistoryCallback(
-        X_tr, y_tr, X_va, y_va, thr_high, thr_med, peak_ref
+        X_tr, y_train_raw, X_va, y_val_raw, scaler_y, thr_high, thr_med, peak_ref,
+        lookback=lookback
     )
+    callbacks.append(cls_cb)
     history = model.fit(X_tr, y_tr, validation_data=(X_va, y_va),
                         epochs=min(epochs, LSTM_EPOCHS), batch_size=LSTM_BATCH,
-                        callbacks=[es, cls_cb], verbose=0)
+                        callbacks=callbacks, verbose=0)
 
     hist = history.history
+    if hasattr(cls_cb, 'train_accuracy_history') and cls_cb.train_accuracy_history:
+        hist.setdefault('accuracy', cls_cb.train_accuracy_history)
+    if hasattr(cls_cb, 'val_accuracy_history') and cls_cb.val_accuracy_history:
+        hist.setdefault('val_accuracy', cls_cb.val_accuracy_history)
+    if getattr(cls_cb, 'train_loss_history', None):
+        hist['train_loss'] = cls_cb.train_loss_history
+    if getattr(cls_cb, 'val_loss_history', None):
+        hist['val_loss'] = cls_cb.val_loss_history
+
     if 'accuracy' in hist and 'val_accuracy' in hist:
         print(
-            f"      📈 LSTM training history: epochs={len(hist['loss'])} "
-            f"train_loss={hist['loss'][-1]:.4f} val_loss={hist['val_loss'][-1]:.4f} "
+            f"      📈 LSTM training history: epochs={len(hist.get('train_loss', hist.get('loss', [])))} "
+            f"train_loss={hist['train_loss'][-1]:.4f} val_loss={hist['val_loss'][-1]:.4f} "
             f"train_acc={hist['accuracy'][-1]:.4f} val_acc={hist['val_accuracy'][-1]:.4f}"
         )
     elif 'mae' in hist and 'val_mae' in hist:
         print(
-            f"      📈 LSTM training history: epochs={len(hist['loss'])} "
+            f"      📈 LSTM training history: epochs={len(hist.get('mae', hist.get('loss', [])))} "
             f"train_mae={hist['mae'][-1]:.4f} val_mae={hist['val_mae'][-1]:.4f}"
         )
     return model, scaler, hist
@@ -1221,11 +1487,14 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     robust=True → Huber loss + regularization แรงขึ้น
     Huber loss ดีกว่า MAE สำหรับข้อมูลที่มี extreme outlier เป็นครั้งคราว
     """
+    global CURRENT_PARAM_SET
+    params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+    
     if robust:
         params = dict(
             objective='huber', alpha=0.9,
-            n_estimators=140, learning_rate=0.04,
-            max_depth=5, num_leaves=24,
+            n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.04),
+            max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'],
             min_child_samples=20,
             lambda_l1=1.0, lambda_l2=1.0,
             feature_fraction=0.7, bagging_fraction=0.7, bagging_freq=5,
@@ -1235,23 +1504,24 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     else:
         params = dict(
             objective='regression_l1',
-            n_estimators=140, learning_rate=0.05,
-            max_depth=6, num_leaves=31, min_child_samples=10,
+            n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.05),
+            max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'],
+            min_child_samples=10,
             lambda_l1=0.3, lambda_l2=0.3,
             feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=5,
             n_jobs=-1,
             verbose=-1,
         )
     model = lgb.LGBMRegressor(**params)
+    callbacks = [lgb.log_evaluation(-1)]
+    if not DISABLE_EARLY_STOPPING:
+        callbacks.insert(0, lgb.early_stopping(15, verbose=False))
     model.fit(
         X_tr, y_tr,
         eval_set=[(X_tr, y_tr), (X_te, y_te)],
         eval_names=['train', 'valid'],
         eval_metric='mae',
-        callbacks=[
-            lgb.early_stopping(15, verbose=False),
-            lgb.log_evaluation(-1),
-        ],
+        callbacks=callbacks,
     )
     return model, _extract_booster_history(model.evals_result_)
 
@@ -1261,23 +1531,28 @@ def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     XGBoost – Supporting Model
     robust=True → pseudo-Huber loss + regularization แรงขึ้น
     """
+    global CURRENT_PARAM_SET
+    params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+    
     if robust:
         params = dict(
             objective='reg:pseudohubererror',
-            n_estimators=140, learning_rate=0.04,
-            max_depth=4, subsample=0.7,
+            n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.04),
+            max_depth=params_set['xgb_depth'], subsample=0.7,
             colsample_bytree=0.7,
             reg_alpha=1.0, reg_lambda=1.0,
-            early_stopping_rounds=15, eval_metric='mae', verbosity=0,
+            eval_metric='mae', verbosity=0,
         )
     else:
         params = dict(
             objective='reg:absoluteerror',
-            n_estimators=140, learning_rate=0.05,
-            max_depth=5, subsample=0.8, colsample_bytree=0.8,
+            n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.05),
+            max_depth=params_set['xgb_depth'], subsample=0.8, colsample_bytree=0.8,
             reg_alpha=0.3, reg_lambda=0.3,
-            early_stopping_rounds=15, eval_metric='mae', verbosity=0,
+            eval_metric='mae', verbosity=0,
         )
+    if not DISABLE_EARLY_STOPPING:
+        params['early_stopping_rounds'] = 15
     model = xgb.XGBRegressor(**params, n_jobs=-1)
     model.fit(
         X_tr, y_tr,
@@ -1291,36 +1566,29 @@ def _extract_booster_history(evals_result):
     history = {}
     if not isinstance(evals_result, dict):
         return history
-    # xgboost may return keys like 'validation_0', 'validation_1'
     keys = list(evals_result.keys())
+    train_metrics = {}
+    valid_metrics = {}
     for dataset_name, metrics in evals_result.items():
         if not isinstance(metrics, dict):
             continue
         lower_name = str(dataset_name).lower()
-        # map common patterns to train/valid
-        if lower_name.startswith('train'):
-            prefix = 'train'
-        elif lower_name.startswith('valid'):
-            prefix = 'valid'
-        elif lower_name.startswith('validation'):
-            # try to infer order: validation_0 -> first eval_set, validation_1 -> second
-            try:
-                idx = int(lower_name.split('_')[-1])
-            except Exception:
-                idx = None
-            if idx == 0 and len(keys) > 1:
-                # assume validation_0 corresponds to first eval_set (train)
-                prefix = 'train'
-            elif idx == 1 and len(keys) > 1:
-                prefix = 'valid'
-            else:
-                prefix = 'valid'
-        else:
-            prefix = lower_name
-        for metric_name, values in metrics.items():
-            if isinstance(values, (list, np.ndarray)) and len(values) > 0:
-                history[f'{prefix}_loss'] = list(values)
-                break
+        # LightGBM: keys are 'train', 'valid'
+        # XGBoost: keys are 'validation_0' (train), 'validation_1' (valid)
+        if lower_name == 'train' or lower_name.startswith('validation_0'):
+            train_metrics = metrics
+        elif lower_name == 'valid' or lower_name.startswith('validation_1'):
+            valid_metrics = metrics
+    # Extract loss from train metrics
+    for metric_name, values in train_metrics.items():
+        if isinstance(values, (list, np.ndarray)) and len(values) > 0:
+            history['train_loss'] = list(values)
+            break
+    # Extract loss from valid metrics
+    for metric_name, values in valid_metrics.items():
+        if isinstance(values, (list, np.ndarray)) and len(values) > 0:
+            history['valid_loss'] = list(values)
+            break
     return history
 
 
@@ -1439,13 +1707,82 @@ def _blend_predictions(preds: dict[str, np.ndarray], weights: dict[str, float]) 
     return np.maximum(0.0, blended)
 
 
+def _ensemble_weight_vector(weights: dict[str, float]) -> np.ndarray:
+    vec = np.array([
+        float(weights.get('lstm', 0.0)),
+        float(weights.get('lightgbm', 0.0)),
+        float(weights.get('xgboost', 0.0)),
+    ], dtype=np.float32)
+    total = float(np.sum(vec))
+    if total <= 0.0:
+        vec = np.array([0.0, 0.5, 0.5], dtype=np.float32)
+        total = 1.0
+    return vec / total
+
+
+def _build_ensemble_keras_model(weights: dict[str, float]):
+    """Create a tiny Keras combiner that stores the final ensemble weights.
+
+    This does not embed LightGBM/XGBoost internals. It only saves the final
+    blending rule in a portable `.keras` file so inference can load one
+    artifact for the last aggregation step.
+    """
+    if not LSTM_AVAILABLE:
+        return None
+
+    kernel = _ensemble_weight_vector(weights).reshape(3, 1)
+    inputs = tf.keras.Input(shape=(3,), name='base_predictions')
+    outputs = tf.keras.layers.Dense(
+        1,
+        use_bias=False,
+        trainable=False,
+        kernel_initializer=tf.keras.initializers.Constant(kernel),
+        name='weighted_blend',
+    )(inputs)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs, name='room_booking_ensemble')
+    return model
+
+
+def _save_ensemble_keras(room, result):
+    if not LSTM_AVAILABLE:
+        return None
+
+    model = result.get('ensemble_model')
+    if model is None:
+        model = _build_ensemble_keras_model(result.get('ensemble_weights') or {})
+    if model is None:
+        return None
+
+    room_dir = _room_artifact_dir(room)
+    os.makedirs(room_dir, exist_ok=True)
+    path = _room_artifact_path(room, "ensemble.keras")
+    model.save(path)
+    return path
+
+
+def _load_ensemble_keras(room):
+    if not LSTM_AVAILABLE:
+        return None
+    candidates = [
+        _room_artifact_path(room, "ensemble.keras"),
+        os.path.join(MODEL_DIR, f"{room.id}_ensemble.keras"),
+    ]
+    try:
+        for path in candidates:
+            if os.path.exists(path):
+                return tf.keras.models.load_model(path, compile=False)
+    except Exception:
+        return None
+    return None
+
+
 def _derive_ensemble_weights(
     y_true: np.ndarray,
     preds: dict[str, np.ndarray],
     primary: str = 'lstm',
     base_prior: dict[str, float] | None = None,
 ) -> dict[str, float]:
-    base_prior = base_prior or {'lstm': 0.62, 'lightgbm': 0.21, 'xgboost': 0.17}
+    base_prior = base_prior or {'lstm': 0.20, 'lightgbm': 0.40, 'xgboost': 0.40}
     scores = {}
     r2_scores = {}
     for name, arr in preds.items():
@@ -1643,7 +1980,7 @@ def stacking_predict(
             y_cal,
             {'lightgbm': lgb_val, 'xgboost': xgb_val},
             primary='lightgbm',
-            base_prior={'lightgbm': 0.55, 'xgboost': 0.45},
+            base_prior={'lightgbm': 0.50, 'xgboost': 0.50},
         )
         final = _blend_predictions(
             {'lightgbm': lgb_fut, 'xgboost': xgb_fut},
@@ -1699,6 +2036,7 @@ def _build_forecast_bulk(
     history, peak_ref, thr_high, thr_med,
     room_hour_dist, confidence, forecast_dates, schedule,
     lstm_model=None, lstm_scaler=None,
+    ensemble_model=None,
     use_log: bool = False,
     lstm_lookback: int = LSTM_LOOKBACK,
 ):
@@ -1753,13 +2091,24 @@ def _build_forecast_bulk(
             lstm_val_fc = lstm_daily_preds[fc_date]
             if use_log:
                 lstm_val_fc = np.log1p(lstm_val_fc)
-            try:
-                preds = {'lstm': np.array([lstm_val_fc]), 'lightgbm': np.array([lgb_pred]), 'xgboost': np.array([xgb_pred])}
+            preds = {'lstm': np.array([lstm_val_fc]), 'lightgbm': np.array([lgb_pred]), 'xgboost': np.array([xgb_pred])}
+            if ensemble_model is not None:
+                try:
+                    ensemble_input = np.array([[lstm_val_fc, lgb_pred, xgb_pred]], dtype=np.float32)
+                    d_pred = float(ensemble_model.predict(ensemble_input, verbose=0).reshape(-1)[0])
+                except Exception:
+                    d_pred = float(_blend_predictions(preds, ensemble_weights)[0])
+            else:
                 d_pred = float(_blend_predictions(preds, ensemble_weights)[0])
-            except Exception:
-                d_pred = float(_blend_predictions({'lightgbm': np.array([lgb_pred]), 'xgboost': np.array([xgb_pred])}, ensemble_weights)[0])
         else:
-            d_pred = float(_blend_predictions({'lightgbm': np.array([lgb_pred]), 'xgboost': np.array([xgb_pred])}, ensemble_weights)[0])
+            if ensemble_model is not None:
+                try:
+                    ensemble_input = np.array([[0.0, lgb_pred, xgb_pred]], dtype=np.float32)
+                    d_pred = float(ensemble_model.predict(ensemble_input, verbose=0).reshape(-1)[0])
+                except Exception:
+                    d_pred = float(_blend_predictions({'lightgbm': np.array([lgb_pred]), 'xgboost': np.array([xgb_pred])}, ensemble_weights)[0])
+            else:
+                d_pred = float(_blend_predictions({'lightgbm': np.array([lgb_pred]), 'xgboost': np.array([xgb_pred])}, ensemble_weights)[0])
 
         d_pred = max(0.0, d_pred)
         if use_log:
@@ -1855,7 +2204,15 @@ def _evaluate_model_preds(y_true, preds_dict, thr_high, thr_med, peak_ref, room_
                 mp, (0, max(0, len(y_true) - len(mp))), 'constant')
         r2 = r2_score(y_true, mp)
         mae = mean_absolute_error(y_true, mp)
-        cls = compute_classification_metrics(y_true, mp, thr_high, thr_med, peak_ref)
+        # compute base classification metrics and search for an improved threshold multiplier
+        base_cls = compute_classification_metrics(y_true, mp, thr_high, thr_med, peak_ref)
+        try:
+            best_m, best_metrics = _evaluate_with_best_threshold(y_true, mp, thr_high, thr_med, peak_ref)
+        except Exception:
+            best_m, best_metrics = 1.0, base_cls
+        cls = best_metrics or base_cls
+        # attach calibration multiplier when optimization found a different multiplier
+        cls['calibration_multiplier'] = float(best_m or 1.0)
         reg = {
             'r2': round(r2, 4), 'mae': round(mae, 4),
             'rmse': round(rmse(y_true, mp), 4), 'smape': round(smape(y_true, mp), 4),
@@ -1923,8 +2280,8 @@ def _train_room_pipeline(room, daily, rdf, schedule):
     room_hour_dist = learn_hour_dist(rdf, room_id=room.id) if len(rdf) > 0 else HOUR_DIST_FALLBACK
 
     lstm_model, lstm_scaler, lstm_history = None, None, None
-    if LSTM_AVAILABLE and not use_log and len(y_tr) >= LSTM_LOOKBACK + 10:
-        print(f"   🧠 [1/3] LSTM (Primary) – {room.name}")
+    if LSTM_AVAILABLE and len(y_tr) >= LSTM_LOOKBACK + 10:
+        print(f"   🧠 [1/3] LSTM (Primary) – {room.name}{' (log-transformed)' if use_log else ''}")
         lstm_model, lstm_scaler, lstm_history = train_lstm(
             y_tr, y_cal, lookback=LSTM_LOOKBACK,
             epochs=LSTM_EPOCHS, patience=LSTM_PATIENCE,
@@ -1933,7 +2290,7 @@ def _train_room_pipeline(room, daily, rdf, schedule):
         )
         print(f"         {'✅ success' if lstm_model else '⚠️  failed'}")
     else:
-        reason = 'log-transform' if use_log else 'insufficient data'
+        reason = 'insufficient data'
         print(f"   ⏭️  [1/3] LSTM skipped ({reason})")
 
     print(f"   🌿 [2/3] LightGBM (Support)")
@@ -1957,6 +2314,7 @@ def _train_room_pipeline(room, daily, rdf, schedule):
     lstm_gate_pass = False
     lstm_cal_r2 = float('-inf')
     lstm_cal_mae = float('inf')
+    lstm_history_saved = lstm_history  # Save history before potentially clearing it
     if lstm_model is not None and lstm_cal is not None:
         lstm_cal_eval = np.asarray(lstm_cal, dtype=float)
         if use_log:
@@ -1976,10 +2334,9 @@ def _train_room_pipeline(room, daily, rdf, schedule):
 
     if not lstm_gate_pass:
         # LSTM failed the regression gate on this room's calibration set.
-        # Drop it from the saved room bundle so forecast-only mode will not load it.
+        # Drop it from forecast but keep history for plotting.
         lstm_model = None
         lstm_scaler = None
-        lstm_history = None
         lstm_eval = None
 
     if use_log:
@@ -2017,8 +2374,9 @@ def _train_room_pipeline(room, daily, rdf, schedule):
         'thr_high': thr_high, 'thr_med': thr_med,
         'room_hour_dist': room_hour_dist, 'confidence': confidence,
         'lgb_model': lgb_model, 'xgb_model': xgb_model, 'ensemble_weights': ensemble_weights,
+        'ensemble_model': _build_ensemble_keras_model(ensemble_weights),
         'lstm_model': lstm_model, 'lstm_scaler': lstm_scaler,
-        'lstm_history': lstm_history, 'lgb_history': lgb_history, 'xgb_history': xgb_history,
+        'lstm_history': lstm_history_saved, 'lgb_history': lgb_history, 'xgb_history': xgb_history,
         'lstm_gate_pass': lstm_gate_pass, 'lstm_cal_r2': lstm_cal_r2, 'lstm_cal_mae': lstm_cal_mae,
         'cls_metrics': cls_metrics,
         'reg_metrics': {
@@ -2032,14 +2390,42 @@ def _train_room_pipeline(room, daily, rdf, schedule):
 
 
 def _save_room_models(room, result):
-    joblib.dump(result['lgb_model'], os.path.join(MODEL_DIR, f"{room.id}_lgb.pkl"))
-    joblib.dump(result['xgb_model'], os.path.join(MODEL_DIR, f"{room.id}_xgb.pkl"))
+    room_dir = _room_artifact_dir(room)
+    os.makedirs(room_dir, exist_ok=True)
+    joblib.dump(result['lgb_model'], _room_artifact_path(room, "lgb.pkl"))
+    joblib.dump(result['xgb_model'], _room_artifact_path(room, "xgb.pkl"))
     if result['lstm_model'] is not None:
-        joblib.dump(result['lstm_model'], os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl"))
-        joblib.dump(result['lstm_scaler'], os.path.join(MODEL_DIR, f"{room.id}_lstm_scaler.pkl"))
-    sp = os.path.join(MODEL_DIR, f"{room.id}_seasonal.pkl")
+        joblib.dump(result['lstm_model'], _room_artifact_path(room, "lstm.pkl"))
+        joblib.dump(result['lstm_scaler'], _room_artifact_path(room, "lstm_scaler.pkl"))
+    ensemble_path = _save_ensemble_keras(room, result)
+    sp = _room_artifact_path(room, "seasonal.pkl")
     if os.path.exists(sp):
         os.remove(sp)
+
+    lstm_params = None
+    if result['lstm_model'] is not None:
+        lstm_params = {
+            'lookback': LSTM_LOOKBACK,
+            'epochs': LSTM_EPOCHS,
+            'batch_size': LSTM_BATCH,
+            'patience': LSTM_PATIENCE,
+            'optimizer': 'adam',
+            'loss': 'mae',
+            'architecture': 'LSTM(48)->Dropout->Dense(16)->Dense(1)',
+        }
+
+    lgb_params = {}
+    try:
+        lgb_params = getattr(result['lgb_model'], 'get_params', lambda: {})() or {}
+    except Exception:
+        lgb_params = {}
+
+    xgb_params = {}
+    try:
+        xgb_params = getattr(result['xgb_model'], 'get_params', lambda: {})() or {}
+    except Exception:
+        xgb_params = {}
+
     meta_payload = {
         'room_id': room.id, 'room_name': room.name,
         'peak_ref': result['peak_ref'], 'thr_high': result['thr_high'], 'thr_med': result['thr_med'],
@@ -2052,7 +2438,15 @@ def _save_room_models(room, result):
         'train_size': result['train_size'], 'test_size': result['test_size'],
         'lstm_history': result['lstm_history'],
         'lgb_history': result['lgb_history'], 'xgb_history': result['xgb_history'],
+        'lstm_params': lstm_params,
+        'lgb_params': lgb_params,
+        'xgb_params': xgb_params,
+        'artifact_dir': _room_artifact_dir(room),
+        'ensemble_keras_path': ensemble_path,
+        'param_set': CURRENT_PARAM_SET,
+        'param_set_name': PARAM_SETS.get(CURRENT_PARAM_SET, {}).get('name', 'Unknown'),
     }
+    _append_training_history_log(room, result)
     joblib.dump(meta_payload, os.path.join(META_DIR, f"{room.id}_meta.pkl"))
     return meta_payload
 
@@ -2149,6 +2543,7 @@ def retrain_and_forecast():
             result['daily'].copy(), result['peak_ref'], result['thr_high'], result['thr_med'],
             result['room_hour_dist'], result['confidence'], forecast_dates, schedule,
             lstm_model=result['lstm_model'], lstm_scaler=result['lstm_scaler'],
+            ensemble_model=result.get('ensemble_model'),
             use_log=result['use_log'], lstm_lookback=LSTM_LOOKBACK,
         )
         DemandForecast.objects.filter(room=room, forecast_date__in=forecast_dates).delete()
@@ -2222,14 +2617,17 @@ def generate_forecast_only():
 
     for room in Room.objects.all():
         meta_path = os.path.join(META_DIR, f"{room.id}_meta.pkl")
-        lgb_path  = os.path.join(MODEL_DIR, f"{room.id}_lgb.pkl")
-        xgb_path  = os.path.join(MODEL_DIR, f"{room.id}_xgb.pkl")
-        if not all(os.path.exists(p) for p in [meta_path, lgb_path, xgb_path]):
+        room_dir  = _room_artifact_dir(room)
+        lgb_path  = _room_artifact_path(room, "lgb.pkl")
+        xgb_path  = _room_artifact_path(room, "xgb.pkl")
+        legacy_lgb_path = os.path.join(MODEL_DIR, f"{room.id}_lgb.pkl")
+        legacy_xgb_path = os.path.join(MODEL_DIR, f"{room.id}_xgb.pkl")
+        if not os.path.exists(meta_path):
             continue
 
         meta       = joblib.load(meta_path)
-        lgb_model  = joblib.load(lgb_path)
-        xgb_model  = joblib.load(xgb_path)
+        lgb_model  = joblib.load(lgb_path if os.path.exists(lgb_path) else legacy_lgb_path)
+        xgb_model  = joblib.load(xgb_path if os.path.exists(xgb_path) else legacy_xgb_path)
         ensemble_weights = meta.get('ensemble_weights') or {'lightgbm': 0.5, 'xgboost': 0.5}
 
         if 'cls_metrics' in meta:
@@ -2238,11 +2636,18 @@ def generate_forecast_only():
         # โหลด LSTM
         lstm_model, lstm_scaler = None, None
         if meta.get('has_lstm', False) and LSTM_AVAILABLE:
-            lp = os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl")
-            sp = os.path.join(MODEL_DIR, f"{room.id}_lstm_scaler.pkl")
+            lp = _room_artifact_path(room, "lstm.pkl")
+            sp = _room_artifact_path(room, "lstm_scaler.pkl")
+            legacy_lp = os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl")
+            legacy_sp = os.path.join(MODEL_DIR, f"{room.id}_lstm_scaler.pkl")
+            if not os.path.exists(lp):
+                lp = legacy_lp
+            if not os.path.exists(sp):
+                sp = legacy_sp
             if os.path.exists(lp) and os.path.exists(sp):
                 lstm_model  = joblib.load(lp)
                 lstm_scaler = joblib.load(sp)
+        ensemble_model = _load_ensemble_keras(room)
 
         rdf = raw[raw['room_id'] == room.id] if len(raw) > 0 else pd.DataFrame()
         if len(rdf) < MIN_DAYS:
@@ -2266,6 +2671,7 @@ def generate_forecast_only():
             meta['peak_ref'], meta['thr_high'], meta['thr_med'],
             meta['hour_dist'], meta['confidence'], forecast_dates, schedule,
             lstm_model=lstm_model, lstm_scaler=lstm_scaler,
+            ensemble_model=ensemble_model,
             use_log=use_log,
             lstm_lookback=meta.get('lstm_lookback', LSTM_LOOKBACK),
         )
@@ -2674,33 +3080,12 @@ def show_saved_metrics(compact: bool = False):
         print(f"   F1 Score : {'✅ ดีมาก' if avg_f1  >= 0.8 else '⚠️  พอใช้' if avg_f1  >= 0.6 else '❌ ต่ำ'} ({avg_f1:.3f})")
         print("=" * 75)
 
-    # Export metric CSV and regenerate plots from the freshly saved metadata.
+    # Export metric CSV. Plot generation is centralized in ml/saved/generate_plots.py.
     summary_csv = os.path.join(METRICS_DIR, 'metrics_summary.csv')
     df.to_csv(summary_csv, index=False)
     print(f"\n📄 Saved metrics CSV: {summary_csv}")
-    try:
-        from ml.saved import plotting
-        room_metas_for_plot = [
-            (str(row['Room']), {
-                'room_id': row.get('RoomID'),
-                'room_name': row.get('Room'),
-                'model_metrics': (next((m for n, m in room_metas if n == row['Room']), {}) if room_metas else {}),
-                'lstm_history': None,
-                'lgb_history': None,
-                'xgb_history': None,
-            })
-            for _, row in df.iterrows()
-        ]
-        curve_count = plotting.generate_model_curve_plots(room_metas, METRICS_DIR)
-        summary_count = 0
-        model_summary = aggregate_model_metrics(room_metas)
-        if model_summary:
-            plotting.plot_model_summary(model_summary, os.path.join(METRICS_DIR, 'model_summary.png'))
-            summary_count += 1
-        print(f"🖼️  Generated {curve_count} curve plot(s) and {summary_count} summary plot(s) in {METRICS_DIR}")
-    except Exception as e:
-        print(f"⚠️  Auto plot generation failed: {e}")
-        print("    Run: python ml/saved/generate_plots.py to regenerate plots.")
+    print("🖼️  Plot generation is now centralized in ml/saved/generate_plots.py.")
+    print("    Run: python ml/saved/generate_plots.py to regenerate all plot PNGs.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2718,7 +3103,20 @@ if __name__ == '__main__':
     group.add_argument('--boost',        action='store_true')
     group.add_argument('--show-metrics', action='store_true')
     parser.add_argument('--compact-metrics', action='store_true', help='Show only the summary metrics table')
+    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C'], default='B',
+                        help='Select hyperparameter set: A (Fast), B (Balanced), C (Accurate). Default: B')
+    parser.add_argument('--disable-early-stop', action='store_true',
+                        help='Force full training rounds and disable early stopping for all models')
     args = parser.parse_args()
+
+    # Set global parameter set before training
+    CURRENT_PARAM_SET = args.param_set
+    DISABLE_EARLY_STOPPING = bool(args.disable_early_stop)
+    params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+    LSTM_EPOCHS = params_set['lstm_epochs']
+    LSTM_BATCH = params_set['lstm_batch']
+    print(f"\n🔧 Using Hyperparameter Set {CURRENT_PARAM_SET}: {params_set['name']}")
+    print(f"   LSTM Epochs: {LSTM_EPOCHS}, LGB Estimators: {params_set['lgb_estimators']}, XGB Estimators: {params_set['xgb_estimators']}\n")
 
     if args.import_excel:
         import_path = os.path.join(BASE_DIR, 'ml', 'import_real_data.py')
