@@ -54,23 +54,10 @@ def main():
     except Exception as e:
         print(f'best_hyperparameters_card.png failed: {e}')
 
-    try:
-        ok = plotting._plot_model_accuracy_loss_comparison(
-            log_file,
-            str(METRICS_DIR / 'model_accuracy_loss_comparison.png'),
-        )
-        print(f'model_accuracy_loss_comparison.png ok={ok}')
-    except Exception as e:
-        print(f'model_accuracy_loss_comparison.png failed: {e}')
-
-    try:
-        ok = plotting._plot_param_set_val_acc_comparison(
-            log_file,
-            str(METRICS_DIR / 'param_set_val_acc_comparison.png'),
-        )
-        print(f'param_set_val_acc_comparison.png ok={ok}')
-    except Exception as e:
-        print(f'param_set_val_acc_comparison.png failed: {e}')
+    # NOTE: model_accuracy_loss_comparison.png and param_set_val_acc_comparison.png
+    # are intentionally no longer generated here — superseded by
+    # param_set_val_acc_by_model.png / param_set_val_loss_by_model.png
+    # (per-model panels) and param_set_ensemble_accuracy_comparison.png.
 
     try:
         ok = plotting.plot_model_configuration(

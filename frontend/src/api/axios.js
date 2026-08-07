@@ -5,9 +5,28 @@ const api = axios.create({
   timeout: 15000,
 })
 
+// ── Dual-storage helpers: "จดจำการเข้าสู่ระบบ" → localStorage (คงอยู่ข้ามเซสชัน)
+// ไม่ติ๊ก → sessionStorage (หายเมื่อปิดแท็บ) ────────────────────────────────
+function _activeStorage() {
+  return localStorage.getItem('access_token') ? localStorage : sessionStorage
+}
+
+function _getItem(key) {
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key)
+}
+
+function _setTokens({ access, refresh, remember }) {
+  const store = remember ? localStorage : sessionStorage
+  const other = remember ? sessionStorage : localStorage
+  store.setItem('access_token', access)
+  store.setItem('refresh_token', refresh)
+  other.removeItem('access_token')
+  other.removeItem('refresh_token')
+}
+
 // ── Request: แนบ token ทุก request ยกเว้น auth endpoints ──────────────────
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('access_token')
+  const token = _getItem('access_token')
   const isAuthEndpoint =
     config.url?.includes('auth/login') ||
     config.url?.includes('auth/register')
@@ -29,7 +48,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
 
-      const refresh = localStorage.getItem('refresh_token')
+      const refresh = _getItem('refresh_token')
       if (!refresh) {
         // ไม่มี refresh token → logout
         _clearAndRedirect()
@@ -42,7 +61,7 @@ api.interceptors.response.use(
           { refresh }
         )
         const newAccess = res.data.access
-        localStorage.setItem('access_token', newAccess)
+        _activeStorage().setItem('access_token', newAccess)
         original.headers.Authorization = `Bearer ${newAccess}`
         return api(original)   // retry request เดิม
       } catch {
@@ -60,19 +79,32 @@ function _clearAndRedirect() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
   localStorage.removeItem('user')
+  sessionStorage.removeItem('access_token')
+  sessionStorage.removeItem('refresh_token')
+  sessionStorage.removeItem('user')
   window.location.href = '/login'
 }
 
 // ── Helper: login แล้วเก็บ token อัตโนมัติ ────────────────────────────────
-export async function loginWithLDAP(username, password) {
+export async function loginWithLDAP(username, password, remember = true) {
   const res = await api.post('auth/login/', { username, password })
   const user = res.data.user || res.data
+  const displayName =
+    user.display_name ||
+    user.full_name ||
+    [user.first_name, user.last_name].filter(Boolean).join(' ').trim() ||
+    user.name ||
+    user.username
 
-  localStorage.setItem('access_token',  res.data.access)
-  localStorage.setItem('refresh_token', res.data.refresh)
-  localStorage.setItem('user', JSON.stringify({
+  _setTokens({ access: res.data.access, refresh: res.data.refresh, remember })
+  const store = remember ? localStorage : sessionStorage
+  store.setItem('user', JSON.stringify({
     username: user.username,
-    name:     user.full_name || user.name,
+    first_name: user.first_name || '',
+    last_name: user.last_name || '',
+    full_name: user.full_name || displayName,
+    display_name: displayName,
+    name:     user.full_name || user.name || displayName,
     email:    user.email,
     faculty:  user.faculty,
     role:     user.role,
@@ -96,10 +128,10 @@ export async function deleteAccount(payload) {
   return res.data
 }
 
-// ── Helper: ดึงข้อมูล user จาก localStorage ───────────────────────────────
+// ── Helper: ดึงข้อมูล user ─────────────────────────────────────────────────
 export function getUser() {
   try {
-    return JSON.parse(localStorage.getItem('user')) || null
+    return JSON.parse(_getItem('user')) || null
   } catch {
     return null
   }

@@ -4,7 +4,7 @@ import {
   ArrowLeft, Clock, BarChart2, TrendingUp, Calendar, X,
   Building2, AlertTriangle, Zap,
   Download, ChevronDown, FileSpreadsheet, Check, LayoutGrid,
-  BookOpen, Wrench, Loader2, Sparkles
+  BookOpen, Wrench, Loader2, Sparkles, Plus, Pencil, Trash2, Bot
 } from 'lucide-react'
 import api from '../api/axios'
 
@@ -507,11 +507,6 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
     ? filteredByBuilding
     : filteredByBuilding.filter(({status}) => status.state === filterState)
 
-  const grouped = buildings
-    .filter(b => b !== 'ทั้งหมด')
-    .map(b => ({ building:b, rooms: visibleRooms.filter(({room}) => (room.building || 'อื่นๆ') === b) }))
-    .filter(g => g.rooms.length > 0)
-
   const stateCounts = roomStatuses.reduce((acc, {status}) => {
     acc[status.state] = (acc[status.state] || 0) + 1
     return acc
@@ -526,11 +521,14 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
   const maintenanceCount = stateCounts.maintenance || 0
   const disabledCount    = stateCounts.disabled || 0
 
-  const BUILDING_ICONS = {
-    'อาคาร ODL (Online Digital Learning)': '🏢',
-    'อาคาร ODL': '🏢',
-    'อื่นๆ': '🚪',
-  }
+  const summaryCards = [
+    { key: 'all', label: 'ทั้งหมด', value: rooms.length, icon: LayoutGrid, color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' },
+    { key: 'active', label: 'กำลังใช้งาน', value: activeCount, icon: Zap, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+    { key: 'term_active', label: 'ชั่วโมงเรียน', value: termActiveCount, icon: BookOpen, color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+    { key: 'pending', label: 'กำลังจอง', value: pendingCount, icon: Calendar, color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
+    { key: 'free', label: 'ว่าง', value: freeCount, icon: Check, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+    { key: 'maintenance', label: 'ซ่อมบำรุง', value: maintenanceCount, icon: Wrench, color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
+  ]
 
   const stateFilters = [
     { key:'all', label:'ทั้งหมด', count: rooms.length },
@@ -546,53 +544,55 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
   ]
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-emerald-400" />
-            <span className="text-xs text-slate-600 font-medium">กำลังใช้งาน <span className="font-extrabold text-emerald-600">{activeCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-purple-500" />
-            <span className="text-xs text-slate-600 font-medium">ชั่วโมงเรียน <span className="font-extrabold text-purple-600">{termActiveCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-violet-300" />
-            <span className="text-xs text-slate-600 font-medium">มีตารางสอน <span className="font-extrabold text-violet-600">{termTodayCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-yellow-300" />
-            <span className="text-xs text-slate-600 font-medium">กำลังจอง <span className="font-extrabold text-yellow-600">{pendingCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-amber-300" />
-            <span className="text-xs text-slate-600 font-medium">จะเริ่มเร็วๆ <span className="font-extrabold text-amber-600">{soonCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-sky-400" />
-            <span className="text-xs text-slate-600 font-medium">จองแล้ว <span className="font-extrabold text-sky-700">{bookedCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-slate-200" />
-            <span className="text-xs text-slate-600 font-medium">ว่าง <span className="font-extrabold text-slate-500">{freeCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-rose-400" />
-            <span className="text-xs text-slate-600 font-medium">ซ่อมบำรุง <span className="font-extrabold text-rose-600">{maintenanceCount}</span></span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-slate-500" />
-            <span className="text-xs text-slate-600 font-medium">ปิดใช้งาน <span className="font-extrabold text-slate-600">{disabledCount}</span></span>
-          </div>
+    <div className="space-y-4 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-500">Room status</p>
+          <h3 className="mt-1 text-lg font-extrabold text-slate-900">สถานะห้องตอนนี้</h3>
+          <p className="mt-1 text-sm text-slate-500">สรุปภาพรวมแบบย่อและกดกรองได้ทันที</p>
         </div>
-        <div className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
-          <Clock size={11} className="pulse" />
-          <span>อัปเดตทุก 30 วิ</span>
+        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500">
+          <Clock size={12} className="pulse" />
+          อัปเดตทุก 30 วิ
         </div>
       </div>
 
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {summaryCards.map(card => {
+          const Icon = card.icon
+          return (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => setFilterState(card.key)}
+              className={`rounded-2xl border p-3 text-left transition-all ${card.bg} ${card.border} ${
+                filterState === card.key ? 'ring-2 ring-blue-200 shadow-sm' : 'hover:-translate-y-0.5 hover:shadow-sm'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`text-xl font-extrabold ${card.color}`}>{card.value}</span>
+                <span className={`flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 ${card.color}`}>
+                  <Icon size={17} />
+                </span>
+              </div>
+              <p className="mt-2 text-xs font-semibold text-slate-500">{card.label}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">ตัวกรองสถานะ</p>
+        <button
+          type="button"
+          onClick={() => setFilterState('all')}
+          className="text-xs font-semibold text-blue-700 hover:underline"
+        >
+          รีเซ็ต
+        </button>
+      </div>
+
+      <div className="flex gap-1.5 overflow-x-auto pb-1.5">
         {stateFilters.map(s => (
           <button key={s.key} onClick={() => setFilterState(s.key)}
             className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all whitespace-nowrap
@@ -608,181 +608,133 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
         ))}
       </div>
 
-      <div className="flex gap-1.5 flex-wrap">
-        {buildings.map(b => (
-          <button key={b} onClick={() => setFilterBuilding(b)}
-            className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all
-              ${filterBuilding === b
-                ? 'bg-blue-700 text-white shadow-sm'
-                : 'bg-white border border-blue-100 text-slate-600 hover:border-blue-300'
-              }`}>
-            {b !== 'ทั้งหมด' && <span className="mr-1">{BUILDING_ICONS[b]||'🚪'}</span>}
-            {b}
-          </button>
-        ))}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">อาคาร</p>
+            <h4 className="mt-1 text-sm font-bold text-slate-900">เลือกอาคารที่ต้องการดู</h4>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-500 shadow-sm">
+            {buildings.filter(b => b !== 'ทั้งหมด').length} อาคาร
+          </span>
+        </div>
+        <div className="mt-3">
+          <label className="sr-only" htmlFor="building-filter">เลือกอาคาร</label>
+          <select
+            id="building-filter"
+            value={filterBuilding}
+            onChange={(e) => setFilterBuilding(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+          >
+            {buildings.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {grouped.length === 0 ? (
+      {visibleRooms.length === 0 ? (
         <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center shadow-sm">
           <LayoutGrid size={30} className="text-blue-200 mx-auto mb-3" />
           <p className="text-slate-400 text-sm">ไม่พบข้อมูลห้อง</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {grouped.map(({ building, rooms: brooms }) => (
-            <div key={building}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-base">{BUILDING_ICONS[building]||'🚪'}</span>
-                <h3 className="text-sm font-bold text-slate-700">{building}</h3>
-                <span className="text-xs text-slate-400">({brooms.length} ห้อง)</span>
-                <div className="flex-1 h-px bg-slate-100 ml-2" />
-              </div>
-              <div className={`grid gap-2.5 ${isMobile ? 'grid-cols-2' : 'grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'}`}>
-                {brooms.map(({room, status: rs}) => {
-                  const roomKey = room.roomKey || String(room.roomId || room.name)
-                  const isOpen = selectedRoom === roomKey
-                  return (
+        <div className={`grid gap-2.5 ${isMobile ? 'grid-cols-2' : 'grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'}`}>
+          {visibleRooms.map(({room, status: rs}) => {
+            const roomKey = room.roomKey || String(room.roomId || room.name)
+            const isOpen = selectedRoom === roomKey
+            return (
+              <div
+                key={roomKey}
+                className={`relative cursor-pointer select-none ${isOpen && rs.termsToday.length > 0 ? 'col-span-2' : ''}`}
+                onClick={() => setSelectedRoom(isOpen ? null : roomKey)}
+              >
+                <div
+                  className="rounded-2xl border-2 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                  style={{
+                    background: rs.bg,
+                    borderColor: isOpen ? rs.color : rs.border,
+                    boxShadow: isOpen ? `0 0 0 3px ${rs.color}30` : undefined,
+                  }}
+                >
+                  <div className="flex items-start justify-between mb-2">
                     <div
-                      key={roomKey}
-                      className={`relative cursor-pointer select-none ${isOpen && rs.termsToday.length > 0 ? 'col-span-2' : ''}`}
-                      onClick={() => setSelectedRoom(isOpen ? null : roomKey)}
-                    >
-                      <div
-                        className="rounded-2xl border-2 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-                        style={{
-                          background: rs.bg,
-                          borderColor: isOpen ? rs.color : rs.border,
-                          boxShadow: isOpen ? `0 0 0 3px ${rs.color}30` : undefined,
-                        }}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
-                            style={{
-                              background: rs.color,
-                              boxShadow: ['active', 'pending', 'term_active', 'maintenance'].includes(rs.state)
-                                ? `0 0 0 4px ${rs.color}30`
-                                : undefined,
-                              animation: ['active', 'pending', 'term_active', 'maintenance'].includes(rs.state)
-                                ? 'pulse 2s ease-in-out infinite'
-                                : undefined,
-                            }}
-                          />
-                          <div className="flex items-center gap-1 flex-wrap justify-end">
-                            {rs.termsToday.length > 0 && rs.state !== 'term_active' && (
-                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full leading-tight"
-                                style={{ background:'#ede9fe', color:'#7c3aed', fontSize:'9px' }}>
-                                📚เทอม
-                              </span>
-                            )}
-                            <span
-                              className="text-xs font-bold px-1.5 py-0.5 rounded-full leading-tight"
-                              style={{ background: rs.color + '20', color: rs.color, fontSize:'10px' }}>
-                              {rs.label}
-                            </span>
-                          </div>
-                        </div>
-
-                        <p className="text-sm font-extrabold text-slate-800 leading-tight mb-1 truncate">{room.name}</p>
-
-                        {rs.state === 'maintenance' || rs.state === 'disabled' ? (
-                          <p className="text-xs text-slate-500 mt-1">
-                            {rs.state === 'maintenance' ? 'กำลังปิดห้องเพื่อซ่อมบำรุง' : 'ห้องถูกปิดใช้งาน'}
-                          </p>
-                        ) : rs.allBookings.length === 0 && rs.termsToday.length === 0 ? (
-                          <p className="text-xs text-slate-400 mt-1">ไม่มีการจอง</p>
-                        ) : (
-                          <div className="mt-1.5 space-y-1">
-                            {rs.allBookings.map((bk, bi) => {
-                              const bNow  = isNow(bk.start_time, bk.end_time)
-                              const bSoon = isSoon(bk.start_time)
-                              const bPend = bk.status === 'pending'
-                              const dotC  = bNow ? '#10b981' : bSoon ? '#f59e0b' : bPend ? '#eab308' : '#3b82f6'
-                              const timeC = bNow ? 'text-emerald-600 font-bold' : bSoon ? 'text-amber-600 font-semibold' : bPend ? 'text-yellow-600' : 'text-blue-500'
-                              return (
-                                <div key={bi} className="flex items-center gap-1.5">
-                                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dotC }} />
-                                  <span className={`text-[11px] ${timeC} tabular-nums`}>
-                                    {fmtTime(bk.start_time)}–{fmtTime(bk.end_time)}
-                                  </span>
-                                  {bNow && <span className="text-[10px] text-emerald-600 font-bold">●</span>}
-                                  {bPend && <span className="text-[10px] text-yellow-500">?</span>}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-
-                        {isOpen && rs.termsToday.length > 0 && (
-                          <TermSchedulePopup
-                            termsToday={rs.termsToday}
-                            termNow={rs.termNow}
-                            roomName={room.name}
-                          />
-                        )}
-
-                        {!isOpen && rs.termsToday.length > 0 && (
-                          <p className="text-xs text-purple-400 mt-1.5 font-medium">
-                            📚 {rs.termsToday.length} คาบ วันนี้ · แตะเพื่อดู
-                          </p>
-                        )}
-                      </div>
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
+                      style={{
+                        background: rs.color,
+                        boxShadow: ['active', 'pending', 'term_active', 'maintenance'].includes(rs.state)
+                          ? `0 0 0 4px ${rs.color}30`
+                          : undefined,
+                        animation: ['active', 'pending', 'term_active', 'maintenance'].includes(rs.state)
+                          ? 'pulse 2s ease-in-out infinite'
+                          : undefined,
+                      }}
+                    />
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                      {rs.termsToday.length > 0 && rs.state !== 'term_active' && (
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full leading-tight"
+                          style={{ background:'#ede9fe', color:'#7c3aed', fontSize:'9px' }}>
+                          📚เทอม
+                        </span>
+                      )}
+                      <span
+                        className="text-xs font-bold px-1.5 py-0.5 rounded-full leading-tight"
+                        style={{ background: rs.color + '20', color: rs.color, fontSize:'10px' }}>
+                        {rs.label}
+                      </span>
                     </div>
-                  )
-                })}
+                  </div>
+
+                  <p className="text-sm font-extrabold text-slate-800 leading-tight mb-1 truncate">{room.name}</p>
+                  <p className="text-[11px] text-slate-500 truncate mb-1.5">{room.building}</p>
+
+                  {rs.state === 'maintenance' || rs.state === 'disabled' ? (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {rs.state === 'maintenance' ? 'กำลังปิดห้องเพื่อซ่อมบำรุง' : 'ห้องถูกปิดใช้งาน'}
+                    </p>
+                  ) : rs.allBookings.length === 0 && rs.termsToday.length === 0 ? (
+                    <p className="text-xs text-slate-400 mt-1">ไม่มีการจอง</p>
+                  ) : (
+                    <div className="mt-1.5 space-y-1">
+                      {rs.allBookings.map((bk, bi) => {
+                        const bNow  = isNow(bk.start_time, bk.end_time)
+                        const bSoon = isSoon(bk.start_time)
+                        const bPend = bk.status === 'pending'
+                        const dotC  = bNow ? '#10b981' : bSoon ? '#f59e0b' : bPend ? '#eab308' : '#3b82f6'
+                        const timeC = bNow ? 'text-emerald-600 font-bold' : bSoon ? 'text-amber-600 font-semibold' : bPend ? 'text-yellow-600' : 'text-blue-500'
+                        return (
+                          <div key={bi} className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dotC }} />
+                            <span className={`text-[11px] ${timeC} tabular-nums`}>
+                              {fmtTime(bk.start_time)}–{fmtTime(bk.end_time)}
+                            </span>
+                            {bNow && <span className="text-[10px] text-emerald-600 font-bold">●</span>}
+                            {bPend && <span className="text-[10px] text-yellow-500">?</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {isOpen && rs.termsToday.length > 0 && (
+                    <TermSchedulePopup
+                      termsToday={rs.termsToday}
+                      termNow={rs.termNow}
+                      roomName={room.name}
+                    />
+                  )}
+
+                  {!isOpen && rs.termsToday.length > 0 && (
+                    <p className="text-xs text-purple-400 mt-1.5 font-medium">
+                      📚 {rs.termsToday.length} คาบ วันนี้ · แตะเพื่อดู
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
-
-      <div className="bg-white border border-blue-100 rounded-2xl p-3 shadow-sm">
-        <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-5'}`}>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">สรุปสถานะห้องทั้งหมด {rooms.length} ห้อง</p>
-          <div className="flex gap-4 flex-wrap">
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-emerald-600">{activeCount}</p>
-              <p className="text-xs text-slate-400">กำลังใช้งาน</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-purple-600">{termActiveCount}</p>
-              <p className="text-xs text-slate-400">ชั่วโมงเรียน</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-violet-500">{termTodayCount}</p>
-              <p className="text-xs text-slate-400">มีตารางสอน</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-yellow-500">{pendingCount}</p>
-              <p className="text-xs text-slate-400">กำลังจอง</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-amber-500">{soonCount}</p>
-              <p className="text-xs text-slate-400">จะเริ่มเร็วๆ</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-sky-700">{bookedCount}</p>
-              <p className="text-xs text-slate-400">จองแล้ว</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-slate-400">{freeCount}</p>
-              <p className="text-xs text-slate-400">ว่างอยู่</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-rose-600">{maintenanceCount}</p>
-              <p className="text-xs text-slate-400">ซ่อมบำรุง</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-slate-600">{disabledCount}</p>
-              <p className="text-xs text-slate-400">ปิดใช้งาน</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-extrabold text-blue-700">{rooms.length}</p>
-              <p className="text-xs text-slate-400">ทั้งหมด</p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
@@ -957,7 +909,7 @@ const buildMaintenanceInsights = ({
     if (room.pendingCount > 0) reasons.push(`รออนุมัติ ${room.pendingCount} รายการ`)
     if (room.termTodayCount > 0) reasons.push(`มีคาบเทอมวันนี้ ${room.termTodayCount} คาบ`)
     if (room.termCount > 0) reasons.push(`มีตารางสอนรวม ${room.termCount} คาบ`)
-    if (demandAlert) reasons.push(`AI เตือน ${demandAlert.hour}:00`)
+    if (demandAlert) reasons.push(`คาดว่าอาจมีคนมาใช้งานช่วง ${demandAlert.hour}:00 น.`)
     if ((room.capacity || 0) / maxCapacity >= 0.85 && room.bookingCount === 0) reasons.push('ห้องใหญ่แต่เงียบ')
 
     room.demandAlerts = demandAlert ? [demandAlert] : []
@@ -1025,6 +977,50 @@ const buildMaintenanceInsights = ({
     termRooms,
     slots,
   }
+}
+
+// ============================================================
+// AI NARRATIVE — สรุปผลวิเคราะห์เป็นภาษาพูดจากข้อมูลจริง
+// ============================================================
+const buildAiNarrative = (report, slots) => {
+  if (!report) return []
+  const lines = []
+  const { summary, busyRooms, watchRooms } = report
+
+  lines.push(
+    `สวัสดีครับ ผมวิเคราะห์ห้องทั้งหมด ${summary.totalRooms} ห้องแล้ว พบว่ามีห้องที่ใช้งานหนัก ${summary.busyRooms} ห้อง, ห้องว่างที่ควรเปิดโปรโมต ${summary.idleRooms} ห้อง และห้องที่ควรจับตาเป็นพิเศษ ${summary.watchRooms} ห้อง`
+  )
+
+  if (busyRooms?.[0]?.bookingCount > 0) {
+    const top = busyRooms[0]
+    lines.push(
+      `ห้องที่ใช้งานหนักที่สุดตอนนี้คือ "${top.name}" ถูกจอง ${top.bookingCount} ครั้ง (ดัชนีใช้งาน ${top.usageIndex}%) ควรดูแลเป็นพิเศษไม่ให้ตารางแน่นเกินไป`
+    )
+  }
+
+  if (watchRooms?.[0]?.riskIndex >= 35) {
+    const w = watchRooms[0]
+    lines.push(
+      `ที่ต้องระวังที่สุดคือ "${w.name}" มีความเสี่ยง ${w.riskIndex}% เพราะ${w.reasons?.[0] || 'มีสัญญาณผิดปกติ'} แนะนำให้เข้าไปตรวจสอบก่อน`
+    )
+  }
+
+  if (summary.biggestEmpty) {
+    lines.push(
+      `ส่วนห้อง "${summary.biggestEmpty.name}" ความจุ ${summary.biggestEmpty.capacity || '-'} คน แทบไม่มีคนใช้เลย น่าจะลองโปรโมตหรือปรับเงื่อนไขการจองดูครับ`
+    )
+  }
+
+  if (slots?.length > 0) {
+    const best = slots[0]
+    lines.push(
+      `สำหรับซ่อมบำรุง ผมเจอ ${slots.length} ช่วงเวลาที่ demand ต่ำพอจะล็อกได้โดยไม่กระทบผู้ใช้ ช่วงที่ดีที่สุดคือห้อง "${best.room_name}" วันที่ ${best.date} เวลา ${String(best.start_hour).padStart(2, '0')}:00–${String(best.end_hour).padStart(2, '0')}:00 (demand เฉลี่ยแค่ ${(best.avg_demand * 100).toFixed(1)}%) แนะนำให้ล็อกช่วงนี้ก่อนเลยครับ`
+    )
+  } else {
+    lines.push('ตอนนี้ยังไม่เจอช่วงเวลาที่ demand ต่ำพอสำหรับซ่อมบำรุงใน 21 วันข้างหน้า เดี๋ยวลองเช็คซ้ำให้ทีหลังนะครับ')
+  }
+
+  return lines
 }
 
 // ============================================================
@@ -1107,20 +1103,44 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
           }}
         />
         <div className="relative flex flex-col gap-4">
-          <div>
-            <h2 className="text-lg font-black flex items-center gap-2">
-              <Wrench size={18} className="text-yellow-300" />
-              AI Maintenance Copilot
-            </h2>
-            <p className="text-xs text-white/75 mt-1 leading-relaxed">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center flex-shrink-0">
+              <Bot size={20} className="text-yellow-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black">AI Maintenance Copilot</h2>
+              <p className="text-[11px] text-white/60">ผู้ช่วยวิเคราะห์การใช้งานห้องและแนะนำช่วงซ่อมบำรุง</p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center gap-2 bg-white/10 border border-white/15 rounded-2xl px-4 py-3 w-fit">
+              <span className="flex gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-white/80" style={{ animation: 'pulse 1s ease-in-out infinite' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-white/80" style={{ animation: 'pulse 1s ease-in-out .15s infinite' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-white/80" style={{ animation: 'pulse 1s ease-in-out .3s infinite' }} />
+              </span>
+              <p className="text-xs text-white/80">กำลังวิเคราะห์ข้อมูลการใช้งานห้อง...</p>
+            </div>
+          ) : report ? (
+            <div className="space-y-2">
+              {buildAiNarrative(report, slots).map((line, i) => (
+                <div key={i} className="flex items-start gap-2 bg-white/10 border border-white/15 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-2xl">
+                  <p className="text-xs text-white/90 leading-relaxed">{line}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-white/75 leading-relaxed">
               กดครั้งเดียวเพื่อสรุปห้องที่ใช้งานหนัก, ห้องที่ว่างจริง, ห้องที่ควรตรวจสอบ, และสล็อตซ่อมบำรุงที่ล็อกได้ทันที
             </p>
-          </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <button onClick={runMaintenanceAI} disabled={loading}
               className="inline-flex items-center gap-2 bg-white text-blue-800 hover:bg-blue-50 text-sm font-bold px-4 py-2.5 rounded-2xl shadow-lg shadow-black/10 disabled:opacity-60">
               {loading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-              สร้างรีพอร์ต AI
+              {report ? 'วิเคราะห์ใหม่อีกครั้ง' : 'สร้างรีพอร์ต AI'}
             </button>
             {report && ranAt && (
               <span className="inline-flex items-center gap-2 text-xs bg-white/10 border border-white/15 px-3 py-2 rounded-2xl text-white/80">
@@ -1288,23 +1308,37 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
               </p>
             ) : (
               <div className="space-y-2">
-                {slots.map((slot, i) => (
-                  <div key={i} className="flex items-center gap-3 border border-emerald-100 bg-emerald-50/60 rounded-2xl px-4 py-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-800 truncate">{slot.room_name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {slot.date} · {String(slot.start_hour).padStart(2, '0')}:00–{String(slot.end_hour).padStart(2, '0')}:00
-                      </p>
-                      <p className="text-xs text-emerald-700 mt-1">
-                        demand เฉลี่ย {(slot.avg_demand * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                    <button onClick={() => blockSlot(slot)} disabled={blocking === slot.label}
-                      className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl disabled:opacity-50 flex-shrink-0">
-                      {blocking === slot.label ? 'กำลังล็อก...' : 'ล็อกทันที'}
-                    </button>
-                  </div>
-                ))}
+                {(() => {
+                  const bestLabel = [...slots].sort((a, b) => a.avg_demand - b.avg_demand)[0]?.label
+                  return slots.map((slot, i) => {
+                    const isBest = slot.label === bestLabel
+                    const hours = slot.hours?.length || 0
+                    return (
+                      <div key={i} className={`flex items-center gap-3 border rounded-2xl px-4 py-3 ${isBest ? 'border-emerald-300 bg-emerald-50 ring-1 ring-emerald-200' : 'border-emerald-100 bg-emerald-50/60'}`}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-bold text-slate-800 truncate">{slot.room_name}</p>
+                            {isBest && (
+                              <span className="text-[10px] font-bold bg-emerald-600 text-white px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                แนะนำที่สุด
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {slot.date} · {String(slot.start_hour).padStart(2, '0')}:00–{String(slot.end_hour).padStart(2, '0')}:00
+                          </p>
+                          <p className="text-xs text-emerald-700 mt-1">
+                            เหตุผล: การใช้งานเฉลี่ยแค่ {(slot.avg_demand * 100).toFixed(1)}% ต่อเนื่อง {hours} ชั่วโมง ล็อกได้โดยแทบไม่กระทบผู้ใช้
+                          </p>
+                        </div>
+                        <button onClick={() => blockSlot(slot)} disabled={blocking === slot.label}
+                          className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl disabled:opacity-50 flex-shrink-0">
+                          {blocking === slot.label ? 'กำลังล็อก...' : 'ล็อกทันที'}
+                        </button>
+                      </div>
+                    )
+                  })
+                })()}
               </div>
             )}
           </div>
@@ -1328,7 +1362,8 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
 // DESKTOP
 // ============================================================
 function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
-  setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
+  setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
+  onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
@@ -1349,7 +1384,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
   return (
     <div className="w-full bg-[#F8FAFC] flex flex-col overflow-x-hidden overflow-y-auto min-h-0" style={{fontFamily:"'Inter','Prompt','Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
-      <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-xl border-b border-white/70 shadow-[0_12px_40px_rgba(37,99,235,0.06)] flex-shrink-0">
+      <div className="sticky top-0 z-30 bg-white border-b border-white/70 shadow-[0_12px_40px_rgba(37,99,235,0.06)] flex-shrink-0">
         <div className="max-w-7xl mx-auto px-4 lg:px-5 h-14 flex items-center gap-3">
           <button onClick={() => navigate('/')} className="flex items-center gap-2 text-slate-600 hover:text-blue-700 text-sm font-medium">
             <ArrowLeft size={15} />หน้าหลัก
@@ -1459,6 +1494,8 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
               <h2 className="text-base font-bold text-slate-800">สถานะห้องแบบ Real-time</h2>
               <span className="text-xs text-slate-400 ml-1">— ห้องทั้งหมด {adminRooms?.length ?? 0} ห้อง (ข้อมูลจริงจาก DB)</span>
             </div>
+            <RoomManagementPanel adminRooms={adminRooms}
+              onAddRoom={onAddRoom} onEditRoom={onEditRoom} onDeleteRoom={onDeleteRoom} onAddBuilding={onAddBuilding} />
             <div className="min-h-0 max-h-[calc(100dvh-15rem)] overflow-y-auto overflow-x-hidden pr-1">
               <RoomStatusGrid bookings={bookings} termBookings={termBookings} adminRooms={adminRooms} fmtTime={fmtTime} isMobile={false} />
             </div>
@@ -1565,7 +1602,8 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
 // MOBILE
 // ============================================================
 function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
-  setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate }) {
+  setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
+  onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
@@ -1586,7 +1624,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
   return (
     <div className="w-full bg-[#F8FAFC] flex flex-col overflow-x-hidden overflow-y-auto min-h-0" style={{fontFamily:"'Inter','Prompt','Sarabun','Noto Sans Thai',sans-serif"}}>
       <style>{ANIM}</style>
-      <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-white/70 shadow-[0_12px_40px_rgba(37,99,235,0.06)] flex-shrink-0">
+      <div className="sticky top-0 z-40 bg-white border-b border-white/70 shadow-[0_12px_40px_rgba(37,99,235,0.06)] flex-shrink-0">
         <div className="max-w-lg mx-auto px-4 h-12 flex items-center gap-3">
           <button onClick={() => navigate('/')} className="text-slate-600 hover:text-blue-700 flex items-center"><ArrowLeft size={14} /></button>
           <span className="text-slate-900 font-bold text-sm flex-1">Admin Dashboard</span>
@@ -1671,6 +1709,8 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
               <LayoutGrid size={14} className="text-blue-600" />
               <h2 className="text-sm font-bold text-slate-800">สถานะห้อง {adminRooms?.length ?? 0} ห้อง</h2>
             </div>
+            <RoomManagementPanel adminRooms={adminRooms}
+              onAddRoom={onAddRoom} onEditRoom={onEditRoom} onDeleteRoom={onDeleteRoom} onAddBuilding={onAddBuilding} />
             <div className="min-h-0 max-h-[calc(100dvh-12rem)] overflow-y-auto overflow-x-hidden pr-1">
               <RoomStatusGrid bookings={bookings} termBookings={termBookings} adminRooms={adminRooms} fmtTime={fmtTime} isMobile={true} />
             </div>
@@ -1739,6 +1779,201 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
 }
 
 // ============================================================
+// ROOM / BUILDING MANAGEMENT (Admin CRUD)
+// ============================================================
+const ROOM_TYPE_OPTIONS = ['ห้องประชุม', 'ห้องเรียน', 'ห้องบรรยาย', 'ห้องปฏิบัติการ', 'อื่นๆ']
+const ROOM_STATUS_OPTIONS = [
+  { value: 'available',   label: 'ว่าง' },
+  { value: 'occupied',    label: 'ถูกใช้งาน' },
+  { value: 'maintenance', label: 'ซ่อมบำรุง' },
+  { value: 'disabled',    label: 'ปิดใช้งาน' },
+]
+
+function ModalShell({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="si w-full max-w-md rounded-2xl bg-white shadow-xl p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold text-slate-900">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function RoomFormModal({ room, buildingsList, onClose, onSaved }) {
+  const isEdit = !!room
+  const [form, setForm] = useState({
+    name: room?.name || '',
+    building: room?.building_id || (buildingsList[0]?.id ?? ''),
+    floor: room?.floor ?? 1,
+    capacity: room?.capacity ?? 10,
+    room_type: room?.room_type || ROOM_TYPE_OPTIONS[0],
+    status: room?.status || 'available',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    if (!form.name.trim() || !form.building) { setError('กรุณากรอกชื่อห้องและเลือกอาคาร'); return }
+    setSaving(true); setError('')
+    try {
+      const payload = { ...form, floor: Number(form.floor), capacity: Number(form.capacity) }
+      if (isEdit) await api.patch(`rooms/${room.id}/`, payload)
+      else        await api.post('rooms/', payload)
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(err.response?.data?.detail || err.response?.data?.name?.[0] || 'บันทึกไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ModalShell title={isEdit ? 'แก้ไขห้อง' : 'เพิ่มห้องใหม่'} onClose={onClose}>
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs font-semibold text-slate-500">ชื่อ/รหัสห้อง</label>
+          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="เช่น 3C12" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-500">อาคาร</label>
+          <select value={form.building} onChange={e => setForm({ ...form, building: Number(e.target.value) })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+            {buildingsList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-500">ชั้น</label>
+            <input type="number" value={form.floor} onChange={e => setForm({ ...form, floor: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500">ความจุ (คน)</label>
+            <input type="number" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-500">ประเภทห้อง</label>
+          <select value={form.room_type} onChange={e => setForm({ ...form, room_type: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+            {ROOM_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-500">สถานะ</label>
+          <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+            {ROOM_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button onClick={submit} disabled={saving}
+          className="w-full rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white py-2.5 text-sm font-bold">
+          {saving ? 'กำลังบันทึก...' : isEdit ? 'บันทึกการแก้ไข' : 'เพิ่มห้อง'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+function BuildingFormModal({ building, onClose, onSaved }) {
+  const isEdit = !!building
+  const [form, setForm] = useState({
+    code: building?.code || '',
+    name: building?.name || '',
+    description: building?.description || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    if (!form.code.trim() || !form.name.trim()) { setError('กรุณากรอกรหัสและชื่ออาคาร'); return }
+    setSaving(true); setError('')
+    try {
+      if (isEdit) await api.patch(`buildings/${building.id}/`, form)
+      else        await api.post('buildings/', form)
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(err.response?.data?.detail || err.response?.data?.code?.[0] || 'บันทึกไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ModalShell title={isEdit ? 'แก้ไขอาคาร' : 'เพิ่มอาคารใหม่'} onClose={onClose}>
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs font-semibold text-slate-500">รหัสอาคาร</label>
+          <input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="เช่น ODL1" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-500">ชื่ออาคาร</label>
+          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-500">รายละเอียด (ไม่บังคับ)</label>
+          <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" rows={2} />
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button onClick={submit} disabled={saving}
+          className="w-full rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white py-2.5 text-sm font-bold">
+          {saving ? 'กำลังบันทึก...' : isEdit ? 'บันทึกการแก้ไข' : 'เพิ่มอาคาร'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+function RoomManagementPanel({ adminRooms, onEditRoom, onDeleteRoom, onAddRoom, onAddBuilding }) {
+  return (
+    <div className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/60">
+        <p className="text-sm font-bold text-slate-800">จัดการห้อง/อาคาร</p>
+        <div className="flex gap-2">
+          <button onClick={onAddBuilding}
+            className="flex items-center gap-1 text-xs font-semibold text-slate-700 border border-slate-200 hover:bg-slate-100 px-2.5 py-1.5 rounded-xl">
+            <Plus size={12} /> อาคาร
+          </button>
+          <button onClick={onAddRoom}
+            className="flex items-center gap-1 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-xl">
+            <Plus size={12} /> ห้อง
+          </button>
+        </div>
+      </div>
+      <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+        {adminRooms.length === 0 && (
+          <p className="px-4 py-4 text-xs text-slate-400 text-center">ยังไม่มีห้องในระบบ</p>
+        )}
+        {adminRooms.map(r => (
+          <div key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-800 truncate">{r.name}</p>
+              <p className="text-xs text-slate-400 truncate">{r.building} · {r.capacity} ที่นั่ง · {r.status}</p>
+            </div>
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button onClick={() => onEditRoom(r)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"><Pencil size={13} /></button>
+              <button onClick={() => onDeleteRoom(r)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // ROOT
 // ============================================================
 export default function AdminPage() {
@@ -1752,18 +1987,37 @@ export default function AdminPage() {
   const [loading,         setLoading]         = useState(true)
   const [weekStats,       setWeekStats]       = useState([])
   const [selectedBooking, setSelectedBooking] = useState(null)
+  const [buildingsList,   setBuildingsList]   = useState([])
+  const [roomModal,       setRoomModal]       = useState(null)
+  const [buildingModal,   setBuildingModal]   = useState(null)
+
+  const reloadRooms = async () => {
+    try {
+      const res = await api.get('rooms/admin-status/')
+      setAdminRooms(Array.isArray(res.data) ? res.data : [])
+    } catch { /* keep previous list on failure */ }
+  }
+
+  const reloadBuildings = async () => {
+    try {
+      const res = await api.get('buildings/')
+      setBuildingsList(Array.isArray(res.data) ? res.data : (res.data.results || []))
+    } catch { /* keep previous list on failure */ }
+  }
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [dashRes, bookingRes, termRes, roomsRes] = await Promise.all([
+        const [dashRes, bookingRes, termRes, roomsRes, buildingsRes] = await Promise.all([
           api.get('dashboard/'),
           api.get('bookings/'),
           api.get('term-bookings/'),
           api.get('rooms/admin-status/').catch(() => ({ data: [] })),
+          api.get('buildings/').catch(() => ({ data: [] })),
         ])
         setDashboard(dashRes.data)
         setAdminRooms(Array.isArray(roomsRes.data) ? roomsRes.data : [])
+        setBuildingsList(Array.isArray(buildingsRes.data) ? buildingsRes.data : (buildingsRes.data.results || []))
         const all = bookingRes.data.results || []
         setBookings(all)
 
@@ -1804,6 +2058,14 @@ export default function AdminPage() {
   const fmtTime     = dt => new Date(dt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})
   const fmtDateFull = dt => new Date(dt).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long'})
 
+  const handleDeleteRoom = async (room) => {
+    if (!confirm(`ยืนยันปิดใช้งานห้อง "${room.name}"?`)) return
+    try {
+      await api.delete(`rooms/${room.id}/`)
+      reloadRooms()
+    } catch { alert('ลบห้องไม่สำเร็จ') }
+  }
+
   if (loading) return (
     <div className="w-full bg-[#F8FAFC] flex flex-col items-center justify-center gap-3 overflow-x-hidden overflow-y-auto min-h-0" style={{fontFamily:"'Inter','Prompt','Sarabun',sans-serif"}}>
       <style>{ANIM}</style>
@@ -1815,7 +2077,31 @@ export default function AdminPage() {
   const props = {
     dashboard, adminRooms, bookings, termBookings, weekStats, tab, setTab,
     selectedBooking, setSelectedBooking,
-    handleCancel, fmtDate, fmtTime, fmtDateFull, navigate
+    handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
+    buildingsList,
+    onAddRoom: () => setRoomModal({ mode: 'create' }),
+    onEditRoom: (room) => setRoomModal({ mode: 'edit', room }),
+    onDeleteRoom: handleDeleteRoom,
+    onAddBuilding: () => setBuildingModal({ mode: 'create' }),
   }
-  return isMobile ? <MobileAdmin {...props} /> : <DesktopAdmin {...props} />
+  return (
+    <>
+      {isMobile ? <MobileAdmin {...props} /> : <DesktopAdmin {...props} />}
+      {roomModal && (
+        <RoomFormModal
+          room={roomModal.room}
+          buildingsList={buildingsList}
+          onClose={() => setRoomModal(null)}
+          onSaved={reloadRooms}
+        />
+      )}
+      {buildingModal && (
+        <BuildingFormModal
+          building={buildingModal.building}
+          onClose={() => setBuildingModal(null)}
+          onSaved={reloadBuildings}
+        />
+      )}
+    </>
+  )
 }

@@ -7,7 +7,7 @@ const supportInfo = {
   phone: '045-353102',
   webmaster: '1502',
   email: 'ocn@ubu.ac.th',
-  facebook: 'https://www.facebook.com/ocnfanpage/',
+  facebook: 'https://www.facebook.com/odlfanpage',
   copyright: 'สงวนลิขสิทธิ์ พ.ศ. 2556 ตามพระราชบัญญัติลิขสิทธิ์ 2537',
 }
 

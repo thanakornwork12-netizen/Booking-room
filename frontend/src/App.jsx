@@ -6,26 +6,23 @@ import SearchPage from './pages/SearchPage'
 import AdminPage from './pages/AdminPage'
 import GuidePage from './pages/GuidePage'
 import AppShell from './components/AppShell'
+import { getUser } from './api/axios'
+
+const hasToken = () => !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
 
 // เช็คแค่ว่า Login หรือยัง
 const PrivateRoute = ({ children }) => {
-  return localStorage.getItem('access_token') ? children : <Navigate to="/login" />
+  return hasToken() ? children : <Navigate to="/login" />
 }
 
 const normalizeRole = (role) => String(role || '').trim().toLowerCase()
 
 // เช็คว่าเป็น Admin หรือ Staff จริงไหม (ป้องกัน User แอบเข้า)
 const AdminRoute = ({ children }) => {
-  let user = {}
-  try {
-    user = JSON.parse(localStorage.getItem('user') || '{}')
-  } catch {
-    user = {}
-  }
-  const role = normalizeRole(user.role)
+  const role = normalizeRole(getUser()?.role)
   const isAdmin = role === 'admin' || role === 'staff'
-  
-  if (!localStorage.getItem('access_token')) return <Navigate to="/login" />;
+
+  if (!hasToken()) return <Navigate to="/login" />;
   return isAdmin ? children : <Navigate to="/" />; // ถ้าไม่ใช่แอดมิน ให้ดีดกลับหน้าแรก
 }
 

@@ -560,6 +560,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                     'username': user.username,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
+                    'display_name': f'{user.first_name} {user.last_name}'.strip(),
                     'full_name': f'{user.first_name} {user.last_name}'.strip(),
                     'email': user.email,
                     'faculty': user.faculty,
@@ -649,6 +650,8 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'first_name': user.first_name,
 
                 'last_name': user.last_name,
+
+                'display_name': f'{user.first_name} {user.last_name}'.strip(),
 
                 'full_name': f'{user.first_name} {user.last_name}'.strip(),
 

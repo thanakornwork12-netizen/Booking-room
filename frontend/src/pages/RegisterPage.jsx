@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, UserPlus, ChevronRight, Building2, ShieldCheck, Sparkles } from 'lucide-react'
+import {
+  Eye, EyeOff, UserPlus, ChevronRight, Building2, ShieldCheck,
+  Check, ChevronDown, CalendarRange, UserRound, AtSign, Mail, Lock,
+  ShieldCheck as ShieldIcon, Bell,
+} from 'lucide-react'
 import api from '../api/axios'
 
 const FACULTIES = [
@@ -19,17 +23,41 @@ const ROLES = [
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes rot{to{transform:rotate(360deg)}}
+@keyframes roomGlow{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.35)}50%{box-shadow:0 0 0 6px rgba(37,99,235,0)}}
 .au{animation:fadeUp .28s ease both}
 .au1{animation:fadeUp .28s .06s ease both}
 .au2{animation:fadeUp .28s .12s ease both}
 .au3{animation:fadeUp .28s .18s ease both}
 .au4{animation:fadeUp .28s .24s ease both}
 .au5{animation:fadeUp .28s .30s ease both}
+.room-glow{animation:roomGlow 2.6s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){
+  .room-glow{animation:none}
+}
 `
 
-const inputCls = `w-full border-2 border-blue-100 bg-blue-50/40 rounded-xl px-md py-md text-sm
-  text-slate-800 outline-none focus:border-blue-700 focus:bg-white focus:ring-4
-  focus:ring-blue-100 transition-all placeholder:text-slate-400`
+const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-3 text-sm
+  text-slate-800 outline-none transition-all placeholder:text-slate-400
+  focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
+
+const plainInputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm
+  text-slate-800 outline-none transition-all placeholder:text-slate-400
+  focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
+
+const SCHEDULE_TIMES = ['08:00', '09:00', '10:00', '11:00', '12:00']
+const SCHEDULE_ROOMS = [
+  { name: 'ห้อง 301', busy: [1] },
+  { name: 'ห้อง 302', busy: [0, 4] },
+  { name: 'ห้อง 303', free: 2 },
+  { name: 'ห้อง 304', busy: [3] },
+  { name: 'ห้อง 305', busy: [] },
+]
+
+const FEATURE_CHIPS = [
+  { icon: CalendarRange, label: 'กรอกง่าย',   sub: 'ทีละขั้นตอน ไม่งง' },
+  { icon: ShieldIcon,    label: 'ปลอดภัย',    sub: 'ข้อมูลถูกเข้ารหัส' },
+  { icon: Bell,          label: 'ยืนยันไว',   sub: 'ใช้งานได้ทันที' },
+]
 
 export default function RegisterPage() {
   const navigate = useNavigate()
@@ -83,107 +111,121 @@ export default function RegisterPage() {
     >
       <style>{ANIM}</style>
 
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-20 -right-16 w-72 h-72 rounded-full bg-blue-200/40 blur-3xl" />
-        <div className="absolute top-44 -left-24 w-80 h-80 rounded-full bg-indigo-200/30 blur-3xl" />
-      </div>
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-8 px-4 py-8 sm:px-6 lg:h-screen lg:flex-row lg:items-center lg:justify-center lg:gap-16 lg:py-0">
 
-      <div className="relative z-10 max-w-6xl mx-auto min-h-screen px-4 sm:px-6 lg:px-8 py-4 lg:py-6 flex items-center">
-        <div className="grid w-full grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-5 lg:gap-6 items-stretch">
-          <div className="hidden lg:flex flex-col justify-between rounded-[28px] border border-blue-100/80 bg-white/70 backdrop-blur-xl shadow-[0_24px_80px_rgba(37,99,235,0.10)] p-7 xl:p-8 au">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-bold tracking-[0.18em] text-blue-700 uppercase">
-                <Sparkles size={12} />
-                Create Account
-              </div>
-              <h1 className="mt-6 text-4xl font-extrabold text-slate-900 leading-tight">
-                สมัครสมาชิก
-                <span className="block text-blue-700">หน้าตาเดียวกับแดชบอร์ดที่ใช้งานจริง</span>
-              </h1>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-slate-600">
-                สร้างบัญชีผู้ใช้หรือผู้ดูแลระบบในฟอร์มที่ชัดเจน แยกเป็นขั้นตอน ลดความแน่น และคุมความสวยงามให้เหมือนหน้า Search
-              </p>
+        {/* ── Brand (desktop only) ───────────────────────────── */}
+        <div className="hidden max-w-md flex-col lg:flex au">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-lg shadow-blue-200">
+            <Building2 size={22} color="#fff" />
+          </div>
+          <h1 className="mt-5 text-3xl font-extrabold leading-tight text-slate-900">
+            สมัครสมาชิก
+            <span className="mt-1 block text-blue-700">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</span>
+          </h1>
+          <div className="mt-3 h-1 w-14 rounded-full bg-blue-600" />
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            สร้างบัญชีเพื่อค้นหาห้องว่าง จองรายวันหรือรายเทอมได้ทันที
+          </p>
+
+          {/* ── Schedule grid mock ──────────────────────────── */}
+          <div className="mt-5 rounded-[22px] border border-slate-200 bg-white p-3.5 shadow-[0_20px_60px_rgba(37,99,235,0.08)]">
+            <div className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+              <CalendarRange size={15} className="text-blue-600" />
+              อาคาร ODL · ชั้น 3
+              <ChevronDown size={14} className="text-slate-400" />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { label: 'ขั้นตอน', value: '2 หน้า' },
-                { label: 'ฟอร์ม', value: 'อ่านง่าย' },
-                { label: 'โทน UI', value: 'Premium' },
-              ].map((item) => (
-                <div key={item.label} className="rounded-2xl border border-blue-100 bg-white/80 p-4 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-xl font-extrabold text-slate-900">{item.value}</p>
-                </div>
+            <div className="mt-3 grid grid-cols-[3rem_repeat(5,1fr)] gap-1 text-center">
+              <div />
+              {SCHEDULE_TIMES.map(t => (
+                <p key={t} className="text-[9px] font-semibold text-slate-400">{t}</p>
+              ))}
+
+              {SCHEDULE_ROOMS.map((room) => (
+                <>
+                  <p key={room.name} className="flex items-center text-[10px] font-semibold text-slate-500">{room.name}</p>
+                  {SCHEDULE_TIMES.map((_, ci) => {
+                    const isFree = room.free === ci
+                    const isBusy = room.busy?.includes(ci)
+                    return (
+                      <div
+                        key={ci}
+                        className={
+                          isFree
+                            ? 'room-glow flex h-5 items-center justify-center rounded-md bg-blue-600'
+                            : isBusy
+                              ? 'h-5 rounded-md bg-slate-200'
+                              : 'h-5 rounded-md bg-slate-50 border border-slate-100'
+                        }
+                      >
+                        {isFree && <Check size={10} className="text-white" strokeWidth={3} />}
+                      </div>
+                    )
+                  })}
+                </>
               ))}
             </div>
 
-            <div className="mt-8 rounded-[24px] border border-blue-100 bg-gradient-to-br from-blue-600 via-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-200/40">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 border border-white/20">
-                  <Building2 size={22} />
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-100">Booking System</p>
-                  <p className="text-lg font-bold">ฟอร์มสมัครสมาชิกที่ดูเรียบร้อยและปลอดภัย</p>
-                </div>
-              </div>
-              <div className="mt-5 flex items-center gap-3 text-sm text-blue-50">
-                <ShieldCheck size={16} />
-                รองรับผู้ใช้หลายบทบาทในดีไซน์เดียวกับหน้าหลัก
-              </div>
+            <div className="mt-2.5 flex items-center justify-center gap-4 border-t border-slate-100 pt-2.5 text-[9px] font-semibold text-slate-400">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-slate-300" /> ว่าง</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-300" /> ไม่ว่าง</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> กำลังจอง</span>
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-md lg:max-w-none">
-            <div className="text-center mb-6 lg:hidden au">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
-                <UserPlus size={24} color="#fff" />
+          {/* ── Feature chips ───────────────────────────────── */}
+          <div className="mt-4 grid grid-cols-3 gap-2.5">
+            {FEATURE_CHIPS.map(({ icon: Icon, label, sub }) => (
+              <div key={label} className="rounded-2xl border border-slate-200 bg-white/70 p-2.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <Icon size={14} />
+                </div>
+                <p className="mt-1.5 text-xs font-bold text-slate-800">{label}</p>
+                <p className="text-[9px] leading-3.5 text-slate-400">{sub}</p>
               </div>
-              <h1 className="text-xl font-extrabold text-slate-900">สมัครสมาชิก</h1>
-              <p className="text-slate-500 text-xs mt-1">สร้างบัญชีผู้ใช้งานหรือผู้ดูแลระบบ</p>
-            </div>
+            ))}
+          </div>
+        </div>
 
-            <div className="hidden lg:flex items-center gap-4 mb-6 au">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
-                <UserPlus size={24} color="#fff" />
-              </div>
+        {/* ── Register card ─────────────────────────────────── */}
+        <div className="w-full max-w-md">
+          <div className="mb-6 text-center lg:hidden au">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-lg shadow-blue-200">
+              <UserPlus size={24} color="#fff" />
+            </div>
+            <h1 className="text-xl font-extrabold text-slate-900">สมัครสมาชิก</h1>
+            <p className="mt-1 text-xs text-slate-500">สร้างบัญชีผู้ใช้งานหรือผู้ดูแลระบบ</p>
+          </div>
+
+          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.10)] au1">
+            <div className="flex items-center justify-between gap-4 p-6 pb-0">
               <div>
-                <h1 className="text-2xl font-extrabold text-slate-900">สมัครสมาชิก</h1>
-                <p className="text-slate-500 text-sm mt-1">สร้างบัญชีผู้ใช้งานหรือผู้ดูแลระบบ</p>
+                <p className="text-[11px] font-bold tracking-[0.22em] text-slate-400 uppercase">Register</p>
+                <p className="mt-1 text-xl font-extrabold text-slate-900">{step === 1 ? 'ข้อมูลผู้ใช้งาน' : 'ตั้งรหัสผ่าน'}</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-700">
+                <ShieldCheck size={20} />
               </div>
             </div>
 
-            <div className="bg-white/90 backdrop-blur-xl border border-white/70 rounded-[28px] p-5 sm:p-6 shadow-[0_20px_80px_rgba(15,23,42,0.10)] au1">
-              <div className="h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 rounded-full mb-5" />
-
-              <div className="flex items-center justify-between gap-4 mb-5">
-                <div>
-                  <p className="text-[11px] font-bold tracking-[0.22em] text-slate-400 uppercase">Register</p>
-                  <p className="text-xl font-extrabold text-slate-900 mt-1">{step === 1 ? 'ข้อมูลผู้ใช้งาน' : 'ตั้งรหัสผ่าน'}</p>
-                </div>
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700 border border-blue-100">
-                  <ShieldCheck size={20} />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-md mb-5">
+            <div className="p-6 pt-4">
+              <div className="mb-5 flex items-center gap-2">
                 {[1, 2].map(s => (
-                  <div key={s} className="flex items-center flex-1">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                  <div key={s} className="flex flex-1 items-center">
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all
                       ${step >= s ? 'bg-blue-700 text-white shadow-md shadow-blue-200' : 'bg-blue-100 text-blue-300'}`}>
                       {s}
                     </div>
-                    {s < 2 && <div className={`flex-1 h-0.5 mx-1.5 rounded-full transition-all ${step > s ? 'bg-blue-700' : 'bg-blue-100'}`} />}
+                    {s < 2 && <div className={`mx-1.5 h-0.5 flex-1 rounded-full transition-all ${step > s ? 'bg-blue-700' : 'bg-blue-100'}`} />}
                   </div>
                 ))}
-                <span className="text-xs text-slate-500 ml-2 flex-shrink-0">
+                <span className="ml-2 flex-shrink-0 text-xs text-slate-500">
                   {step === 1 ? 'ข้อมูลส่วนตัว' : 'ตั้งรหัสผ่าน'}
                 </span>
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-2xl mb-4">
+                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                   {error}
                 </div>
               )}
@@ -191,54 +233,63 @@ export default function RegisterPage() {
               {step === 1 && (
                 <div className="space-y-4">
                   <div className="au2">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">ชื่อ-นามสกุล</label>
-                    <input
-                      type="text"
-                      placeholder="ชื่อจริง - นามสกุล"
-                      className={inputCls}
-                      value={form.first_name}
-                      onChange={e => set('first_name', e.target.value)}
-                      style={{ fontFamily: 'inherit' }}
-                    />
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ชื่อ-นามสกุล</label>
+                    <div className="relative">
+                      <UserRound size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="ชื่อจริง - นามสกุล"
+                        className={inputCls}
+                        value={form.first_name}
+                        onChange={e => set('first_name', e.target.value)}
+                        style={{ fontFamily: 'inherit' }}
+                      />
+                    </div>
                   </div>
                   <div className="au2">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">ชื่อผู้ใช้</label>
-                    <input
-                      type="text"
-                      placeholder="เช่น somchai123"
-                      className={inputCls}
-                      value={form.username}
-                      onChange={e => set('username', e.target.value)}
-                      style={{ fontFamily: 'inherit' }}
-                    />
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ชื่อผู้ใช้</label>
+                    <div className="relative">
+                      <AtSign size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="เช่น somchai123"
+                        className={inputCls}
+                        value={form.username}
+                        onChange={e => set('username', e.target.value)}
+                        style={{ fontFamily: 'inherit' }}
+                      />
+                    </div>
                   </div>
                   <div className="au3">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">อีเมล</label>
-                    <input
-                      type="email"
-                      placeholder="example@ubu.ac.th"
-                      className={inputCls}
-                      value={form.email}
-                      onChange={e => set('email', e.target.value)}
-                      style={{ fontFamily: 'inherit' }}
-                    />
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">อีเมล</label>
+                    <div className="relative">
+                      <Mail size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="email"
+                        placeholder="example@ubu.ac.th"
+                        className={inputCls}
+                        value={form.email}
+                        onChange={e => set('email', e.target.value)}
+                        style={{ fontFamily: 'inherit' }}
+                      />
+                    </div>
                   </div>
 
                   <div className="au3">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">ประเภทผู้ใช้ (Role)</label>
-                    <div className="group-gap">
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ประเภทผู้ใช้ (Role)</label>
+                    <div className="grid grid-cols-4 gap-2">
                       {ROLES.map(r => (
                         <button
                           key={r.value}
                           type="button"
                           onClick={() => set('role', r.value)}
-                          className={`py-3 px-2 rounded-2xl text-xs font-semibold border-2 transition-all text-center shadow-sm
+                          className={`rounded-2xl border-2 px-2 py-3 text-center text-xs font-semibold shadow-sm transition-all
                             ${form.role === r.value
                               ? 'border-blue-700 bg-blue-700 text-white shadow-blue-200'
-                              : 'border-blue-100 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50'
                             }`}
                         >
-                          <div className="text-lg mb-0.5">{r.icon}</div>
+                          <div className="mb-0.5 text-lg">{r.icon}</div>
                           {r.label}
                         </button>
                       ))}
@@ -246,9 +297,9 @@ export default function RegisterPage() {
                   </div>
 
                   <div className="au4">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">คณะ / หน่วยงาน</label>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">คณะ / หน่วยงาน</label>
                     <select
-                      className={inputCls}
+                      className={plainInputCls}
                       value={form.faculty}
                       onChange={e => set('faculty', e.target.value)}
                       style={{ fontFamily: 'inherit' }}
@@ -261,7 +312,7 @@ export default function RegisterPage() {
                   <button
                     type="button"
                     onClick={goNext}
-                    className="au5 w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl py-3.5 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all active:scale-[0.99]"
+                    className="au5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99]"
                   >
                     ถัดไป <ChevronRight size={14} />
                   </button>
@@ -270,14 +321,15 @@ export default function RegisterPage() {
 
               {step === 2 && (
                 <div className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 au2">
-                    <p className="font-bold text-slate-800 text-sm">{form.first_name}</p>
-                    <p className="text-blue-500 text-xs mt-0.5">{form.role.toUpperCase()} · {form.faculty || '—'}</p>
+                  <div className="au2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+                    <p className="text-sm font-bold text-slate-800">{form.first_name}</p>
+                    <p className="mt-0.5 text-xs text-blue-500">{form.role.toUpperCase()} · {form.faculty || '—'}</p>
                   </div>
 
                   <div className="au2">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">รหัสผ่าน</label>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">รหัสผ่าน</label>
                     <div className="relative">
+                      <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type={showPass ? 'text' : 'password'}
                         placeholder="อย่างน้อย 6 ตัวอักษร"
@@ -289,7 +341,7 @@ export default function RegisterPage() {
                       <button
                         type="button"
                         onClick={() => setShowPass(!showPass)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-blue-600"
                       >
                         {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
@@ -297,8 +349,9 @@ export default function RegisterPage() {
                   </div>
 
                   <div className="au3">
-                    <label className="block text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">ยืนยันรหัสผ่าน</label>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ยืนยันรหัสผ่าน</label>
                     <div className="relative">
+                      <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type={showPass2 ? 'text' : 'password'}
                         placeholder="กรอกรหัสผ่านอีกครั้ง"
@@ -310,21 +363,21 @@ export default function RegisterPage() {
                       <button
                         type="button"
                         onClick={() => setShowPass2(!showPass2)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-blue-600"
                       >
                         {showPass2 ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
                     {form.password2 && form.password !== form.password2 && (
-                      <p className="text-xs text-red-500 mt-1.5">รหัสผ่านไม่ตรงกัน</p>
+                      <p className="mt-1.5 text-xs text-red-500">รหัสผ่านไม่ตรงกัน</p>
                     )}
                   </div>
 
-                  <div className="flex gap-2.5 au4">
+                  <div className="au4 flex gap-2.5">
                     <button
                       type="button"
                       onClick={() => { setStep(1); setError('') }}
-                      className="flex-1 border-2 border-blue-100 text-slate-600 py-3 rounded-2xl font-semibold text-sm hover:bg-blue-50 transition-colors"
+                      className="flex-1 rounded-2xl border-2 border-slate-200 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
                     >
                       ← ย้อนกลับ
                     </button>
@@ -332,22 +385,22 @@ export default function RegisterPage() {
                       type="button"
                       onClick={onSubmit}
                       disabled={loading}
-                      className="flex-[2] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:bg-slate-400 text-white py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-200 disabled:shadow-none transition-all active:scale-[0.99] disabled:cursor-not-allowed"
+                      className="flex-[2] flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
                     >
                       {loading
-                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" style={{ animation: 'rot .7s linear infinite' }} />กำลังสมัคร...</>
+                        ? <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white" style={{ animation: 'rot .7s linear infinite' }} />กำลังสมัคร...</>
                         : <><UserPlus size={14} />สมัครสมาชิก</>}
                     </button>
                   </div>
                 </div>
               )}
             </div>
-
-            <p className="text-center text-sm text-slate-500 mt-5">
-              มีบัญชีอยู่แล้ว?{' '}
-              <Link to="/login" className="text-blue-700 font-bold hover:underline">เข้าสู่ระบบ</Link>
-            </p>
           </div>
+
+          <p className="mt-5 text-center text-sm text-slate-500">
+            มีบัญชีอยู่แล้ว?{' '}
+            <Link to="/login" className="text-blue-700 font-bold hover:underline">เข้าสู่ระบบ</Link>
+          </p>
         </div>
       </div>
     </div>

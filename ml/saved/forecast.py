@@ -112,6 +112,16 @@ PARAM_SETS = {
         'lgb_estimators': 70, 'lgb_depth': 10, 'lgb_leaves': 127, 'lgb_lr': 0.04,
         'xgb_estimators': 70, 'xgb_depth': 8, 'xgb_lr': 0.04,
     },
+    # Experimental — trains harder than C to test whether more training keeps
+    # helping or plateaus/hurts. Not the production default; used only for
+    # the one-off A/B/C/D comparison experiment (see saved_meta_D/ archive).
+    'D': {
+        'name': 'D - Extra Deep (Experimental)',
+        'lstm_epochs': 100, 'lstm_batch': 2,
+        'lstm_lookback': 100,
+        'lgb_estimators': 100, 'lgb_depth': 12, 'lgb_leaves': 255, 'lgb_lr': 0.03,
+        'xgb_estimators': 100, 'xgb_depth': 10, 'xgb_lr': 0.03,
+    },
 }
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -120,10 +130,10 @@ MIN_UNIQUE_DAYS = 14  # จำนวนวันที่มีการใช�
 FORECAST_DAYS = 14
 LSTM_LOOKBACK = 30  # ↑ ขยายจาก 14 → 30 เพื่อจับ seasonal patterns
 # Set current parameter set (will be overridden by --param-set argument)
-CURRENT_PARAM_SET = 'B'
-LSTM_EPOCHS   = PARAM_SETS['B']['lstm_epochs']
-LSTM_BATCH    = PARAM_SETS['B']['lstm_batch']
-LSTM_LOOKBACK_OVERRIDE = PARAM_SETS['B'].get('lstm_lookback', LSTM_LOOKBACK)
+CURRENT_PARAM_SET = 'C'
+LSTM_EPOCHS   = PARAM_SETS['C']['lstm_epochs']
+LSTM_BATCH    = PARAM_SETS['C']['lstm_batch']
+LSTM_LOOKBACK_OVERRIDE = PARAM_SETS['C'].get('lstm_lookback', LSTM_LOOKBACK)
 LSTM_PATIENCE = 15  # ↑ ขยายจาก 10 → 15
 DISABLE_EARLY_STOPPING = False
 MODEL_DIR     = os.path.join(CURRENT_DIR, "saved_models")
@@ -2395,7 +2405,7 @@ def _save_room_models(room, result):
     joblib.dump(result['lgb_model'], _room_artifact_path(room, "lgb.pkl"))
     joblib.dump(result['xgb_model'], _room_artifact_path(room, "xgb.pkl"))
     if result['lstm_model'] is not None:
-        joblib.dump(result['lstm_model'], _room_artifact_path(room, "lstm.pkl"))
+        result['lstm_model'].save(_room_artifact_path(room, "lstm.keras"))
         joblib.dump(result['lstm_scaler'], _room_artifact_path(room, "lstm_scaler.pkl"))
     ensemble_path = _save_ensemble_keras(room, result)
     sp = _room_artifact_path(room, "seasonal.pkl")
@@ -2636,17 +2646,21 @@ def generate_forecast_only():
         # โหลด LSTM
         lstm_model, lstm_scaler = None, None
         if meta.get('has_lstm', False) and LSTM_AVAILABLE:
-            lp = _room_artifact_path(room, "lstm.pkl")
-            sp = _room_artifact_path(room, "lstm_scaler.pkl")
+            keras_lp = _room_artifact_path(room, "lstm.keras")
+            legacy_pkl_lp = _room_artifact_path(room, "lstm.pkl")
             legacy_lp = os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl")
+            sp = _room_artifact_path(room, "lstm_scaler.pkl")
             legacy_sp = os.path.join(MODEL_DIR, f"{room.id}_lstm_scaler.pkl")
-            if not os.path.exists(lp):
-                lp = legacy_lp
             if not os.path.exists(sp):
                 sp = legacy_sp
-            if os.path.exists(lp) and os.path.exists(sp):
-                lstm_model  = joblib.load(lp)
+            if os.path.exists(keras_lp) and os.path.exists(sp):
+                lstm_model  = tf.keras.models.load_model(keras_lp, compile=False)
                 lstm_scaler = joblib.load(sp)
+            elif os.path.exists(sp):
+                lp = legacy_pkl_lp if os.path.exists(legacy_pkl_lp) else legacy_lp
+                if os.path.exists(lp):
+                    lstm_model  = joblib.load(lp)
+                    lstm_scaler = joblib.load(sp)
         ensemble_model = _load_ensemble_keras(room)
 
         rdf = raw[raw['room_id'] == room.id] if len(raw) > 0 else pd.DataFrame()
@@ -3103,8 +3117,8 @@ if __name__ == '__main__':
     group.add_argument('--boost',        action='store_true')
     group.add_argument('--show-metrics', action='store_true')
     parser.add_argument('--compact-metrics', action='store_true', help='Show only the summary metrics table')
-    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C'], default='B',
-                        help='Select hyperparameter set: A (Fast), B (Balanced), C (Accurate). Default: B')
+    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C', 'D'], default='C',
+                        help='Select hyperparameter set: A (Fast), B (Balanced), C (Accurate, default), D (Extra Deep, experimental).')
     parser.add_argument('--disable-early-stop', action='store_true',
                         help='Force full training rounds and disable early stopping for all models')
     args = parser.parse_args()

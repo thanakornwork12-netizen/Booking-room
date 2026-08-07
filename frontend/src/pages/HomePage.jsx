@@ -5,7 +5,7 @@ import {
   Building2, ChevronRight, CheckCircle2,
   ArrowRight, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
-import api from '../api/axios'
+import api, { getUser } from '../api/axios'
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -13,8 +13,37 @@ const supportInfo = {
   phone: '045-353102',
   webmaster: '1502',
   email: 'ocn@ubu.ac.th',
-  facebook: 'https://www.facebook.com/ocnfanpage/',
+  facebook: 'https://www.facebook.com/odlfanpage',
   copyright: 'สงวนลิขสิทธิ์ พ.ศ. 2556 ตามพระราชบัญญัติลิขสิทธิ์ 2537',
+}
+
+const normalizeDisplayName = (values) => {
+  const candidates = Array.isArray(values) ? values : [values]
+  const titlePattern = /^(นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ว่าที่ร\.ต\.|ดร\.|ผศ\.|รศ\.|ศ\.)\s*/i
+  const thaiNamePattern = /[\u0E00-\u0E7F]+(?:\s+[\u0E00-\u0E7F]+)*/
+  const blockedLabels = new Set(['student', 'user', 'guest', 'member', 'staff'])
+
+  for (const value of candidates) {
+    const raw = String(value || '').trim().replace(/\s+/g, ' ')
+    if (!raw) continue
+
+    const stripped = raw.replace(titlePattern, '').trim()
+    const thaiMatch = stripped.match(thaiNamePattern)?.[0]?.trim()
+    if (thaiMatch) {
+      return thaiMatch.split(/\s+/)[0]
+    }
+
+    const token = stripped.split(/\s+/)[0] || ''
+    if (!token) continue
+
+    const lower = token.toLowerCase()
+    const looksLikeEnglishLabel = /^[a-z0-9._-]+$/i.test(token)
+    if (blockedLabels.has(lower) || looksLikeEnglishLabel) continue
+
+    return token
+  }
+
+  return 'ผู้ใช้ระบบ'
 }
 
 const ANIM = `
@@ -274,6 +303,7 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const storedUser = getUser()
   const [bookings, setBookings] = useState([])
   const [termBookings, setTermBookings] = useState([])
   const [notifications, setNotifications] = useState([])
@@ -342,7 +372,24 @@ export default function HomePage() {
   const activeBookings = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledBookings = bookings.filter(b => b.status === 'cancelled')
   const noShowBookings = bookings.filter(b => b.status === 'no_show')
-  const displayName = user?.first_name || user?.username || user?.email || ''
+  const displayName = normalizeDisplayName(
+    [
+      user?.display_name,
+      user?.full_name,
+      [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim(),
+      user?.first_name,
+      user?.name,
+      storedUser?.display_name,
+      storedUser?.full_name,
+      [storedUser?.first_name, storedUser?.last_name].filter(Boolean).join(' ').trim(),
+      storedUser?.first_name,
+      storedUser?.name,
+      user?.username,
+      storedUser?.username,
+      user?.email,
+      storedUser?.email,
+    ],
+  )
 
   if (loading) return (
     <div className="w-full h-full bg-[#F8FAFC] flex flex-col items-center justify-center gap-3">
@@ -364,7 +411,7 @@ export default function HomePage() {
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-100">Welcome back</p>
-                <h1 className="mt-2 text-2xl font-extrabold leading-tight sm:text-3xl">สวัสดี, {displayName}</h1>
+                <h1 className="mt-2 text-2xl font-extrabold leading-tight sm:text-3xl">สวัสดี {displayName}</h1>
                 <p className="mt-2 text-sm text-blue-50/90">{user?.faculty || 'ระบบจองห้องประชุม'}</p>
               </div>
               <button

@@ -36,13 +36,12 @@ def send_checkin_reminders():
         if not user_email:
             continue
 
-        checkin_url = f'{SITE_URL}/api/bookings/{booking.id}/checkin/{booking.checkin_token}/'
-        cancel_url  = f'{SITE_URL}/api/bookings/{booking.id}/cancel-email/{booking.checkin_token}/'
+        cancel_url = f'{SITE_URL}/api/bookings/{booking.id}/cancel-email/{booking.checkin_token}/'
 
         try:
             send_mail(
-                subject=f'⏰ อีก 15 นาที! กรุณา Check-in ห้อง {booking.room.name}',
-                message=f'กรุณากด Check-in ที่: {checkin_url}',
+                subject=f'⏰ อีก 15 นาที! ถึงเวลาใช้ห้อง {booking.room.name}',
+                message=f'ไม่สามารถมาใช้งานได้? กดยกเลิกที่: {cancel_url}',
                 from_email='nookkup47@gmail.com',
                 recipient_list=[user_email],
                 html_message=f'''
@@ -61,7 +60,7 @@ def send_checkin_reminders():
       <p style="font-size:16px;color:#374151;">
         สวัสดีคุณ <b>{booking.user.get_full_name() or booking.user.username}</b>
       </p>
-      <p style="color:#6b7280;">ใกล้ถึงเวลาการจองของคุณแล้ว อย่าลืม Check-in นะครับ!</p>
+      <p style="color:#6b7280;">ใกล้ถึงเวลาการจองของคุณแล้ว</p>
 
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
         <tr style="background:#fffbeb;">
@@ -83,18 +82,6 @@ def send_checkin_reminders():
           </td>
         </tr>
       </table>
-
-      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:20px;margin:24px 0;text-align:center;">
-        <p style="margin:0 0 16px;font-size:15px;color:#15803d;font-weight:bold;">
-          กด Check-in ได้เลยตอนนี้!
-        </p>
-        <a href="{checkin_url}"
-           style="display:inline-block;background:#16a34a;color:white;
-                  padding:14px 36px;text-decoration:none;border-radius:8px;
-                  font-size:16px;font-weight:bold;">
-          ✅ กด Check-in ที่นี่
-        </a>
-      </div>
 
       <div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:16px;text-align:center;">
         <p style="margin:0 0 12px;font-size:14px;color:#6b7280;">ไม่สามารถมาใช้งานได้?</p>

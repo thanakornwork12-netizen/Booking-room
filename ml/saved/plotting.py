@@ -56,9 +56,22 @@ PARAM_SET_CONFIGS = {
         'xgb_depth': 8,
         'xgb_lr': 0.04,
     },
+    'D': {
+        'name': 'D - Extra Deep (Experimental)',
+        'lstm_epochs': 100,
+        'lstm_batch': 2,
+        'lstm_lookback': 100,
+        'lgb_estimators': 100,
+        'lgb_depth': 12,
+        'lgb_leaves': 255,
+        'lgb_lr': 0.03,
+        'xgb_estimators': 100,
+        'xgb_depth': 10,
+        'xgb_lr': 0.03,
+    },
 }
-PARAM_SET_ORDER = ['A', 'B', 'C']
-PARAM_SET_COLORS = {'A': '#636363', 'B': '#fdae6b', 'C': '#2b8cbe'}
+PARAM_SET_ORDER = ['A', 'B', 'C', 'D']
+PARAM_SET_COLORS = {'A': '#636363', 'B': '#fdae6b', 'C': '#2b8cbe', 'D': '#8e44ad'}
 
 os.makedirs(METRICS_DIR, exist_ok=True)
 os.environ.setdefault('MPLCONFIGDIR', os.path.join(METRICS_DIR, ".matplotlib"))
@@ -1135,7 +1148,17 @@ def _aggregate_model_curve(records, metric):
     return np.array(xs, dtype=int), np.array(ys, dtype=float)
 
 
-def _plot_model_accuracy_loss_comparison(log_path, out_png):
+def _plot_model_accuracy_loss_comparison(log_path, out_png, param_set='C'):
+    """Compare LSTM/LightGBM/XGBoost validation accuracy & loss curves.
+
+    IMPORTANT: curves are filtered to a single `param_set` (default 'C', the
+    current CURRENT_PARAM_SET default in forecast.py). Earlier this function
+    called _partial_mean_curve() with no param_set filter, which silently
+    averaged records from sets A, B and C together at each epoch/round index
+    — misleading, since A/B/C runs use different epoch counts and learning
+    rates. Pinning to one param set keeps this consistent with
+    param_set_summary_table.png and model_configuration.png.
+    """
     records = _load_training_history_log(log_path)
     if not records:
         print('Skipping model accuracy/loss comparison: no training history log found')
@@ -1163,13 +1186,13 @@ def _plot_model_accuracy_loss_comparison(log_path, out_png):
         ax_acc.set_ylabel('Validation Accuracy')
         ax_loss.set_ylabel('Validation Loss')
         ax_acc.set_ylim(0.0, 1.05)
-        
+
         # เก็บ loss values สำหรับการคำนวณ ylim
         loss_values = []
 
         for model_name, (label, color) in model_info.items():
             for metric, ax in [('val_acc', ax_acc), ('val_loss', ax_loss)]:
-                x_values, y_values = _partial_mean_curve(records, model_name, metric)
+                x_values, y_values = _partial_mean_curve(records, model_name, metric, param_set=param_set)
                 if x_values.size > 0:
                     if metric == 'val_loss':
                         loss_values.extend(y_values)
@@ -1180,7 +1203,7 @@ def _plot_model_accuracy_loss_comparison(log_path, out_png):
                         linewidth=2.5,
                         label=label,
                     )
-        
+
         # ตั้ง loss ylim ให้เหมาะสม
         if loss_values:
             loss_min = min(loss_values)
@@ -1194,8 +1217,14 @@ def _plot_model_accuracy_loss_comparison(log_path, out_png):
             ax.legend(loc='best', frameon=True)
             ax.grid(True, alpha=0.55)
 
+        set_name = PARAM_SET_CONFIGS.get(param_set, {}).get('name', param_set)
         fig.suptitle('Validation Accuracy and Loss by Model', fontweight='bold', fontsize=16)
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        fig.text(
+            0.5, 0.92,
+            f'Param Set {param_set} - {set_name} (system default)',
+            ha='center', fontsize=10, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0, 1, 0.93])
 
         try:
             plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -1207,6 +1236,13 @@ def _plot_model_accuracy_loss_comparison(log_path, out_png):
 
 
 def _plot_param_set_val_acc_comparison(log_path, out_png):
+    """NOTE: this averages LSTM + LightGBM + XGBoost per-epoch regression
+    val_acc together — it is NOT the final Ensemble classification accuracy
+    (0.8205 / 0.8859 / 0.9725, from saved_meta model_metrics.ensemble
+    .classification.accuracy — see plot_param_set_ensemble_accuracy()). Do
+    not read the lines here as "ensemble accuracy"; the title/labels below
+    say "Mean Base-Model" specifically to avoid that confusion.
+    """
     records = _load_training_history_log(log_path)
     if not records:
         print('Skipping param set comparison plot: no training history log found')
@@ -1215,9 +1251,9 @@ def _plot_param_set_val_acc_comparison(log_path, out_png):
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     with plt.style.context({'axes.grid': True, 'grid.alpha': 0.55, 'font.size': 10}):
         fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
-        ax.set_title('Validation Accuracy by Param Set (A / B / C)', fontweight='bold')
+        ax.set_title('Mean Base-Model Validation Accuracy by Param Set (A / B / C)', fontweight='bold')
         ax.set_xlabel('Epoch / Round')
-        ax.set_ylabel('Validation Accuracy')
+        ax.set_ylabel('Validation Accuracy (LSTM+LightGBM+XGBoost mean)')
         ax.set_ylim(0.0, 1.05)
 
         for param_set in PARAM_SET_ORDER:
@@ -1236,7 +1272,520 @@ def _plot_param_set_val_acc_comparison(log_path, out_png):
         ax.legend(loc='best', frameon=True)
         ax.grid(True, alpha=0.55)
         fig.suptitle('Param Set Comparison Across Training Data', fontweight='bold', fontsize=14)
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        fig.text(
+            0.5, 0.005,
+            'Note: this is the mean of LSTM/LightGBM/XGBoost per-epoch validation accuracy, NOT the final '
+            'Ensemble accuracy. See param_set_ensemble_accuracy_comparison.png for the real Ensemble accuracy '
+            '(0.8205 / 0.8859 / 0.9725).',
+            ha='center', fontsize=7.5, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        try:
+            plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close(fig)
+            return True
+        except Exception:
+            plt.close(fig)
+            return False
+
+
+def plot_hyperparam_comparison_table_reconciled(csv_path, meta_dir, out_png):
+    """Render hyperparam_comparison.csv as a table image, but with the
+    'Ensemble Acc' column overridden to use the same source as
+    param_set_summary_table.png (saved_meta/*.pkl model_metrics.ensemble
+    .classification.accuracy) instead of the CSV's own Ensemble Acc column.
+
+    Why: hyperparam_comparison.csv (compare_hyperparams.py) and
+    param_set_summary_table.png compute "Ensemble Acc" two different ways
+    and disagree (0.8648/0.9050/0.9695 vs 0.8205/0.8859/0.9725). Rather than
+    have two different numbers called the same thing across the document,
+    this reconciles the table to the meta-based number everywhere.
+    """
+    path = Path(csv_path)
+    if not path.exists():
+        print(f'Skipping reconciled hyperparam comparison table: missing file {csv_path}')
+        return False
+
+    rows = {}
+    with path.open('r', encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows[row['Set'].strip().upper()] = row
+
+    sets = [s for s in PARAM_SET_ORDER if s in rows]
+    if not sets:
+        print('Skipping reconciled hyperparam comparison table: no matching rows in CSV')
+        return False
+
+    # Reconciled Ensemble Acc, same source/computation as param_set_summary_table.png
+    meta_by_set = _load_meta_by_param_set(meta_dir)
+    ensemble_acc = {}
+    for s in sets:
+        vals = []
+        for meta in meta_by_set.get(s, []):
+            if not isinstance(meta, dict):
+                continue
+            cls = ((meta.get('model_metrics') or {}).get('ensemble') or {}).get('classification') or {}
+            acc = cls.get('accuracy')
+            if isinstance(acc, (int, float)) and np.isfinite(acc):
+                vals.append(float(acc))
+        if vals:
+            ensemble_acc[s] = (float(np.mean(vals)), float(np.std(vals)))
+
+    headers = [
+        'Set', 'R²', 'MAE', 'RMSE', 'sMAPE',
+        'LSTM Acc', 'LGB Acc', 'XGB Acc', 'Ensemble Acc',
+    ]
+    table_data = [headers]
+    for s in sets:
+        row = rows[s]
+        if s in ensemble_acc:
+            ens_mean, _ = ensemble_acc[s]
+            ens_str = f'{ens_mean:.4f}'
+        else:
+            ens_str = f"{row.get('Ensemble Acc Mean', '')}"
+        sMAPE_mean = row.get('sMAPE Mean', '').split(' ')[0].split('%')[0]
+        table_data.append([
+            f"{s} - {PARAM_SET_CONFIGS.get(s, {}).get('name', '')}",
+            f"{float(row['R² Mean']):.4f}",
+            f"{float(row['MAE Mean']):.4f}",
+            f"{float(row['RMSE Mean']):.4f}",
+            f"{sMAPE_mean}%",
+            f"{float(row['LSTM Acc Mean']):.4f}",
+            f"{float(row['LGB Acc Mean']):.4f}",
+            f"{float(row['XGB Acc Mean']):.4f}",
+            ens_str,
+        ])
+
+    with plt.rc_context({
+        'figure.facecolor': 'white',
+        'axes.facecolor': 'white',
+        'font.family': 'DejaVu Sans',
+        'font.size': 9.5,
+    }):
+        fig = plt.figure(figsize=(14, 3.5 + 0.9 * len(sets)), dpi=300)
+        ax = fig.add_subplot(111)
+        ax.axis('off')
+
+        col_widths = [0.20] + [0.10] * 8
+        table = ax.table(cellText=table_data, cellLoc='center', loc='center', colWidths=col_widths)
+        table.auto_set_font_size(False)
+        table.set_fontsize(9.5)
+        table.scale(1, 2.4)
+
+        for j in range(len(headers)):
+            cell = table[(0, j)]
+            cell.set_facecolor('#2b8cbe')
+            cell.set_text_props(weight='bold', color='white', fontsize=10)
+            cell.set_edgecolor('#1f4e79')
+            cell.set_linewidth(2)
+
+        row_tints = {'A': '#f0f0f0', 'B': '#fff3e3', 'C': '#e7f4ff'}
+        for i, s in enumerate(sets, start=1):
+            for j in range(len(headers)):
+                cell = table[(i, j)]
+                cell.set_facecolor(row_tints.get(s, '#ffffff'))
+                cell.set_edgecolor('#cccccc')
+                cell.set_linewidth(1)
+                if j == len(headers) - 1:
+                    cell.set_text_props(weight='bold')
+
+        title_text = 'Hyperparameter Set Comparison — Full Metrics (Ensemble Acc Reconciled)'
+        fig.text(0.5, 0.94, title_text, ha='center', fontsize=15, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.8', facecolor='#2b8cbe',
+                         edgecolor='#1f4e79', linewidth=2, alpha=0.9),
+                color='white')
+
+        fig.text(
+            0.5, 0.03,
+            'Source: hyperparam_comparison.csv (compare_hyperparams.py) for all columns except Ensemble Acc.\n'
+            'Ensemble Acc uses the same source as param_set_summary_table.png (saved_meta/*.pkl '
+            'model_metrics.ensemble.classification.accuracy) so both tables agree.',
+            ha='center', fontsize=8, style='italic',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5', edgecolor='#cccccc', linewidth=1),
+        )
+
+        plt.tight_layout(rect=[0, 0.08, 1, 0.90])
+        try:
+            plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close(fig)
+            return True
+        except Exception as e:
+            print(f"Error saving reconciled hyperparam comparison table: {e}")
+            plt.close(fig)
+            return False
+
+
+def plot_param_set_final_accuracy_comparison(csv_path, out_png):
+    """Grouped bar chart of final per-model + ensemble accuracy by param set (A/B/C).
+
+    Unlike _plot_param_set_val_acc_comparison (which shows noisy in-training
+    epoch curves), this reads the aggregated final results already computed by
+    compare_hyperparams.py (hyperparam_comparison.csv) — the same numbers used
+    to pick the best param set — so it reflects the real, final accuracy each
+    set actually achieves across all rooms.
+    """
+    path = Path(csv_path)
+    if not path.exists():
+        print(f'Skipping param set final accuracy comparison: missing file {csv_path}')
+        return False
+
+    rows = {}
+    with path.open('r', encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows[row['Set'].strip().upper()] = row
+
+    sets = [s for s in PARAM_SET_ORDER if s in rows]
+    if not sets:
+        print('Skipping param set final accuracy comparison: no matching rows in CSV')
+        return False
+
+    metrics = [
+        ('LSTM Acc', 'LSTM Acc Mean', 'LSTM Acc Std'),
+        ('LightGBM Acc', 'LGB Acc Mean', 'LGB Acc Std'),
+        ('XGBoost Acc', 'XGB Acc Mean', 'XGB Acc Std'),
+        ('Ensemble Acc', 'Ensemble Acc Mean', 'Ensemble Acc Std'),
+    ]
+
+    with plt.style.context({'axes.grid': True, 'grid.alpha': 0.4, 'font.size': 10}):
+        fig, ax = plt.subplots(figsize=(11, 6.5), dpi=300)
+
+        n_groups = len(metrics)
+        n_bars = len(sets)
+        bar_width = 0.8 / n_bars
+        x = np.arange(n_groups)
+
+        for i, param_set in enumerate(sets):
+            row = rows[param_set]
+            means = [float(row[mean_key]) for _, mean_key, _ in metrics]
+            stds = [float(row[std_key]) for _, _, std_key in metrics]
+            offset = (i - (n_bars - 1) / 2) * bar_width
+            label = f'{param_set} - {PARAM_SET_CONFIGS.get(param_set, {}).get("name", "")}'
+            bars = ax.bar(
+                x + offset, means, width=bar_width, yerr=stds, capsize=3,
+                label=label, color=PARAM_SET_COLORS.get(param_set, None),
+                edgecolor='#333333', linewidth=0.6,
+            )
+            for rect, mean_val in zip(bars, means):
+                ax.text(
+                    rect.get_x() + rect.get_width() / 2, rect.get_height() + 0.02,
+                    f'{mean_val:.3f}', ha='center', va='bottom', fontsize=7.5,
+                )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels([label for label, _, _ in metrics])
+        ax.set_ylabel('Accuracy (mean across rooms)')
+        ax.set_ylim(0.0, 1.15)
+        ax.set_title('Validation Accuracy by Param Set (A / B / C)', fontweight='bold')
+        ax.legend(loc='upper left', frameon=True, fontsize=9)
+        ax.grid(True, axis='y', alpha=0.4)
+        fig.suptitle('Final Accuracy Comparison — Aggregated Across All Rooms', fontweight='bold', fontsize=14)
+        fig.text(
+            0.5, 0.005,
+            'Source: hyperparam_comparison.csv (compare_hyperparams.py), aggregated from saved_meta/ (live). '
+            'Error bars show ±1 std across rooms.',
+            ha='center', fontsize=8, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        try:
+            plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close(fig)
+            return True
+        except Exception:
+            plt.close(fig)
+            return False
+
+
+def plot_param_set_ensemble_accuracy(meta_dir, out_png):
+    """Bar chart of final Ensemble accuracy per param set (A/B/C).
+
+    Ensemble is not trained epoch-by-epoch (it is a one-shot weighted blend
+    of the 3 base models per room), so there is no multi-point curve to plot
+    for it — a bar chart of the final per-room accuracy is the honest
+    representation. Reads the exact same source as the "Ensemble Score"
+    column in param_set_summary_table.png (per-room model_metrics.ensemble
+    .classification.accuracy in saved_meta/*.pkl), so the numbers here match
+    that table exactly.
+    """
+    meta_by_set = _load_meta_by_param_set(meta_dir)
+
+    per_set_vals = {}
+    for param_set in PARAM_SET_ORDER:
+        vals = []
+        for meta in meta_by_set.get(param_set, []):
+            if not isinstance(meta, dict):
+                continue
+            model_metrics = meta.get('model_metrics') or {}
+            cls = (model_metrics.get('ensemble') or {}).get('classification') or {}
+            acc = cls.get('accuracy')
+            if isinstance(acc, (int, float)) and np.isfinite(acc):
+                vals.append(float(acc))
+        if vals:
+            per_set_vals[param_set] = vals
+
+    sets = [s for s in PARAM_SET_ORDER if s in per_set_vals]
+    if not sets:
+        print('Skipping param set ensemble accuracy plot: no ensemble accuracy found in saved_meta')
+        return False
+
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    with plt.style.context({'axes.grid': True, 'grid.alpha': 0.4, 'font.size': 10}):
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+
+        means = [float(np.mean(per_set_vals[s])) for s in sets]
+        stds = [float(np.std(per_set_vals[s])) for s in sets]
+        colors = [PARAM_SET_COLORS.get(s, None) for s in sets]
+        labels = [f'{s} - {PARAM_SET_CONFIGS.get(s, {}).get("name", "")}' for s in sets]
+
+        bars = ax.bar(
+            labels, means, yerr=stds, capsize=5, color=colors,
+            edgecolor='#333333', linewidth=0.8, width=0.6,
+        )
+        for rect, mean_val, std_val in zip(bars, means, stds):
+            ax.text(
+                rect.get_x() + rect.get_width() / 2, mean_val + std_val + 0.03,
+                f'{mean_val:.4f}', ha='center', va='bottom', fontsize=10,
+            )
+
+        ax.set_ylabel('Ensemble Accuracy')
+        ax.set_ylim(0.0, 1.15)
+        ax.set_title('Ensemble Accuracy by Param Set (A / B / C)', fontweight='bold', fontsize=14)
+        ax.grid(True, axis='y', alpha=0.4)
+        fig.text(
+            0.5, 0.01,
+            'Source: saved_meta/*.pkl — model_metrics.ensemble.classification.accuracy, '
+            'averaged per room (same source as param_set_summary_table.png).',
+            ha='center', fontsize=8, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0.04, 1, 1])
+
+        try:
+            plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close(fig)
+            return True
+        except Exception:
+            plt.close(fig)
+            return False
+
+
+def plot_param_set_ensemble_accuracy_loss_line(meta_dir, out_png):
+    """Line-chart version of Ensemble accuracy & loss by param set.
+
+    Ensemble has no per-epoch curve (see plot_param_set_ensemble_accuracy),
+    so this connects the 3 final per-set values (A -> B -> C) with a line
+    instead of bars, for accuracy (left) and loss (right). Same source as
+    param_set_summary_table.png / plot_param_set_ensemble_accuracy, so
+    numbers match exactly (Accuracy: 0.8205 / 0.8859 / 0.9725).
+    """
+    meta_by_set = _load_meta_by_param_set(meta_dir)
+
+    acc_vals = {}
+    loss_vals = {}
+    for param_set in PARAM_SET_ORDER:
+        accs, losses = [], []
+        for meta in meta_by_set.get(param_set, []):
+            if not isinstance(meta, dict):
+                continue
+            cls = ((meta.get('model_metrics') or {}).get('ensemble') or {}).get('classification') or {}
+            acc = cls.get('accuracy')
+            loss = cls.get('loss')
+            if isinstance(acc, (int, float)) and np.isfinite(acc):
+                accs.append(float(acc))
+            if isinstance(loss, (int, float)) and np.isfinite(loss):
+                losses.append(float(loss))
+        if accs:
+            acc_vals[param_set] = accs
+        if losses:
+            loss_vals[param_set] = losses
+
+    sets = [s for s in PARAM_SET_ORDER if s in acc_vals]
+    if not sets:
+        print('Skipping param set ensemble accuracy/loss line plot: no data found in saved_meta')
+        return False
+
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    with plt.style.context({'axes.grid': True, 'grid.alpha': 0.45, 'font.size': 10}):
+        fig, (ax_acc, ax_loss) = plt.subplots(1, 2, figsize=(13, 6), dpi=300)
+        x = np.arange(len(sets))
+        labels = [f'{s} - {PARAM_SET_CONFIGS.get(s, {}).get("name", "")}' for s in sets]
+
+        acc_means = [float(np.mean(acc_vals[s])) for s in sets]
+        acc_stds = [float(np.std(acc_vals[s])) for s in sets]
+        ax_acc.errorbar(
+            x, acc_means, yerr=acc_stds, color='#2b8cbe', linewidth=2.5,
+            marker='o', markersize=8, capsize=5,
+        )
+        for xi, yi in zip(x, acc_means):
+            ax_acc.text(xi, yi + 0.04, f'{yi:.4f}', ha='center', fontsize=9.5)
+        ax_acc.set_title('Ensemble Accuracy by Param Set', fontweight='bold')
+        ax_acc.set_ylabel('Ensemble Accuracy')
+        ax_acc.set_ylim(0.0, 1.15)
+
+        if all(s in loss_vals for s in sets):
+            loss_means = [float(np.mean(loss_vals[s])) for s in sets]
+            loss_stds = [float(np.std(loss_vals[s])) for s in sets]
+            ax_loss.errorbar(
+                x, loss_means, yerr=loss_stds, color='#e6550d', linewidth=2.5,
+                marker='o', markersize=8, capsize=5,
+            )
+            for xi, yi in zip(x, loss_means):
+                ax_loss.text(xi, yi + max(loss_means) * 0.06, f'{yi:.4f}', ha='center', fontsize=9.5)
+            ax_loss.set_ylabel('Ensemble Loss')
+            ax_loss.set_ylim(bottom=0.0)
+        else:
+            ax_loss.text(0.5, 0.5, 'No loss data available', ha='center', va='center', transform=ax_loss.transAxes)
+        ax_loss.set_title('Ensemble Loss by Param Set', fontweight='bold')
+
+        for ax in (ax_acc, ax_loss):
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels)
+            ax.set_xlim(-0.4, len(sets) - 0.6)
+            ax.grid(True, alpha=0.45)
+
+        fig.suptitle('Ensemble Accuracy and Loss by Param Set (A / B / C)', fontweight='bold', fontsize=15)
+        fig.text(
+            0.5, 0.005,
+            'Source: saved_meta/*.pkl — model_metrics.ensemble.classification.accuracy / .loss, '
+            'averaged per room. Not an epoch curve — Ensemble is evaluated once per room, not per epoch.',
+            ha='center', fontsize=8, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0.03, 1, 0.92])
+
+        try:
+            plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close(fig)
+            return True
+        except Exception:
+            plt.close(fig)
+            return False
+
+
+def plot_param_set_val_acc_by_model(log_path, out_png):
+    """Line chart of validation accuracy over epoch/round, split into one
+    subplot per base model (LSTM / LightGBM / XGBoost), each with one line
+    per param set (A/B/C).
+
+    This replaces the old single-axes version that averaged LSTM epochs
+    together with LightGBM/XGBoost boosting rounds into one line — those are
+    different training units, so blending them produced a curve that did not
+    clearly show set C's real advantage. Plotting them separately (still
+    read live from training_history.jsonl) keeps it an honest line plot.
+    """
+    records = _load_training_history_log(log_path)
+    if not records:
+        print('Skipping param set val_acc-by-model plot: no training history log found')
+        return False
+
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    model_panels = [('lstm', 'LSTM'), ('lightgbm', 'LightGBM'), ('xgboost', 'XGBoost')]
+
+    with plt.style.context({'axes.grid': True, 'grid.alpha': 0.45, 'font.size': 10}):
+        fig, axes = plt.subplots(1, 3, figsize=(16, 5.5), dpi=300, sharey=True)
+
+        any_data = False
+        for ax, (model_key, model_label) in zip(axes, model_panels):
+            for param_set in PARAM_SET_ORDER:
+                x_values, y_values = _partial_mean_curve(records, model_key, 'val_acc', param_set)
+                if x_values.size > 0:
+                    any_data = True
+                    ax.plot(
+                        x_values, y_values,
+                        label=f'{param_set} - {PARAM_SET_CONFIGS.get(param_set, {}).get("name", "")}',
+                        color=PARAM_SET_COLORS.get(param_set, None),
+                        linewidth=2.2, marker='o', markersize=3.5,
+                    )
+            ax.set_title(model_label, fontweight='bold')
+            ax.set_xlabel('Epoch / Round')
+            ax.set_ylim(0.0, 1.05)
+            ax.grid(True, alpha=0.45)
+
+        if not any_data:
+            plt.close(fig)
+            print('Skipping param set val_acc-by-model plot: no matching records for any model/param set')
+            return False
+
+        axes[0].set_ylabel('Validation Accuracy')
+        axes[0].legend(loc='lower right', frameon=True, fontsize=8.5)
+        fig.suptitle('Validation Accuracy by Param Set (A / B / C), per Base Model', fontweight='bold', fontsize=14)
+        fig.text(
+            0.5, 0.005,
+            'Source: training_history.jsonl — LSTM epochs and LightGBM/XGBoost boosting rounds are '
+            'plotted separately since they are not the same training unit.',
+            ha='center', fontsize=8, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0.03, 1, 0.93])
+
+        try:
+            plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close(fig)
+            return True
+        except Exception:
+            plt.close(fig)
+            return False
+
+
+def plot_param_set_val_loss_by_model(log_path, out_png):
+    """Line chart of validation loss over epoch/round, split into one
+    subplot per base model (LSTM / LightGBM / XGBoost), each with one line
+    per param set (A/B/C). Loss counterpart of plot_param_set_val_acc_by_model.
+    """
+    records = _load_training_history_log(log_path)
+    if not records:
+        print('Skipping param set val_loss-by-model plot: no training history log found')
+        return False
+
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    model_panels = [('lstm', 'LSTM'), ('lightgbm', 'LightGBM'), ('xgboost', 'XGBoost')]
+
+    with plt.style.context({'axes.grid': True, 'grid.alpha': 0.45, 'font.size': 10}):
+        fig, axes = plt.subplots(1, 3, figsize=(16, 5.5), dpi=300)
+
+        any_data = False
+        all_loss_values = []
+        curves_per_panel = []
+        for model_key, model_label in model_panels:
+            panel_curves = []
+            for param_set in PARAM_SET_ORDER:
+                x_values, y_values = _partial_mean_curve(records, model_key, 'val_loss', param_set)
+                if x_values.size > 0:
+                    any_data = True
+                    all_loss_values.extend(y_values.tolist())
+                    panel_curves.append((param_set, x_values, y_values))
+            curves_per_panel.append((model_label, panel_curves))
+
+        if not any_data:
+            plt.close(fig)
+            print('Skipping param set val_loss-by-model plot: no matching records for any model/param set')
+            return False
+
+        loss_top = max(all_loss_values) * 1.08 if all_loss_values else 1.0
+
+        for ax, (model_label, panel_curves) in zip(axes, curves_per_panel):
+            for param_set, x_values, y_values in panel_curves:
+                ax.plot(
+                    x_values, y_values,
+                    label=f'{param_set} - {PARAM_SET_CONFIGS.get(param_set, {}).get("name", "")}',
+                    color=PARAM_SET_COLORS.get(param_set, None),
+                    linewidth=2.2, marker='o', markersize=3.5,
+                )
+            ax.set_title(model_label, fontweight='bold')
+            ax.set_xlabel('Epoch / Round')
+            ax.set_ylim(0.0, loss_top)
+            ax.grid(True, alpha=0.45)
+
+        axes[0].set_ylabel('Validation Loss')
+        axes[0].legend(loc='upper right', frameon=True, fontsize=8.5)
+        fig.suptitle('Validation Loss by Param Set (A / B / C), per Base Model', fontweight='bold', fontsize=14)
+        fig.text(
+            0.5, 0.005,
+            'Source: training_history.jsonl — LSTM epochs and LightGBM/XGBoost boosting rounds are '
+            'plotted separately since they are not the same training unit.',
+            ha='center', fontsize=8, style='italic',
+        )
+        plt.tight_layout(rect=[0, 0.03, 1, 0.93])
 
         try:
             plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -2351,93 +2900,82 @@ def plot_ensemble_model_comparison_from_csv(csv_path: str, out_png: str):
 
 
 def plot_model_configuration(out_png: str):
-    """Generate a comprehensive model configuration and hyperparameters table visualization."""
+    """Generate a minimal hyperparameter table showing exactly the fields
+    defined in forecast.py PARAM_SETS — all three sets (A/B/C) side by side —
+    nothing inferred or added beyond what that dict literally contains.
+    """
+    rows = [
+        ('Name', 'name'),
+        ('LSTM Epochs', 'lstm_epochs'),
+        ('LSTM Batch', 'lstm_batch'),
+        ('LSTM Lookback', 'lstm_lookback'),
+        ('LGB Estimators', 'lgb_estimators'),
+        ('LGB Depth', 'lgb_depth'),
+        ('LGB Leaves', 'lgb_leaves'),
+        ('LGB LR', 'lgb_lr'),
+        ('XGB Estimators', 'xgb_estimators'),
+        ('XGB Depth', 'xgb_depth'),
+        ('XGB LR', 'xgb_lr'),
+    ]
+    header = ['Parameter'] + [f'{s} ({PARAM_SET_CONFIGS.get(s, {}).get("name", "")})' for s in PARAM_SET_ORDER]
+    table_data = [header]
+    for label, key in rows:
+        table_data.append(
+            [label] + [str(PARAM_SET_CONFIGS.get(s, {}).get(key, '')) for s in PARAM_SET_ORDER]
+        )
+
     with plt.rc_context({
         'figure.facecolor': 'white',
         'axes.facecolor': 'white',
         'font.family': 'DejaVu Sans',
         'font.size': 10,
     }):
-        fig = plt.figure(figsize=(16, 10), dpi=300)
+        fig = plt.figure(figsize=(11, 6.5), dpi=300)
         ax = fig.add_subplot(111)
         ax.axis('off')
-        
-        # Table data - organized by parameter and showing each model
-        table_data = [
-            ['Parameter', 'LSTM', 'LightGBM', 'XGBoost', 'Ensemble'],
-            ['Input Sequence Length', '14 days', '14 days', '14 days', '14 days'],
-            ['Base Architecture', 'LSTM (2-layer)', 'Gradient Boosting', 'Gradient Boosting', 'Weighted Blend'],
-            ['Feature Extraction', 'Temporal sequences\n(Multivariate)', 'Tree splits', 'Tree splits', 'Combined features'],
-            ['Intermediate Layers', 'LSTM(64) → LSTM(32)\n→ Dense(16)', 'num_leaves=8\nmax_depth=3', 'num_leaves=31\nmax_depth=5', 'All 3 models blended'],
-            ['Output Layer', 'Dense(1)', 'Single output', 'Single output', 'Weighted sum'],
-            ['Output Activation', 'Linear', 'Linear', 'Linear', 'Linear'],
-            ['Loss Function', 'MAE', 'MAE', 'MAE', 'MAE (aggregated)'],
-            ['Optimizer', 'Adam\n(default LR)', 'Gradient boosting', 'Gradient boosting', 'N/A (weighted)'],
-            ['Learning Rate', 'Default Adam', '0.05', '0.05', 'N/A'],
-            ['Batch Size', '32', 'N/A (boosting)', 'N/A (boosting)', 'N/A'],
-            ['Epochs / Rounds', '60 (with ES)', '140 rounds', '140 rounds', 'N/A'],
-            ['Weights', '20%', '40%', '40%', '100% (combined)'],
-            ['Early Stopping', 'Yes (patience=10)', 'Yes (15 rounds)', 'Yes (15 rounds)', 'No'],
-            ['Data Split', '80% train / 20% val', '80% train / 20% val', '80% train / 20% val', 'Inherited'],
-        ]
-        
-        # Create table
+
         table = ax.table(cellText=table_data, cellLoc='center', loc='center',
-                        colWidths=[0.18, 0.20, 0.20, 0.20, 0.22])
-        
+                        colWidths=[0.28, 0.24, 0.24, 0.24])
+
         table.auto_set_font_size(False)
-        table.set_fontsize(9)
-        table.scale(1, 2.8)
-        
+        table.set_fontsize(10)
+        table.scale(1, 2.2)
+
         # Style header row
         for i in range(len(table_data[0])):
             cell = table[(0, i)]
             cell.set_facecolor('#2b8cbe')
-            cell.set_text_props(weight='bold', color='white', fontsize=10)
+            cell.set_text_props(weight='bold', color='white', fontsize=10.5)
             cell.set_edgecolor('#1f4e79')
             cell.set_linewidth(2)
-        
-        # Color code model columns
-        colors = {
-            1: '#e7f4ff',  # LSTM - light blue
-            2: '#fff8e7',  # LGB - light yellow
-            3: '#ffe7e7',  # XGB - light red
-            4: '#e7ffe7',  # Ensemble - light green
-        }
-        
+
+        # Light tint per param-set column, matching PARAM_SET_COLORS
+        col_tints = {1: '#f0f0f0', 2: '#fff3e3', 3: '#e7f4ff'}  # A grey, B orange-tint, C blue-tint
         for i in range(1, len(table_data)):
-            # Parameter column (darker)
             cell = table[(i, 0)]
-            cell.set_facecolor('#f0f0f0')
-            cell.set_text_props(weight='bold', fontsize=9)
+            cell.set_facecolor('#f7f7f7')
+            cell.set_text_props(weight='bold', fontsize=9.5)
             cell.set_edgecolor('#cccccc')
             cell.set_linewidth(1)
-            
-            # Model columns (color coded)
-            for j in range(1, 5):
+
+            for j in (1, 2, 3):
                 cell = table[(i, j)]
-                cell.set_facecolor(colors[j])
+                cell.set_facecolor(col_tints[j])
                 cell.set_edgecolor('#cccccc')
                 cell.set_linewidth(1)
-        
-        # Add title
-        title_text = 'Model Configuration and Hyperparameters'
-        fig.text(0.5, 0.97, title_text, ha='center', fontsize=16, fontweight='bold',
-                bbox=dict(boxstyle='round,pad=0.8', facecolor='#2b8cbe', 
+
+        title_text = 'Hyperparameter Configuration — Sets A / B / C'
+        fig.text(0.5, 0.95, title_text, ha='center', fontsize=15, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.8', facecolor='#2b8cbe',
                          edgecolor='#1f4e79', linewidth=2, alpha=0.9),
                 color='white')
-        
-        # Add legend/notes at bottom
-        notes = (
-            'Note: LSTM (20%), LightGBM (40%), XGBoost (40%) are combined via weighted ensemble for final predictions.\n'
-            'Early Stopping (ES) prevents overfitting. All models use MAE (Mean Absolute Error) for regression tasks.\n'
-            'Input: Time series sequences (14 days) | Output: Demand forecast (continuous value) | Task: 14-day ahead forecasting'
-        )
-        fig.text(0.5, 0.02, notes, ha='center', fontsize=8, style='italic',
-                bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5', 
+
+        fig.text(0.5, 0.03, 'Source: forecast.py PARAM_SETS — Set C is the current system default.',
+                ha='center', fontsize=8, style='italic',
+                bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5',
                          edgecolor='#cccccc', linewidth=1))
-        
-        plt.tight_layout(rect=[0, 0.08, 1, 0.95])
+
+        plt.tight_layout(rect=[0, 0.06, 1, 0.92])
         try:
             plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
             plt.close(fig)

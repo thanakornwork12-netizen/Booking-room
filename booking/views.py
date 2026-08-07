@@ -11,6 +11,7 @@ from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import login
 from django.contrib.auth.models import User
 from django.shortcuts import redirect, render
@@ -79,23 +80,47 @@ class DeleteAccountView(APIView):
         return Response({'detail': 'ลบบัญชีผู้ใช้สำเร็จ'})
 
 
+def _require_admin_or_staff(request):
+    if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        raise PermissionDenied('สำหรับผู้ดูแลระบบเท่านั้น')
+
+
 # ============================================================
 # BUILDING
 # ============================================================
-class BuildingViewSet(viewsets.ReadOnlyModelViewSet):
+class BuildingViewSet(viewsets.ModelViewSet):
     queryset           = Building.objects.filter(is_active=True).order_by('name')
     serializer_class   = BuildingSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        _require_admin_or_staff(self.request)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _require_admin_or_staff(self.request)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _require_admin_or_staff(self.request)
+        instance.is_active = False
+        instance.save(update_fields=['is_active'])
 
 
 # ============================================================
 # ROOM
 # ============================================================
-class RoomViewSet(viewsets.ReadOnlyModelViewSet):
+class RoomViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Room.objects.filter(is_active=True).select_related('building')
+        is_staff = getattr(self.request.user, 'role', None) in ['admin', 'staff']
+        qs = Room.objects.select_related('building')
+        qs = qs if is_staff else qs.filter(is_active=True)
         building  = self.request.query_params.get('building')
         room_type = self.request.query_params.get('room_type')
         capacity  = self.request.query_params.get('min_capacity')
@@ -109,6 +134,20 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_serializer_class(self):
         return RoomListSerializer if self.action == 'list' else RoomSerializer
+
+    def perform_create(self, serializer):
+        _require_admin_or_staff(self.request)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _require_admin_or_staff(self.request)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _require_admin_or_staff(self.request)
+        instance.is_active = False
+        instance.status = 'disabled'
+        instance.save(update_fields=['is_active', 'status'])
 
     @action(detail=False, methods=['post'])
     def search(self, request):
@@ -596,7 +635,7 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
         if getattr(request.user, 'role', None) not in ['admin', 'staff']:
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
-        rooms = Room.objects.filter(is_active=True).select_related('building')
+        rooms = Room.objects.select_related('building')
         total_bookings = Booking.objects.filter(status__in=['approved', 'completed']).count() or 1
         result = []
         for room in rooms:
@@ -606,7 +645,9 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
                 'name':         room.name,
                 'code':         room.name,
                 'building':     room.building.name if room.building else 'ไม่ระบุ',
+                'building_id':  room.building_id,
                 'building_code': room.building.code if room.building else '',
+                'floor':        room.floor,
                 'capacity':     room.capacity,
                 'room_type':    room.room_type,
                 'status':       room.status,
@@ -1402,7 +1443,7 @@ class DashboardView(generics.GenericAPIView):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
         today       = timezone.now().date()
-        total_rooms = Room.objects.filter(is_active=True).count()
+        total_rooms = Room.objects.count()
         today_dynamic = Booking.objects.filter(start_time__date=today, status='approved').count()
         today_term    = TermBooking.objects.filter(
             day_of_week=today.weekday(), status='active',

@@ -289,25 +289,18 @@ function EquipmentSelector({ selected, onChange, equipmentPresets = FALLBACK_EQU
   }
   const options = getEquipmentOptions(equipmentPresets)
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="flex flex-wrap gap-1.5">
       {options.map(eq => {
         const active = selected.includes(eq.key)
         return (
           <button key={eq.key} onClick={() => toggle(eq.key)}
-            className={`group relative overflow-hidden rounded-2xl border px-3 py-3 text-left transition-all min-h-[72px] flex flex-col justify-between
+            className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all
               ${active
-                ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-lg shadow-blue-200'
-                : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md'}`}>
-            <div className={`w-8 h-8 rounded-2xl flex items-center justify-center mb-2.5 transition-all ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>
-              <span className="text-base leading-none">{eq.icon}</span>
-            </div>
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className={`text-[13px] font-bold truncate ${active ? 'text-white' : 'text-slate-900'}`}>{eq.shortLabel || eq.label}</p>
-                {eq.hint && <p className={`text-[10px] mt-0.5 leading-tight ${active ? 'text-white/70' : 'text-slate-400'}`}>{eq.hint}</p>}
-              </div>
-              {active && <Check size={15} className="text-white shrink-0 mt-0.5" />}
-            </div>
+                ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-sm'
+                : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}>
+            <span className="text-sm leading-none">{eq.icon}</span>
+            {eq.shortLabel || eq.label}
+            {active && <Check size={12} className="text-white shrink-0" />}
           </button>
         )
       })}
@@ -346,23 +339,23 @@ function BookingTypeSelector({ value, onChange }) {
     { key: 'term', icon: BookOpen, label: 'ทั้งเทอม', sub: 'จองประจำทุกสัปดาห์' },
   ]
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 gap-2">
       {types.map(t => {
         const Icon = t.icon
         const active = value === t.key
         const accent = active ? (t.key === 'term' ? 'from-indigo-600 to-violet-600 border-indigo-600' : 'from-blue-600 to-indigo-600 border-blue-600') : 'bg-white border-slate-200'
         return (
           <button key={t.key} onClick={() => onChange(t.key)}
-            className={`group relative overflow-hidden rounded-3xl border p-4 transition-all text-left min-h-[104px]
-              ${active ? `bg-gradient-to-br ${accent} text-white shadow-xl shadow-blue-200/70` : 'bg-white text-slate-700 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-lg'}`}>
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-5 ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>
-              <Icon size={18} className={active ? 'text-white' : 'text-blue-600'} />
+            className={`group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2.5 transition-all text-left
+              ${active ? `bg-gradient-to-br ${accent} text-white shadow-md shadow-blue-200/70` : 'bg-white text-slate-700 hover:border-blue-300 hover:shadow-sm'}`}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>
+              <Icon size={15} className={active ? 'text-white' : 'text-blue-600'} />
             </div>
-            <div>
-              <p className={`text-base font-bold leading-tight ${active ? 'text-white' : 'text-slate-900'}`}>{t.label}</p>
-              <p className={`text-xs mt-1.5 leading-snug ${active ? 'text-white/80' : 'text-slate-500'}`}>{t.sub}</p>
+            <div className="min-w-0">
+              <p className={`text-sm font-bold leading-tight truncate ${active ? 'text-white' : 'text-slate-900'}`}>{t.label}</p>
+              <p className={`text-[11px] leading-snug truncate ${active ? 'text-white/80' : 'text-slate-500'}`}>{t.sub}</p>
             </div>
-            {active && <CheckCircle size={16} className="absolute top-3 right-3 text-white/90" />}
+            {active && <CheckCircle size={13} className="absolute top-2 right-2 text-white/90" />}
           </button>
         )
       })}
@@ -401,9 +394,9 @@ function SummaryTiles({ rooms }) {
         const cfg = FORECAST_CONFIG[s.level]
         const count = rooms.filter(r => getDemandLevel(r) === s.level).length
         return (
-          <div key={s.level} className={`border rounded-xl py-2 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
-            <p className={`text-xl font-extrabold ${cfg.numCls}`}>{count}</p>
-            <p className={`text-[10px] font-semibold leading-tight px-1 ${cfg.textCls} opacity-90`}>{s.label}</p>
+          <div key={s.level} className={`rounded-2xl border px-3 py-3 text-center ${cfg.cardBg} ${cfg.cardBorder}`}>
+            <p className={`text-2xl font-extrabold leading-none ${cfg.numCls}`}>{count}</p>
+            <p className={`mt-1 text-[10px] font-semibold leading-tight px-1 ${cfg.textCls} opacity-90`}>{s.label}</p>
           </div>
         )
       })}
@@ -411,15 +404,20 @@ function SummaryTiles({ rooms }) {
   )
 }
 
-function RoomCard({ room, onClick, isTermMode, selectedEquipments, equipmentPresets }) {
+function RoomCard({ room, onClick, isTermMode, selectedEquipments, equipmentPresets, isBest }) {
   const level = getDemandLevel(room)
   const cfg = FORECAST_CONFIG[level]
   return (
-    <div onClick={onClick} className="bg-white border border-slate-200 rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all flex gap-3 group" style={{ borderLeftWidth: 3, borderLeftColor: cfg.dotColor }}>
+    <div onClick={onClick} className={`bg-white border rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all flex gap-3 group ${isBest ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200'}`} style={{ borderLeftWidth: 3, borderLeftColor: cfg.dotColor }}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <span className="font-bold text-slate-900 text-sm truncate group-hover:text-blue-700 transition-colors">{room.name}</span>
           <RoomStatusBadge status={room.status} />
+          {isBest && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <Sparkles size={10} /> เหมาะสมที่สุด
+            </span>
+          )}
           {level !== 'none' && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cfg.badgeCls}`}>{cfg.badge}</span>}
         </div>
         <p className="text-xs text-slate-500 truncate mb-1.5">{room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง</p>
@@ -522,7 +520,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     if (!q) return true
     return String(b.label || '').toLowerCase().includes(q)
   })
-  const visibleRooms = rooms.slice(0, 3)
+  const visibleRooms = rooms
   const visibleSimilarRooms = similarRooms.slice(0, 2)
   const selectedBuildingLabel = buildings.find(b => b.code === building)?.label || 'ทั้งหมด'
   const navItems = [
@@ -601,7 +599,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
 
         <div className="flex-1 min-w-0 flex flex-col">
           {showChrome && (
-          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white">
             <div className="px-4 sm:px-6 lg:px-8 py-2.5">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-3 min-w-0">
@@ -660,103 +658,82 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
               )}
 
               {step === 1 && (
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px] min-h-0">
-                  <div className="space-y-3 min-h-0">
-                    <section className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] overflow-hidden au">
-                      <div className="px-4 py-2 border-b border-slate-100 bg-gradient-to-r from-blue-50 via-white to-indigo-50">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-400 mb-1">Booking Type</p>
-                        <h2 className="text-base font-bold text-slate-900">ประเภทการจอง</h2>
-                        <p className="mt-0.5 text-xs text-slate-500">เลือกรูปแบบที่ตรงกับงานของคุณ</p>
-                      </div>
-                      <div className="p-3">
-                        <BookingTypeSelector value={bookingType} onChange={v => { setBookingType(v); setDayOfWeek(null) }} />
-                      </div>
+                <div className="grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_280px] min-h-0">
+                  <div className="space-y-2.5 min-h-0">
+                    <section className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au">
+                      <h3 className="text-xs font-bold text-slate-500 mb-2">ประเภทการจอง</h3>
+                      <BookingTypeSelector value={bookingType} onChange={v => { setBookingType(v); setDayOfWeek(null) }} />
                     </section>
 
-                    <section className="grid gap-3 lg:grid-cols-2 min-h-0">
-                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3 au1">
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Participants</p>
-                            <h3 className="text-base font-bold text-slate-900">ผู้เข้าร่วม</h3>
-                          </div>
-                          <div className="rounded-2xl bg-blue-50 px-4 py-1.5 text-right border border-blue-100">
-                            <p className="text-[11px] text-slate-500">จำนวนที่เลือก</p>
-                            <p className="text-xl font-bold text-blue-700 leading-none">{attendees}</p>
-                          </div>
+                    <section className="grid gap-2.5 lg:grid-cols-2 min-h-0">
+                      <div className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au1">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <h3 className="text-xs font-bold text-slate-500">ผู้เข้าร่วม</h3>
+                          <span className="text-sm font-bold text-blue-700">{attendees} คน</span>
                         </div>
-                        <div className="flex items-center justify-between rounded-[18px] border border-slate-200 bg-slate-50/80 px-4 py-2 mb-2.5">
-                          <button onClick={() => setAttendees(Math.max(1, attendees - 1))} className="w-9 h-9 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:border-blue-200 hover:text-blue-700 transition-colors flex items-center justify-center text-2xl font-light shadow-sm">−</button>
-                          <div className="text-center">
-                            <p className="text-2xl font-bold text-slate-900 leading-none">{attendees}</p>
-                            <p className="text-sm text-slate-500 mt-1">คน</p>
-                          </div>
-                          <button onClick={() => setAttendees(attendees + 1)} className="w-9 h-9 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:shadow-blue-200 transition-all flex items-center justify-center text-2xl font-light">+</button>
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 mb-2">
+                          <button onClick={() => setAttendees(Math.max(1, attendees - 1))} className="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 hover:border-blue-200 hover:text-blue-700 transition-colors flex items-center justify-center text-lg font-light shadow-sm">−</button>
+                          <p className="text-lg font-bold text-slate-900 leading-none">{attendees}</p>
+                          <button onClick={() => setAttendees(attendees + 1)} className="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:shadow-blue-200 transition-all flex items-center justify-center text-lg font-light">+</button>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-1">
                           {ATTENDEES_PRESETS.map(n => (
-                            <button key={n} onClick={() => setAttendees(n)} className={`min-w-12 rounded-full px-3 py-1.5 text-sm font-semibold border transition-all ${attendees === n ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'}`}>
+                            <button key={n} onClick={() => setAttendees(n)} className={`min-w-9 rounded-full px-2 py-1 text-xs font-semibold border transition-all ${attendees === n ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'}`}>
                               {n}
                             </button>
                           ))}
                         </div>
                       </div>
 
-                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3 au2">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Calendar</p>
-                        <h3 className="text-base font-bold text-slate-900 mb-3">{isTermMode ? 'วันในสัปดาห์' : 'วันที่'}</h3>
+                      <div className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au2">
+                        <h3 className="text-xs font-bold text-slate-500 mb-2">{isTermMode ? 'วันในสัปดาห์' : 'วันที่'}</h3>
                         {isTermMode ? (
-                          <div className="grid grid-cols-7 gap-1.5">
+                          <div className="grid grid-cols-7 gap-1">
                             {DAYS_OF_WEEK.map(d => (
                               <button
                                 key={d.value}
                                 onClick={() => setDayOfWeek(d.value)}
-                                className={`rounded-2xl border px-2 py-2.5 text-sm font-semibold transition-all ${dayOfWeek === d.value ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
+                                className={`rounded-xl border py-1.5 text-[11px] font-semibold transition-all ${dayOfWeek === d.value ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
                               >
-                                <span className="block text-[11px] opacity-80">{d.label}</span>
+                                {d.label}
                               </button>
                             ))}
                           </div>
                         ) : (
-                          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-2">
-                            <input
-                              type="date"
-                              value={date}
-                              min={new Date().toISOString().split('T')[0]}
-                              onChange={e => setDate(e.target.value)}
-                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                            />
-                          </div>
+                          <input
+                            type="date"
+                            value={date}
+                            min={new Date().toISOString().split('T')[0]}
+                            onChange={e => setDate(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                          />
                         )}
                       </div>
                     </section>
 
-                    <section className="grid gap-4 lg:grid-cols-2 min-h-0">
-                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3.5 au2">
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Building Selection</p>
-                            <h3 className="text-base font-bold text-slate-900">อาคาร / ห้อง</h3>
-                          </div>
-                          <MapPin size={18} className="text-blue-600" />
+                    <section className="grid gap-2.5 lg:grid-cols-2 min-h-0">
+                      <div className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au2">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <h3 className="text-xs font-bold text-slate-500">อาคาร / ห้อง</h3>
+                          <MapPin size={14} className="text-blue-600" />
                         </div>
-                        <div className="relative mb-2.5">
-                          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <div className="relative mb-2">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
                             type="text"
                             value={buildingQuery || ''}
                             onChange={e => setBuildingQuery(e.target.value)}
                             placeholder="ค้นหาอาคาร"
-                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                           />
                         </div>
-                        <div className="max-h-36 overflow-hidden pr-1">
+                        <div className="max-h-40 overflow-y-auto pr-1">
                           <div className="flex flex-wrap gap-1.5">
                             {buildingOptions.map(b => (
                               <button
                                 key={b.code}
                                 onClick={() => setBuilding(b.code)}
-                                className={`rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-all ${building === b.code ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
+                                className={`rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-all ${building === b.code ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
                               >
                                 {b.label}
                               </button>
@@ -765,33 +742,29 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                         </div>
                       </div>
 
-                      <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3.5 au3">
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Time Selection</p>
-                            <h3 className="text-base font-bold text-slate-900">เวลา และ ระยะเวลา</h3>
-                          </div>
-                          <Clock size={18} className="text-blue-600" />
+                      <div className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <h3 className="text-xs font-bold text-slate-500">เวลา และ ระยะเวลา</h3>
+                          <Clock size={14} className="text-blue-600" />
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                        <div className="grid grid-cols-4 gap-1">
                           {TIME_SLOTS.map(t => (
                             <button
                               key={t}
                               onClick={() => setStartTime(t)}
-                              className={`rounded-2xl border px-3 py-2.5 text-sm font-semibold transition-all ${startTime === t ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                              className={`rounded-lg border py-1.5 text-xs font-semibold transition-all ${startTime === t ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
                             >
                               {t}
                             </button>
                           ))}
                         </div>
-                        <div className="mt-2.5">
-                          <p className="mb-3 text-sm font-semibold text-slate-600">ระยะเวลา</p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                        <div className="mt-2">
+                          <div className="grid grid-cols-4 gap-1">
                             {DURATIONS.map(d => (
                               <button
                                 key={d.hours}
                                 onClick={() => setDuration(d.hours)}
-                                className={`rounded-2xl border px-3 py-2.5 text-sm font-semibold transition-all ${duration === d.hours ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                                className={`rounded-lg border py-1.5 text-xs font-semibold transition-all ${duration === d.hours ? 'bg-slate-900 border-slate-900 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
                               >
                                 {d.label}
                               </button>
@@ -801,15 +774,12 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                       </div>
                     </section>
 
-                    <section className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] p-3 au3 min-h-0">
-                      <div className="flex items-center justify-between gap-3 mb-2.5">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 mb-1">Equipment</p>
-                          <h3 className="text-base font-bold text-slate-900">อุปกรณ์ที่ต้องการ</h3>
-                        </div>
+                    <section className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au3 min-h-0">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <h3 className="text-xs font-bold text-slate-500">อุปกรณ์ที่ต้องการ</h3>
                         {selectedEquipments.length > 0 && (
-                          <button onClick={() => setSelectedEquipments([])} className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-100 transition-colors">
-                            <RefreshCw size={14} /> ล้างทั้งหมด
+                          <button onClick={() => setSelectedEquipments([])} className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100 transition-colors">
+                            <RefreshCw size={11} /> ล้างทั้งหมด
                           </button>
                         )}
                       </div>
@@ -818,39 +788,33 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                   </div>
 
                   <aside className="xl:sticky xl:top-24 h-fit self-start">
-                      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
-                      <div className={`relative overflow-hidden bg-gradient-to-br ${accentBg} p-3.5 text-white`}>
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.06)]">
+                      <div className={`relative overflow-hidden bg-gradient-to-br ${accentBg} px-3 py-2.5 text-white`}>
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.20),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.14),transparent_32%)]" />
-                        <div className="relative flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.28em] text-white/70 mb-2">Summary</p>
-                            <h3 className="text-lg font-bold">สรุปการค้นหา</h3>
-                            <p className="mt-2 text-sm text-white/80">ตรวจสอบเงื่อนไขก่อนค้นหาห้องว่าง</p>
-                          </div>
-                          <div className="rounded-[22px] border border-white/20 bg-white/12 p-3">
-                            <CalendarDays size={24} />
-                          </div>
+                        <div className="relative flex items-center justify-between gap-2">
+                          <h3 className="text-sm font-bold">สรุปการค้นหา</h3>
+                          <CalendarDays size={16} className="opacity-80" />
                         </div>
                       </div>
 
-                      <div className="p-3">
-                        <div className="space-y-1.5">
+                      <div className="p-2.5">
+                        <div className="space-y-1">
                           {chipsSummary.map(item => (
-                            <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5">
-                              <span className="text-sm text-slate-500">{item.label}</span>
-                              <span className={`text-sm font-semibold text-right ${item.tone || 'text-slate-900'} truncate`}>{item.value}</span>
+                            <div key={item.label} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-1">
+                              <span className="text-xs text-slate-500">{item.label}</span>
+                              <span className={`text-xs font-semibold text-right ${item.tone || 'text-slate-900'} truncate`}>{item.value}</span>
                             </div>
                           ))}
                         </div>
 
                         {selectedEquipments.length > 0 && (
-                            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-white p-3">
-                            <p className="mb-3 text-sm font-semibold text-slate-700">อุปกรณ์ที่เลือก</p>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2">
+                            <p className="mb-1.5 text-xs font-semibold text-slate-700">อุปกรณ์ที่เลือก</p>
+                            <div className="flex flex-wrap gap-1">
                               {selectedEquipments.map(k => {
                                 const eq = findPreset(equipmentPresets, k)
                                 return (
-                                  <span key={k} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                                  <span key={k} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
                                     {eq?.icon} {eq?.shortLabel || eq?.label}
                                   </span>
                                 )
@@ -859,20 +823,20 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                           </div>
                         )}
 
-                        <div className="mt-3 space-y-2">
+                        <div className="mt-2 space-y-1.5">
                           <button
                             onClick={handleSearch}
                             disabled={loading}
-                            className={`w-full rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-200 transition-all ${accentHov} disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none flex items-center justify-center gap-2`}
+                            className={`w-full rounded-xl bg-gradient-to-r ${accentBg} px-3 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-200 transition-all ${accentHov} disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none flex items-center justify-center gap-2`}
                           >
-                            {loading ? <><div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> กำลังค้นหา...</> : <><Search size={18} /> ค้นหาห้องว่าง</>}
+                            {loading ? <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> กำลังค้นหา...</> : <><Search size={15} /> ค้นหาห้องว่าง</>}
                           </button>
                           <button
                             type="button"
                             onClick={onReset}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                           >
-                            <RefreshCw size={18} /> Reset filters
+                            <RefreshCw size={14} /> Reset filters
                           </button>
                         </div>
                       </div>
@@ -901,11 +865,8 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                     </div>
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-[250px_minmax(0,1fr)] min-h-0">
-                    <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-3.5 overflow-hidden">
-                      <SummaryTiles rooms={rooms} />
-                    </div>
-                    <div className="space-y-3 min-h-0">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px] min-h-0">
+                    <div className="space-y-3 min-h-0 xl:order-1">
                       {rooms.length === 0 ? (
                         <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-5 text-center">
                           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
@@ -916,16 +877,22 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                           {similarRooms.length > 0 && <p className="mt-4 text-xs text-slate-400">ระบบมีแผนสองด้านล่างให้เลือก</p>}
                         </div>
                       ) : (
-                        visibleRooms.map(room => (
+                        visibleRooms.map((room, index) => (
                           <RoomCard
                             key={room.id}
                             room={room}
                             isTermMode={isTermMode}
                             selectedEquipments={selectedEquipments}
                             equipmentPresets={equipmentPresets}
+                            isBest={index === 0}
                             onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }}
                           />
                         ))
+                      )}
+                      {rooms.length > visibleRooms.length && (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-500 shadow-sm">
+                          แสดง {visibleRooms.length} จากทั้งหมด {rooms.length} ห้อง
+                        </div>
                       )}
 
                       {rooms.length === 0 && visibleSimilarRooms.length > 0 && (
@@ -950,6 +917,16 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                           ))}
                         </div>
                       )}
+                    </div>
+                    <div className="rounded-[22px] border border-slate-200 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.05)] overflow-hidden au3 xl:order-2">
+                      <div className="px-4 py-2 border-b border-slate-100 bg-gradient-to-r from-blue-50 via-white to-indigo-50">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-400 mb-1">Summary</p>
+                        <h2 className="text-base font-bold text-slate-900">สรุปการค้นหา</h2>
+                        <p className="mt-0.5 text-xs text-slate-500">ตรวจสอบเงื่อนไขก่อนค้นหาห้องว่าง</p>
+                      </div>
+                      <div className="p-3">
+                        <SummaryTiles rooms={rooms} />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1241,6 +1218,10 @@ export default function SearchPage({ embedded = false }) {
       let filtered = roomsData.filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
       if (bookingType === 'term') filtered = filtered.filter(r => isClassroomType(r))
       if (selectedEquipments.length > 0) filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments, equipmentPresets))
+
+      filtered = filtered
+        .map(room => ({ ...room, suitability_score: scoreFallbackRoom(room, { attendees, building, bookingType, selectedEquipments, equipmentPresets }).score }))
+        .sort((a, b) => b.suitability_score - a.suitability_score || a.capacity - b.capacity)
 
       if (bookingType === 'term' && filtered.length === 0) {
         const splitRec = await fetchSplitRecommendation(payload)

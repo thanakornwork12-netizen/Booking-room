@@ -15,16 +15,21 @@ import joblib
 
 CURRENT_DIR = Path(__file__).resolve().parent
 META_DIR = CURRENT_DIR / "saved_meta"
+# NOTE: previously this also merged in saved_meta_A/B/C (archived snapshots
+# from an older, separate comparison run with a different, fixed room count
+# per set). Mixing that archive with the live saved_meta/ folder made
+# "Ensemble Acc" here disagree with param_set_summary_table.png /
+# plot_param_set_ensemble_accuracy, which read saved_meta/ only. Restricting
+# to saved_meta/ keeps this report consistent with the rest of the reporting
+# pipeline — it always reflects current production state.
 ARCHIVE_META_DIRS = [
     META_DIR,
-    CURRENT_DIR / "saved_meta_A",
-    CURRENT_DIR / "saved_meta_B",
-    CURRENT_DIR / "saved_meta_C",
 ]
 PARAM_SET_NAMES = {
     'A': 'A - Fast (Baseline)',
     'B': 'B - Balanced (Aggressive)',
     'C': 'C - High Quality',
+    'D': 'D - Extra Deep (Experimental)',
 }
 METRICS_DIR = CURRENT_DIR / "metrics_plots"
 
@@ -33,11 +38,12 @@ os.makedirs(METRICS_DIR, exist_ok=True)
 
 def load_all_meta_by_set():
     """Load all metadata and group by parameter set."""
-    meta_by_set = {'A': [], 'B': [], 'C': [], 'UNKNOWN': []}
+    meta_by_set = {'A': [], 'B': [], 'C': [], 'D': [], 'UNKNOWN': []}
     known_dirs = {
         'saved_meta_A': 'A',
         'saved_meta_B': 'B',
         'saved_meta_C': 'C',
+        'saved_meta_D': 'D',
     }
 
     found_dirs = [d for d in ARCHIVE_META_DIRS if d.exists()]
@@ -402,18 +408,11 @@ def main():
     write_comparison_csv(comparison_data, csv_path)
     print(f"\n📄 Saved comparison CSV: {csv_path}")
     
-    # Generate bar chart plot
-    plot_path = METRICS_DIR / 'hyperparam_comparison.png'
-    ok = plot_comparison(comparison_data, plot_path)
-    if ok:
-        print(f"🖼️  Saved comparison plot: {plot_path}")
+    # NOTE: hyperparam_comparison.png and hyperparam_comparison_table.png are
+    # intentionally no longer generated here (superseded by
+    # hyperparam_comparison_reconciled.png, which reads the CSV written above
+    # and reconciles Ensemble Acc against the saved_meta/ live source).
 
-    # Generate table plot
-    table_plot_path = METRICS_DIR / 'hyperparam_comparison_table.png'
-    ok_table = plot_comparison_table(comparison_data, table_plot_path)
-    if ok_table:
-        print(f"🖼️  Saved comparison table plot: {table_plot_path}")
-    
     print("\n" + "=" * 70)
 
 
