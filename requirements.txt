@@ -2,6 +2,8 @@ django
 djangorestframework
 djangorestframework-simplejwt
 django-cors-headers
+django-extensions
+django-import-export
 channels
 daphne
 django-apscheduler
@@ -9,6 +11,9 @@ psycopg2-binary
 dj-database-url
 python-dotenv
 gunicorn
+whitenoise
+ldap3
+pytz
 joblib
 numpy
 pandas
