@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import {
   Eye, EyeOff, UserPlus, ChevronRight, Building2, ShieldCheck,
   Check, ChevronDown, CalendarRange, UserRound, AtSign, Mail, Lock,
-  ShieldCheck as ShieldIcon, Bell,
+  ShieldCheck as ShieldIcon, Bell, Hash,
 } from 'lucide-react'
 import api from '../api/axios'
 
@@ -65,6 +65,7 @@ export default function RegisterPage() {
     username: '',
     first_name: '',
     email: '',
+    student_id: '',
     password: '',
     password2: '',
     role: 'student',
@@ -82,6 +83,10 @@ export default function RegisterPage() {
     if (!form.first_name) return setError('กรุณากรอกชื่อ-นามสกุล')
     if (!form.username) return setError('กรุณากรอกชื่อผู้ใช้')
     if (!form.email) return setError('กรุณากรอกอีเมล')
+    if (form.role === 'student') {
+      if (!form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
+      if (!/^\d+$/.test(form.student_id)) return setError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
+    }
     setError('')
     setStep(2)
   }
@@ -260,6 +265,23 @@ export default function RegisterPage() {
                       />
                     </div>
                   </div>
+                  {form.role === 'student' && (
+                    <div className="au2">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">รหัสนักศึกษา</label>
+                      <div className="relative">
+                        <Hash size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="เช่น 66114640275"
+                          className={inputCls}
+                          value={form.student_id}
+                          onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
+                          style={{ fontFamily: 'inherit' }}
+                        />
+                      </div>
+                    </div>
+                  )}
                   <div className="au3">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">อีเมล</label>
                     <div className="relative">

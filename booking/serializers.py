@@ -17,22 +17,33 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model  = User
         fields = ['id', 'username', 'first_name', 'last_name',
-                  'email', 'role', 'faculty', 'phone', 'avatar']
+                  'email', 'role', 'faculty', 'phone', 'avatar', 'student_id']
         read_only_fields = ['id']
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password  = serializers.CharField(write_only=True, min_length=6)
-    password2 = serializers.CharField(write_only=True)
+    password   = serializers.CharField(write_only=True, min_length=6)
+    password2  = serializers.CharField(write_only=True)
+    student_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model  = User
         fields = ['username', 'first_name', 'last_name', 'email',
-                  'password', 'password2', 'role', 'faculty', 'phone']
+                  'password', 'password2', 'role', 'faculty', 'phone', 'student_id']
 
     def validate(self, data):
         if data['password'] != data['password2']:
             raise serializers.ValidationError({'password': 'รหัสผ่านไม่ตรงกัน'})
+
+        student_id = data.get('student_id')
+        if student_id:
+            if not student_id.isdigit():
+                raise serializers.ValidationError({'student_id': 'รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น'})
+            if User.objects.filter(student_id=student_id).exists():
+                raise serializers.ValidationError({'student_id': 'รหัสนักศึกษานี้ถูกใช้สมัครไปแล้ว'})
+        else:
+            data['student_id'] = None
+
         return data
 
     def create(self, validated_data):
@@ -569,6 +580,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
             user = (
                 User.objects.filter(username=username).first()
                 or User.objects.filter(username=pure_username).first()
+                or User.objects.filter(student_id=pure_username).first()
             )
 
             if not user or not user.check_password(password):

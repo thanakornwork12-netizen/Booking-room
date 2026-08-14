@@ -18,6 +18,7 @@ class User(AbstractUser):
     role       = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
     faculty    = models.CharField(max_length=100, blank=True, verbose_name='คณะ/หน่วยงาน')
     phone      = models.CharField(max_length=20, blank=True)
+    student_id = models.CharField(max_length=20, null=True, blank=True, unique=True, verbose_name='รหัสนักศึกษา')
     avatar     = models.ImageField(upload_to='avatars/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
