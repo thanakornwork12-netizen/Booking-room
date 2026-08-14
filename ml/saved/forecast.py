@@ -89,53 +89,28 @@ except ImportError:
 else:
     tf.random.set_seed(42)
 
-# ── Hyperparameter Set Configuration (A/B/C) ──────────────────────────────────
-PARAM_SETS = {
-    'A': {
-        'name': 'A - Fast (Baseline)',
-        'lstm_epochs': 20, 'lstm_batch': 16,
-        'lstm_lookback': 20,
-        'lgb_estimators': 20, 'lgb_depth': 6, 'lgb_leaves': 31, 'lgb_lr': 0.15,
-        'xgb_estimators': 20, 'xgb_depth': 5, 'xgb_lr': 0.15,
-    },
-    'B': {
-        'name': 'B - Balanced',
-        'lstm_epochs': 50, 'lstm_batch': 8,
-        'lstm_lookback': 40,
-        'lgb_estimators': 50, 'lgb_depth': 8, 'lgb_leaves': 63, 'lgb_lr': 0.06,
-        'xgb_estimators': 50, 'xgb_depth': 6, 'xgb_lr': 0.06,
-    },
-    'C': {
-        'name': 'C - High Quality',
-        'lstm_epochs': 70, 'lstm_batch': 4,
-        'lstm_lookback': 70,
-        'lgb_estimators': 70, 'lgb_depth': 10, 'lgb_leaves': 127, 'lgb_lr': 0.04,
-        'xgb_estimators': 70, 'xgb_depth': 8, 'xgb_lr': 0.04,
-    },
-    # Experimental — trains harder than C to test whether more training keeps
-    # helping or plateaus/hurts. Not the production default; used only for
-    # the one-off A/B/C/D comparison experiment (see saved_meta_D/ archive).
-    'D': {
-        'name': 'D - Extra Deep (Experimental)',
-        'lstm_epochs': 100, 'lstm_batch': 2,
-        'lstm_lookback': 100,
-        'lgb_estimators': 100, 'lgb_depth': 12, 'lgb_leaves': 255, 'lgb_lr': 0.03,
-        'xgb_estimators': 100, 'xgb_depth': 10, 'xgb_lr': 0.03,
-    },
-}
+# ── Hyperparameter Set Configuration (A/B/C/D/E) ───────────────────────────────
+# PARAM_SETS lives in param_sets.py (single source of truth shared with
+# plotting.py) so the two files can never drift out of sync again.
+sys.path.insert(0, CURRENT_DIR)
+from param_sets import PARAM_SETS
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 MIN_DAYS      = 30   # จำนวน booking ขั้นต่ำต่อห้อง (ข้อมูลจริง ~700+ ต่อห้อง)
 MIN_UNIQUE_DAYS = 14  # จำนวนวันที่มีการใช้งานขั้นต่ำ
 FORECAST_DAYS = 14
 LSTM_LOOKBACK = 30  # ↑ ขยายจาก 14 → 30 เพื่อจับ seasonal patterns
-# Set current parameter set (will be overridden by --param-set argument)
-CURRENT_PARAM_SET = 'C'
-LSTM_EPOCHS   = PARAM_SETS['C']['lstm_epochs']
-LSTM_BATCH    = PARAM_SETS['C']['lstm_batch']
-LSTM_LOOKBACK_OVERRIDE = PARAM_SETS['C'].get('lstm_lookback', LSTM_LOOKBACK)
+# Set current parameter set (will be overridden by --param-set argument).
+# D is production default: across all 5 sets tested (A-E), D scored highest
+# Ensemble Acc and showed the clearest, most stable adaptive-weight advantage
+# over a fixed weight (see adaptive_vs_fixed_summary.csv) — C was the prior
+# default before that comparison existed.
+CURRENT_PARAM_SET = 'D'
+LSTM_EPOCHS   = PARAM_SETS['D']['lstm_epochs']
+LSTM_BATCH    = PARAM_SETS['D']['lstm_batch']
+LSTM_LOOKBACK = PARAM_SETS['D'].get('lstm_lookback', LSTM_LOOKBACK)
 LSTM_PATIENCE = 15  # ↑ ขยายจาก 10 → 15
-DISABLE_EARLY_STOPPING = False
+DISABLE_EARLY_STOPPING = True  # เทรนให้ครบทุก epoch/round เสมอ ไม่หยุดกลางคันจาก val_loss plateau
 MODEL_DIR     = os.path.join(CURRENT_DIR, "saved_models")
 META_DIR      = os.path.join(CURRENT_DIR, "saved_meta")
 METRICS_DIR   = os.path.join(CURRENT_DIR, "metrics_plots")
@@ -309,10 +284,18 @@ def _append_training_history_log(room, result):
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
     return True
 
-# ── น้ำหนัก Prior (ปรับเป็น LSTM 20% | LGB 40% | XGB 40%) ───────────────────
-LSTM_WEIGHT_PRIOR = 0.20
+# ── น้ำหนัก Prior (LSTM 25% | LGB 40% | XGB 35%) ─────────────────────────────
+# Swept LSTM_WEIGHT_PRIOR against the cached calibration predictions for all
+# 5 trained param sets (A-E) looking for a prior that gives LSTM a real,
+# non-trivial say (previous 5% prior realized only ~1% actual weight — too
+# close to zero to call it a 3-model ensemble) WITHOUT costing accuracy. 25%
+# is the sweet spot found: Set D (production) stays the best-performing set
+# at every prior tested from 5-30%, and its Ensemble Acc is actually highest
+# right here (0.9774) — better than the original 5% prior's 0.9744, not a
+# trade-off at all. Realized LSTM weight lands ~4-6% per room across all 5 sets.
+LSTM_WEIGHT_PRIOR = 0.25
 LGB_WEIGHT_PRIOR  = 0.40
-XGB_WEIGHT_PRIOR  = 0.40
+XGB_WEIGHT_PRIOR  = 0.35
 
 # Ensemble gating / label sensitivity tuning
 LSTM_R2_MIN_WEIGHT = 0.0
@@ -953,6 +936,25 @@ class LSTMClassificationHistoryCallback(Callback):
             pass
 
 
+class _EpochCheckpointCallback(Callback):
+    """Save the model every `freq` epochs to checkpoint_dir/epoch_<N>.keras.
+    Used only by the standalone checkpoint-curve analysis (train_d_with_checkpoints.py)
+    to reconstruct 'what would the ensemble look like if training stopped at
+    round K' without needing separate full training runs per K — normal
+    training never passes checkpoint_dir, so this is a no-op by default.
+    """
+    def __init__(self, checkpoint_dir: str, freq: int = 10):
+        super().__init__()
+        self.checkpoint_dir = checkpoint_dir
+        self.freq = max(1, int(freq))
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+    def on_epoch_end(self, epoch, logs=None):
+        epoch_num = epoch + 1
+        if epoch_num % self.freq == 0:
+            self.model.save(os.path.join(self.checkpoint_dir, f'epoch_{epoch_num}.keras'))
+
+
 def print_regression_metrics(stats: dict, room_name: str, model_name: str, room_id: int | None = None):
     label = room_name if room_id is None else f"{room_name} [id={room_id}]"
     print(f"\n  📈 Regression Metrics – {label} :: {model_name}")
@@ -1200,7 +1202,8 @@ def build_lstm_sequences_multivariate(feat_df: pd.DataFrame, lookback: int):
 
 def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
                epochs=LSTM_EPOCHS, patience=LSTM_PATIENCE,
-               feat_train_df: pd.DataFrame = None, feat_val_df: pd.DataFrame = None):
+               feat_train_df: pd.DataFrame = None, feat_val_df: pd.DataFrame = None,
+               checkpoint_dir: str = None, checkpoint_freq: int = 10):
     if not LSTM_AVAILABLE:
         return None, None, None
     # If feature dataframes are provided, build multivariate sequences and scale inputs
@@ -1301,6 +1304,8 @@ def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
         lookback=lookback
     )
     callbacks.append(cls_cb)
+    if checkpoint_dir:
+        callbacks.append(_EpochCheckpointCallback(checkpoint_dir, freq=checkpoint_freq))
     history = model.fit(X_tr, y_tr, validation_data=(X_va, y_va),
                         epochs=min(epochs, LSTM_EPOCHS), batch_size=LSTM_BATCH,
                         callbacks=callbacks, verbose=0)
@@ -1792,7 +1797,9 @@ def _derive_ensemble_weights(
     primary: str = 'lstm',
     base_prior: dict[str, float] | None = None,
 ) -> dict[str, float]:
-    base_prior = base_prior or {'lstm': 0.20, 'lightgbm': 0.40, 'xgboost': 0.40}
+    base_prior = base_prior or {
+        'lstm': LSTM_WEIGHT_PRIOR, 'lightgbm': LGB_WEIGHT_PRIOR, 'xgboost': XGB_WEIGHT_PRIOR,
+    }
     scores = {}
     r2_scores = {}
     for name, arr in preds.items():
@@ -2251,11 +2258,18 @@ def _prepare_daily_series(rdf, room, all_rooms_daily):
         )
         daily.index = pd.to_datetime(daily.index)
 
+    # Enough raw days to survive build_features()'s 28-day lag/rolling dropna,
+    # then still leave >= LSTM_LOOKBACK+10 rows in the 70%-train split so the
+    # LSTM gate in _train_room_pipeline passes regardless of which param set's
+    # lookback (20/40/70/100...) is currently active.
+    min_days_needed = int(np.ceil((LSTM_LOOKBACK + 10) / TRAIN_FRAC)) + 28 + 10
+    aug_target_days = max(60, min_days_needed)
+
     unique_days = rdf['date'].nunique() if len(rdf) > 0 else daily.index.nunique()
     tier = get_data_tier(len(rdf), unique_days)
-    if tier in ('sparse', 'cold_start') or len(daily) < 60:
+    if tier in ('sparse', 'cold_start') or len(daily) < aug_target_days:
         if len(rdf) > 0:
-            daily, _ = augment_sparse_daily(daily, target_days=60)
+            daily, _ = augment_sparse_daily(daily, target_days=aug_target_days)
         else:
             similar = build_similar_series(room, all_rooms_daily)
             if len(similar) > 0:
@@ -3117,18 +3131,19 @@ if __name__ == '__main__':
     group.add_argument('--boost',        action='store_true')
     group.add_argument('--show-metrics', action='store_true')
     parser.add_argument('--compact-metrics', action='store_true', help='Show only the summary metrics table')
-    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C', 'D'], default='C',
-                        help='Select hyperparameter set: A (Fast), B (Balanced), C (Accurate, default), D (Extra Deep, experimental).')
-    parser.add_argument('--disable-early-stop', action='store_true',
-                        help='Force full training rounds and disable early stopping for all models')
+    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C', 'D', 'E'], default='D',
+                        help='Select hyperparameter set: A (Fast), B (Balanced), C (High Quality), D (Extra Deep, default — best measured Ensemble Acc), E (Maximum Depth, diminishing returns past D).')
+    parser.add_argument('--enable-early-stop', action='store_true',
+                        help='Allow early stopping (default: off — always trains full rounds for every param set)')
     args = parser.parse_args()
 
     # Set global parameter set before training
     CURRENT_PARAM_SET = args.param_set
-    DISABLE_EARLY_STOPPING = bool(args.disable_early_stop)
+    DISABLE_EARLY_STOPPING = not args.enable_early_stop
     params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
     LSTM_EPOCHS = params_set['lstm_epochs']
     LSTM_BATCH = params_set['lstm_batch']
+    LSTM_LOOKBACK = params_set.get('lstm_lookback', LSTM_LOOKBACK)
     print(f"\n🔧 Using Hyperparameter Set {CURRENT_PARAM_SET}: {params_set['name']}")
     print(f"   LSTM Epochs: {LSTM_EPOCHS}, LGB Estimators: {params_set['lgb_estimators']}, XGB Estimators: {params_set['xgb_estimators']}\n")
 

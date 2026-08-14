@@ -73,6 +73,24 @@ const timeUntil = (startTime) => {
   return null
 }
 
+const addHoursToTime = (time, hrs) => {
+  const [h, m] = time.split(':').map(Number)
+  const total = ((h * 60 + m + hrs * 60) % 1440 + 1440) % 1440
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+const extractErrorMessage = (err, fallback) => {
+  const data = err?.response?.data
+  if (!data) return fallback
+  if (typeof data === 'string') return data
+  if (data.detail) return data.detail
+  if (Array.isArray(data.non_field_errors) && data.non_field_errors[0]) return data.non_field_errors[0]
+  const firstKey = Object.keys(data)[0]
+  const firstVal = firstKey && data[firstKey]
+  if (Array.isArray(firstVal) && firstVal[0]) return firstVal[0]
+  return fallback
+}
+
 const TUTORIAL_STEPS = [
   { icon: <Search size={24} className="shrink-0" color="#1d4ed8" />, title: 'ค้นหาห้องว่าง', desc: 'กดปุ่ม "จองห้องประชุม" เลือกวันที่ เวลา และจำนวนผู้เข้าร่วม ระบบ AI จะแนะนำห้องที่เหมาะสม' },
   { icon: <Zap size={24} className="shrink-0" color="#f59e0b" />, title: 'ดูการคาดการณ์ AI', desc: '"จองได้เลย" = ห้องว่าง | "ควรจองตอนนี้" = เริ่มมีคนสนใจ | "รีบจองด่วน!" = ใกล้เต็ม' },
@@ -216,7 +234,7 @@ function TermBookingModal({ booking, onClose, onCancel }) {
   )
 }
 
-function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateFull }) {
+function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime, fmtDateFull }) {
   if (!booking) return null
   const isActive = booking.status === 'approved'
   const isFinished = isActive && isPast(booking.end_time)
@@ -292,7 +310,161 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, fmtTime, fmtDateF
                 {isNoShow ? '⚠️ บันทึกว่า ไม่มาใช้งาน (No-Show)' : isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : 'การจองนี้ถูกยกเลิกแล้ว'}
               </div>
             )}
+            <button onClick={() => onRebook(booking)} className="w-full border-2 border-blue-100 text-blue-700 hover:bg-blue-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
+              <History size={16} /> จองซ้ำ (ห้องเดิม/ข้อมูลเดิม)
+            </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RebookModal({ booking, onClose, onSuccess }) {
+  const [date, setDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [duration, setDuration] = useState(1)
+  const [attendees, setAttendees] = useState(1)
+  const [title, setTitle] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!booking) return
+    const start = new Date(booking.start_time)
+    const end = new Date(booking.end_time)
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    setDate(tomorrow.toISOString().split('T')[0])
+    setStartTime(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
+    setDuration(Math.min(3, Math.max(1, Math.round((end - start) / 3600000))))
+    setAttendees(booking.attendees || 1)
+    setTitle(booking.title || '')
+    setError('')
+  }, [booking])
+
+  if (!booking) return null
+
+  const endTime = startTime ? addHoursToTime(startTime, duration) : ''
+  const today = new Date().toISOString().split('T')[0]
+
+  const handleSubmit = async () => {
+    if (!date) { setError('กรุณาเลือกวันที่'); return }
+    if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
+    if (!title.trim()) { setError('กรุณากรอกหัวข้อ'); return }
+    setLoading(true); setError('')
+    try {
+      await api.post('bookings/', {
+        room: booking.room,
+        title: title.trim(),
+        attendees: parseInt(attendees, 10),
+        start_time: `${date}T${startTime}:00`,
+        end_time: `${date}T${endTime}:00`,
+      })
+      onSuccess()
+    } catch (err) {
+      setError(extractErrorMessage(err, 'จองไม่สำเร็จ กรุณาลองใหม่'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white w-full sm:max-w-md max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-y-auto si flex flex-col">
+        <div className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-2 min-w-0">
+            <History size={18} className="text-blue-600 shrink-0" />
+            <span className="font-bold text-slate-900 text-sm truncate">จองซ้ำ</span>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 shrink-0"><X size={16} /></button>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto space-y-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Building2 size={20} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-slate-900 text-sm truncate">{booking.room_name || `ห้อง #${booking.room}`}</p>
+              <p className="text-xs text-slate-500 truncate">{booking.building}</p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-start gap-2">
+              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+              <span className="break-words">{error}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">หัวข้อ</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">วันที่</label>
+              <input
+                type="date"
+                value={date}
+                min={today}
+                onChange={e => setDate(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">เวลาเริ่ม</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={e => setStartTime(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">ระยะเวลา (ชม.)</label>
+              <select
+                value={duration}
+                onChange={e => setDuration(parseInt(e.target.value, 10))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              >
+                <option value={1}>1 ชม.</option>
+                <option value={2}>2 ชม.</option>
+                <option value={3}>3 ชม.</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">ผู้เข้าร่วม</label>
+              <input
+                type="number"
+                min={1}
+                value={attendees}
+                onChange={e => setAttendees(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          {startTime && (
+            <p className="text-xs text-slate-500 text-center">เวลาที่จอง: {startTime} - {endTime} น.</p>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-300 text-white py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-sm shadow-blue-200 active:scale-95 transition-all"
+          >
+            {loading ? 'กำลังจอง...' : 'ยืนยันจองซ้ำ'}
+          </button>
         </div>
       </div>
     </div>
@@ -306,34 +478,39 @@ export default function HomePage() {
   const storedUser = getUser()
   const [bookings, setBookings] = useState([])
   const [termBookings, setTermBookings] = useState([])
-  const [notifications, setNotifications] = useState([])
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedBooking, setSelectedBooking] = useState(null)
   const [selectedTermBooking, setSelectedTermBooking] = useState(null)
+  const [rebookBooking, setRebookBooking] = useState(null)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [p, b, n, t] = await Promise.all([
-          api.get('/auth/profile/'),
-          api.get('/bookings/'),
-          api.get('/notifications/'),
-          api.get('/term-bookings/').catch(() => ({ data: [] }))
-        ])
-        setUser(p.data)
-        setBookings(b.data.results || b.data || [])
-        setNotifications(n.data.results || n.data || [])
-        setTermBookings(Array.isArray(t.data) ? t.data : (t.data.results || []))
-        if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
-      } catch (err) {
-        console.error("Load Data Error", err)
-        navigate('/login')
-      } finally { setLoading(false) }
-    }
-    load()
-  }, [navigate])
+  const load = async () => {
+    setLoading(true)
+    setLoadError(false)
+    try {
+      const [p, b, t] = await Promise.all([
+        api.get('/auth/profile/'),
+        api.get('/bookings/'),
+        api.get('/term-bookings/').catch(() => ({ data: [] }))
+      ])
+      setUser(p.data)
+      setBookings(b.data.results || b.data || [])
+      setTermBookings(Array.isArray(t.data) ? t.data : (t.data.results || []))
+      if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
+    } catch (err) {
+      console.error("Load Data Error", err)
+      // ไม่ redirect ไป /login ที่นี่ทันที — ถ้า token หมดอายุจริง axios
+      // interceptor (api/axios.js) จัดการ refresh/redirect ให้อยู่แล้ว
+      // ส่วนนี้พังจาก network เพี้ยนชั่วคราว/response แตกกลางทาง (เช่นตอน
+      // LDAP bind ใช้เวลานาน) ไม่ควรเด้งผู้ใช้ที่ login ผ่านแล้วกลับไปหน้า
+      // login ให้งงว่า "ยืนยันสิทธิ์ผ่านแล้วแต่เข้าไม่ได้"
+      setLoadError(true)
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
 
   const handleLogout = () => { localStorage.clear(); navigate('/login') }
 
@@ -363,6 +540,15 @@ export default function HomePage() {
       if (selectedBooking?.id === id) setSelectedBooking(prev => ({...prev, checked_in: true, status: 'checked_in'}))
       alert('✅ Check-in สำเร็จ!')
     } catch (err) { alert(err.response?.data?.error || 'ไม่สามารถ Check-in ได้ในขณะนี้') }
+  }
+
+  const handleRebookSuccess = async () => {
+    setRebookBooking(null)
+    try {
+      const res = await api.get('/bookings/')
+      setBookings(res.data.results || res.data || [])
+    } catch { /* list will refresh next visit */ }
+    alert('✅ จองซ้ำสำเร็จ!')
   }
 
   const fmtDate = dt => new Date(dt).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})
@@ -396,6 +582,20 @@ export default function HomePage() {
       <style>{ANIM}</style>
       <div style={{width:40,height:40,border:'3px solid #e2e8f0',borderTopColor:'#2563eb',borderRadius:'50%',animation:'rot .7s linear infinite'}} />
       <p className="text-sm text-slate-500 font-medium">กำลังโหลดข้อมูล...</p>
+    </div>
+  )
+
+  if (loadError) return (
+    <div className="w-full h-full bg-[#F8FAFC] flex flex-col items-center justify-center gap-3 px-4 text-center">
+      <style>{ANIM}</style>
+      <AlertCircle size={32} className="text-red-400" />
+      <p className="text-sm font-semibold text-slate-700">โหลดข้อมูลไม่สำเร็จ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วขณะ</p>
+      <button
+        onClick={load}
+        className="mt-2 rounded-2xl bg-blue-700 hover:bg-blue-800 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition-colors"
+      >
+        ลองใหม่
+      </button>
     </div>
   )
 
@@ -522,8 +722,17 @@ export default function HomePage() {
         </section>
       </div>
 
-      <BookingModal booking={selectedBooking} onClose={() => setSelectedBooking(null)} onCancel={handleCancel} onCheckIn={handleCheckIn} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
+      <BookingModal
+        booking={selectedBooking}
+        onClose={() => setSelectedBooking(null)}
+        onCancel={handleCancel}
+        onCheckIn={handleCheckIn}
+        onRebook={(b) => { setRebookBooking(b); setSelectedBooking(null) }}
+        fmtTime={fmtTime}
+        fmtDateFull={fmtDateFull}
+      />
       <TermBookingModal booking={selectedTermBooking} onClose={() => setSelectedTermBooking(null)} onCancel={handleTermCancel} />
+      <RebookModal booking={rebookBooking} onClose={() => setRebookBooking(null)} onSuccess={handleRebookSuccess} />
     </div>
   )
 }

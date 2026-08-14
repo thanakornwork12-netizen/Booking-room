@@ -77,7 +77,7 @@ class Room(models.Model):
 # 4. FACILITIES
 # ============================================================
 class Facility(models.Model):
-    name = models.CharField(max_length=100, unique=True, verbose_name='ชื่ออุปกรณ์')
+    name = models.CharField(max_length=200, unique=True, verbose_name='ชื่ออุปกรณ์')
     icon = models.CharField(max_length=50, blank=True, help_text='เช่น fa-wifi, fa-tv')
 
     class Meta:

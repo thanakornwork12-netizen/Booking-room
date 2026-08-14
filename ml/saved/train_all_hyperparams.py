@@ -12,19 +12,17 @@ CURRENT_DIR = Path(__file__).resolve().parent
 METRICS_DIR = CURRENT_DIR / "metrics_plots"
 
 
-def run_training(param_set, use_import_excel=False, disable_early_stop=False):
-    """Run training for a specific parameter set."""
+def run_training(param_set, use_import_excel=False):
+    """Run training for a specific parameter set. forecast.py always trains full rounds by default."""
     cmd = ['python', str(CURRENT_DIR / 'forecast.py')]
-    
+
     if use_import_excel:
         cmd.append('--import-excel')
     else:
         cmd.append('--retrain')
-    
+
     cmd.extend(['--param-set', param_set])
-    if disable_early_stop:
-        cmd.append('--disable-early-stop')
-    
+
     print(f"\n{'=' * 80}")
     print(f"🚀 Training: Parameter Set {param_set}")
     print(f"{'=' * 80}\n")
@@ -93,13 +91,9 @@ def main():
     
     overall_start = time.time()
     
-    disable_early_stop = len(sets_to_train) > 1
-    if disable_early_stop:
-        print('⚠️  Comparison mode active: disabling early stopping for full epochs/rounds')
-
     for i, param_set in enumerate(sets_to_train, 1):
         print(f"\n[{i}/{len(sets_to_train)}] Training Set {param_set}...")
-        success = run_training(param_set, use_import_excel=args.import_excel, disable_early_stop=disable_early_stop)
+        success = run_training(param_set, use_import_excel=args.import_excel)
         results[param_set] = success
         
         if not success:

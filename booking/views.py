@@ -11,7 +11,8 @@ from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.contrib.auth import login
 from django.contrib.auth.models import User
 from django.shortcuts import redirect, render
@@ -660,6 +661,30 @@ class RoomViewSet(viewsets.ModelViewSet):
 # ============================================================
 # TERM BOOKING ViewSet
 # ============================================================
+def _recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
+    """
+    เช็คว่าเหตุการณ์ครั้งเดียว (Booking/MaintenanceBlock ที่มี start/end เป็น
+    datetime จริง) ชนกับ slot รายสัปดาห์ของ TermBooking (day_of_week +
+    start_time/end_time ซ้ำทุกสัปดาห์ตลอด [term_start, term_end]) ไหม
+    """
+    if local_start.date() == local_end.date():
+        d = local_start.date()
+        if not (term_start <= d <= term_end):
+            return False
+        if d.weekday() != day_of_week:
+            return False
+        return local_start.time() < end_time and local_end.time() > start_time
+    # เหตุการณ์ข้ามวัน (เช่น ปิดซ่อมบำรุงยาวหลายวัน) — ถือว่าชนถ้ามีวันไหน
+    # ในช่วงตรงกับ day_of_week และอยู่ในช่วงเทอม (ระมัดระวังไว้ก่อน ไม่เช็ค
+    # เวลาละเอียดในกรณีนี้ เพราะห้องถูกกันทั้งวันอยู่แล้วในทางปฏิบัติ)
+    cur = local_start.date()
+    while cur <= local_end.date():
+        if term_start <= cur <= term_end and cur.weekday() == day_of_week:
+            return True
+        cur += timedelta(days=1)
+    return False
+
+
 class TermBookingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
@@ -689,15 +714,65 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         return TermBookingCreateSerializer if self.action == 'create' else TermBookingSerializer
 
     def perform_create(self, serializer):
-        term_booking = serializer.save(user=self.request.user, status='active')
-        Notification.objects.create(
-            user=self.request.user, term_booking=term_booking,
-            type='term_approved', title='จองห้องทั้งเทอมสำเร็จ',
-            message=(f'จองห้อง {term_booking.room.name} สำหรับ "{term_booking.subject_name}" '
-                     f'ทุกวัน{term_booking.get_day_of_week_display()} '
-                     f'{term_booking.start_time:%H:%M}–{term_booking.end_time:%H:%M} '
-                     f'ตั้งแต่ {term_booking.term_start} ถึง {term_booking.term_end}')
-        )
+        room        = serializer.validated_data['room']
+        day_of_week = serializer.validated_data['day_of_week']
+        start_time  = serializer.validated_data['start_time']
+        end_time    = serializer.validated_data['end_time']
+        term_start  = serializer.validated_data['term_start']
+        term_end    = serializer.validated_data['term_end']
+
+        with transaction.atomic():
+            Room.objects.select_for_update().get(pk=room.pk)
+
+            if TermBooking.objects.filter(
+                room=room,
+                day_of_week=day_of_week,
+                status='active',
+                term_start__lte=term_end,
+                term_end__gte=term_start,
+            ).exclude(
+                start_time__gte=end_time
+            ).exclude(
+                end_time__lte=start_time
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว'})
+
+            # เช็คซ้อนกับ Booking รายวัน — Booking.start_time เป็น datetime จริง
+            # ครั้งเดียว ต่างจาก TermBooking ที่ซ้ำทุกสัปดาห์ เลยต้องไล่เช็คทีละ
+            # รายการว่าตรงกับ day_of_week/ช่วงเวลาที่จะจองทั้งเทอมไหม
+            candidate_bookings = Booking.objects.filter(
+                room=room,
+                status__in=['pending', 'approved', 'checked_in'],
+                start_time__date__lte=term_end,
+                end_time__date__gte=term_start,
+            )
+            for b in candidate_bookings:
+                local_start = timezone.localtime(b.start_time)
+                local_end   = timezone.localtime(b.end_time)
+                if _recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
+                    raise ValidationError({'detail': f'ห้องนี้มีการจองรายวัน "{b.title}" ซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'})
+
+            candidate_blocks = MaintenanceBlock.objects.filter(
+                room=room,
+                status__in=['scheduled', 'active'],
+                start_time__date__lte=term_end,
+                end_time__date__gte=term_start,
+            )
+            for mb in candidate_blocks:
+                local_start = timezone.localtime(mb.start_time)
+                local_end   = timezone.localtime(mb.end_time)
+                if _recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
+                    raise ValidationError({'detail': 'ห้องนี้ปิดซ่อมบำรุงซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'})
+
+            term_booking = serializer.save(user=self.request.user, status='active')
+            Notification.objects.create(
+                user=self.request.user, term_booking=term_booking,
+                type='term_approved', title='จองห้องทั้งเทอมสำเร็จ',
+                message=(f'จองห้อง {term_booking.room.name} สำหรับ "{term_booking.subject_name}" '
+                         f'ทุกวัน{term_booking.get_day_of_week_display()} '
+                         f'{term_booking.start_time:%H:%M}–{term_booking.end_time:%H:%M} '
+                         f'ตั้งแต่ {term_booking.term_start} ถึง {term_booking.term_end}')
+            )
 
     def destroy(self, request, *args, **kwargs):
         tb = self.get_object()
@@ -1037,14 +1112,58 @@ class BookingViewSet(viewsets.ModelViewSet):
         return BookingCreateSerializer if self.action == 'create' else BookingSerializer
 
     def perform_create(self, serializer):
-        booking = serializer.save(user=self.request.user, status='approved')
-        Notification.objects.create(
-            user=self.request.user, booking=booking,
-            type='booking_approved', title='จองห้องสำเร็จ',
-            message=(f'จองห้อง {booking.room.name} '
-                     f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
-                     f'เรียบร้อยแล้ว')
-        )
+        room       = serializer.validated_data['room']
+        start_time = serializer.validated_data['start_time']
+        end_time   = serializer.validated_data['end_time']
+
+        with transaction.atomic():
+            # Lock the room row first. Any other request creating a Booking or
+            # MaintenanceBlock for this same room also takes this lock before
+            # its own overlap check, so concurrent requests serialize instead
+            # of both passing the check before either commits (the race the
+            # serializer's own validate() — a plain read with no locking —
+            # can't close on its own).
+            Room.objects.select_for_update().get(pk=room.pk)
+
+            if Booking.objects.filter(
+                room=room,
+                status__in=['pending', 'approved', 'checked_in'],
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว (มีคนจองพร้อมกัน)'})
+
+            target_date = start_time.date()
+            target_dow  = target_date.weekday()
+            if TermBooking.objects.filter(
+                room=room,
+                day_of_week=target_dow,
+                status='active',
+                term_start__lte=target_date,
+                term_end__gte=target_date,
+            ).exclude(
+                start_time__gte=end_time.time()
+            ).exclude(
+                end_time__lte=start_time.time()
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้ถูกจองทั้งเทอมในช่วงเวลาดังกล่าวแล้ว'})
+
+            if MaintenanceBlock.objects.filter(
+                room=room,
+                status__in=['scheduled', 'active'],
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'})
+
+            booking = serializer.save(user=self.request.user, status='approved')
+            Notification.objects.create(
+                user=self.request.user, booking=booking,
+                type='booking_approved', title='จองห้องสำเร็จ',
+                message=(f'จองห้อง {booking.room.name} '
+                         f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                         f'เรียบร้อยแล้ว')
+            )
 
     def destroy(self, request, *args, **kwargs):
         return Response({'error': 'ใช้ปุ่ม cancel แทน'}, status=405)
@@ -1400,12 +1519,50 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         return qs.order_by('-start_time')
 
     def perform_create(self, serializer):
-        block = serializer.save(
-            created_by=self.request.user,
-            status='scheduled',
-        )
-        block.room.status = 'maintenance'
-        block.room.save(update_fields=['status'])
+        room       = serializer.validated_data['room']
+        start_time = serializer.validated_data['start_time']
+        end_time   = serializer.validated_data['end_time']
+
+        with transaction.atomic():
+            Room.objects.select_for_update().get(pk=room.pk)
+
+            if Booking.objects.filter(
+                room=room,
+                status__in=['pending', 'approved', 'checked_in'],
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
+
+            target_date = start_time.date()
+            target_dow  = target_date.weekday()
+            if TermBooking.objects.filter(
+                room=room,
+                day_of_week=target_dow,
+                status='active',
+                term_start__lte=target_date,
+                term_end__gte=target_date,
+            ).exclude(
+                start_time__gte=end_time.time()
+            ).exclude(
+                end_time__lte=start_time.time()
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
+
+            if MaintenanceBlock.objects.filter(
+                room=room,
+                status__in=['scheduled', 'active'],
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว'})
+
+            block = serializer.save(
+                created_by=self.request.user,
+                status='scheduled',
+            )
+            block.room.status = 'maintenance'
+            block.room.save(update_fields=['status'])
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

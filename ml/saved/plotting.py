@@ -5,6 +5,7 @@ This module is intentionally independent from Django/model training so plots can
 be regenerated without importing the full forecasting engine.
 """
 import os
+import sys
 import csv
 import json
 from pathlib import Path
@@ -16,62 +17,23 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 METRICS_DIR = os.path.join(CURRENT_DIR, "metrics_plots")
 META_DIR = os.path.join(CURRENT_DIR, "saved_meta")
 
-PARAM_SET_CONFIGS = {
-    'A': {
-        'name': 'A - Fast (Baseline)',
-        'lstm_epochs': 20,
-        'lstm_batch': 16,
-        'lstm_lookback': 20,
-        'lgb_estimators': 20,
-        'lgb_depth': 6,
-        'lgb_leaves': 31,
-        'lgb_lr': 0.15,
-        'xgb_estimators': 20,
-        'xgb_depth': 5,
-        'xgb_lr': 0.15,
-    },
-    'B': {
-        'name': 'B - Balanced',
-        'lstm_epochs': 50,
-        'lstm_batch': 8,
-        'lstm_lookback': 40,
-        'lgb_estimators': 50,
-        'lgb_depth': 8,
-        'lgb_leaves': 63,
-        'lgb_lr': 0.06,
-        'xgb_estimators': 50,
-        'xgb_depth': 6,
-        'xgb_lr': 0.06,
-    },
-    'C': {
-        'name': 'C - High Quality',
-        'lstm_epochs': 70,
-        'lstm_batch': 4,
-        'lstm_lookback': 70,
-        'lgb_estimators': 70,
-        'lgb_depth': 10,
-        'lgb_leaves': 127,
-        'lgb_lr': 0.04,
-        'xgb_estimators': 70,
-        'xgb_depth': 8,
-        'xgb_lr': 0.04,
-    },
-    'D': {
-        'name': 'D - Extra Deep (Experimental)',
-        'lstm_epochs': 100,
-        'lstm_batch': 2,
-        'lstm_lookback': 100,
-        'lgb_estimators': 100,
-        'lgb_depth': 12,
-        'lgb_leaves': 255,
-        'lgb_lr': 0.03,
-        'xgb_estimators': 100,
-        'xgb_depth': 10,
-        'xgb_lr': 0.03,
-    },
+# PARAM_SETS lives in param_sets.py (single source of truth shared with
+# forecast.py) so this file can never hold a stale hand-copied duplicate again.
+sys.path.insert(0, CURRENT_DIR)
+from param_sets import PARAM_SETS as PARAM_SET_CONFIGS
+
+PARAM_SET_ORDER = list(PARAM_SET_CONFIGS.keys())
+PARAM_SET_COLORS = {
+    'A': '#636363', 'B': '#fdae6b', 'C': '#2b8cbe', 'D': '#8e44ad', 'E': '#c0392b',
 }
-PARAM_SET_ORDER = ['A', 'B', 'C', 'D']
-PARAM_SET_COLORS = {'A': '#636363', 'B': '#fdae6b', 'C': '#2b8cbe', 'D': '#8e44ad'}
+
+# D/E are experimental and never live in saved_meta/ (production default is
+# C) — their only reliable source is the one-off archive snapshot taken
+# right after that set's run in run_abcd_experiment.sh.
+EXPERIMENTAL_META_ARCHIVE_DIRS = {
+    'D': os.path.join(CURRENT_DIR, 'saved_meta_D_new'),
+    'E': os.path.join(CURRENT_DIR, 'saved_meta_E_new'),
+}
 
 os.makedirs(METRICS_DIR, exist_ok=True)
 os.environ.setdefault('MPLCONFIGDIR', os.path.join(METRICS_DIR, ".matplotlib"))
@@ -117,6 +79,30 @@ def _load_training_history_log(log_path):
             except Exception:
                 continue
     return records
+
+
+def _filter_to_latest_run_per_param_set(records):
+    """training_history.jsonl is append-only and accumulates every historical
+    run of a given letter (e.g. old C from July vs today's fresh C with
+    different hyperparameters). Curve-plotting functions must not average
+    across those — this keeps only each param_set's most recent run_id
+    (ISO timestamps sort chronologically as strings) before curves are built.
+    """
+    latest_run_id = {}
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        ps = str(rec.get('param_set', '')).upper()
+        rid = str(rec.get('run_id', ''))
+        if not ps or not rid:
+            continue
+        if ps not in latest_run_id or rid > latest_run_id[ps]:
+            latest_run_id[ps] = rid
+    return [
+        rec for rec in records
+        if isinstance(rec, dict)
+        and str(rec.get('run_id', '')) == latest_run_id.get(str(rec.get('param_set', '')).upper())
+    ]
 
 
 def _partial_mean_curve(records, model_name, metric, param_set=None):
@@ -980,6 +966,15 @@ def _aggregate_param_set_curve(records, metric, param_set):
 
 
 def _param_set_final_metrics(records, metric='val_acc'):
+    """Latest-run final value per (param_set, model, room).
+
+    training_history.jsonl is append-only and accumulates every historical
+    run of a given letter (e.g. old D from an earlier session vs today's
+    fresh D with different hyperparameters). Ranking by run_id first (ISO
+    timestamps sort chronologically as strings) then epoch ensures this
+    picks the final epoch of the MOST RECENT run, not just whichever run
+    happened to reach the highest epoch number ever.
+    """
     groups = {}
     for rec in records:
         if not isinstance(rec, dict):
@@ -988,6 +983,7 @@ def _param_set_final_metrics(records, metric='val_acc'):
         model = str(rec.get('model', '')).strip().lower()
         room = str(rec.get('room', '')).strip()
         epoch = rec.get('epoch')
+        run_id = str(rec.get('run_id', ''))
         if not param_set or not model or not room or metric not in rec or epoch is None:
             continue
         try:
@@ -998,8 +994,9 @@ def _param_set_final_metrics(records, metric='val_acc'):
         if not np.isfinite(value):
             continue
         key = (param_set, model, room)
-        if key not in groups or epoch_val >= groups[key][0]:
-            groups[key] = (epoch_val, value)
+        candidate = (run_id, epoch_val)
+        if key not in groups or candidate >= groups[key][0]:
+            groups[key] = (candidate, value)
     out = {}
     for (param_set, model, _room), (_, value) in groups.items():
         out.setdefault(param_set, {}).setdefault(model, []).append(float(value))
@@ -1010,25 +1007,48 @@ def _param_set_final_metrics(records, metric='val_acc'):
 
 
 def _load_meta_by_param_set(meta_dir=META_DIR):
-    """Load saved room metadata and group by param set."""
-    meta_by_set = {'A': [], 'B': [], 'C': [], 'UNKNOWN': []}
-    meta_path = Path(meta_dir)
-    if not meta_path.exists():
-        return meta_by_set
+    """Load saved room metadata and group by param set.
 
-    for meta_file in sorted(meta_path.glob('*_meta.pkl')):
-        try:
-            import joblib
-            meta = joblib.load(meta_file)
-            if not isinstance(meta, dict):
+    A/B/C live directly in saved_meta/ (production default is C, but A/B
+    accumulate there too from standalone --param-set runs; D is now the
+    production default as of forecast.py's switch to Set D, so fresh D
+    retrains land live too). EXPERIMENTAL_META_ARCHIVE_DIRS (D/E snapshots
+    from the one-off ABCDE experiment) is only used as a FALLBACK for a
+    letter that has nothing live yet — once a set has real live entries, the
+    stale archive copy for it is skipped so the two don't get double-counted.
+    """
+    meta_by_set = {'A': [], 'B': [], 'C': [], 'D': [], 'E': [], 'UNKNOWN': []}
+    import joblib
+
+    meta_path = Path(meta_dir)
+    if meta_path.exists():
+        for meta_file in sorted(meta_path.glob('*_meta.pkl')):
+            try:
+                meta = joblib.load(meta_file)
+                if not isinstance(meta, dict):
+                    continue
+                param_set = str(meta.get('param_set', '')).upper()
+                if param_set in {'A', 'B', 'C', 'D', 'E'}:
+                    meta_by_set[param_set].append(meta)
+                else:
+                    meta_by_set['UNKNOWN'].append(meta)
+            except Exception:
                 continue
-            param_set = str(meta.get('param_set', '')).upper()
-            if param_set in {'A', 'B', 'C'}:
-                meta_by_set[param_set].append(meta)
-            else:
-                meta_by_set['UNKNOWN'].append(meta)
-        except Exception:
+
+    for set_name, archive_dir in EXPERIMENTAL_META_ARCHIVE_DIRS.items():
+        if meta_by_set.get(set_name):
+            continue  # already have live entries for this set — don't mix in the old archive snapshot
+        archive_path = Path(archive_dir)
+        if not archive_path.exists():
             continue
+        for meta_file in sorted(archive_path.glob('*_meta.pkl')):
+            try:
+                meta = joblib.load(meta_file)
+                if isinstance(meta, dict) and str(meta.get('param_set', '')).upper() == set_name:
+                    meta_by_set[set_name].append(meta)
+            except Exception:
+                continue
+
     return meta_by_set
 
 
@@ -1163,6 +1183,7 @@ def _plot_model_accuracy_loss_comparison(log_path, out_png, param_set='C'):
     if not records:
         print('Skipping model accuracy/loss comparison: no training history log found')
         return False
+    records = _filter_to_latest_run_per_param_set(records)
 
     validate_training_history_log(records)
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
@@ -1678,6 +1699,7 @@ def plot_param_set_val_acc_by_model(log_path, out_png):
     if not records:
         print('Skipping param set val_acc-by-model plot: no training history log found')
         return False
+    records = _filter_to_latest_run_per_param_set(records)
 
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     model_panels = [('lstm', 'LSTM'), ('lightgbm', 'LightGBM'), ('xgboost', 'XGBoost')]
@@ -1709,7 +1731,7 @@ def plot_param_set_val_acc_by_model(log_path, out_png):
 
         axes[0].set_ylabel('Validation Accuracy')
         axes[0].legend(loc='lower right', frameon=True, fontsize=8.5)
-        fig.suptitle('Validation Accuracy by Param Set (A / B / C), per Base Model', fontweight='bold', fontsize=14)
+        fig.suptitle(f'Validation Accuracy by Param Set ({" / ".join(PARAM_SET_ORDER)}), per Base Model', fontweight='bold', fontsize=14)
         fig.text(
             0.5, 0.005,
             'Source: training_history.jsonl — LSTM epochs and LightGBM/XGBoost boosting rounds are '
@@ -1736,6 +1758,7 @@ def plot_param_set_val_loss_by_model(log_path, out_png):
     if not records:
         print('Skipping param set val_loss-by-model plot: no training history log found')
         return False
+    records = _filter_to_latest_run_per_param_set(records)
 
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     model_panels = [('lstm', 'LSTM'), ('lightgbm', 'LightGBM'), ('xgboost', 'XGBoost')]
@@ -1778,7 +1801,7 @@ def plot_param_set_val_loss_by_model(log_path, out_png):
 
         axes[0].set_ylabel('Validation Loss')
         axes[0].legend(loc='upper right', frameon=True, fontsize=8.5)
-        fig.suptitle('Validation Loss by Param Set (A / B / C), per Base Model', fontweight='bold', fontsize=14)
+        fig.suptitle(f'Validation Loss by Param Set ({" / ".join(PARAM_SET_ORDER)}), per Base Model', fontweight='bold', fontsize=14)
         fig.text(
             0.5, 0.005,
             'Source: training_history.jsonl — LSTM epochs and LightGBM/XGBoost boosting rounds are '
@@ -2930,12 +2953,15 @@ def plot_model_configuration(out_png: str):
         'font.family': 'DejaVu Sans',
         'font.size': 10,
     }):
-        fig = plt.figure(figsize=(11, 6.5), dpi=300)
+        n_data_cols = len(PARAM_SET_ORDER)
+        fig = plt.figure(figsize=(3.6 + 2.2 * n_data_cols, 6.5), dpi=300)
         ax = fig.add_subplot(111)
         ax.axis('off')
 
+        label_width = 0.28
+        col_width = (1.0 - label_width) / max(n_data_cols, 1)
         table = ax.table(cellText=table_data, cellLoc='center', loc='center',
-                        colWidths=[0.28, 0.24, 0.24, 0.24])
+                        colWidths=[label_width] + [col_width] * n_data_cols)
 
         table.auto_set_font_size(False)
         table.set_fontsize(10)
@@ -2950,7 +2976,10 @@ def plot_model_configuration(out_png: str):
             cell.set_linewidth(2)
 
         # Light tint per param-set column, matching PARAM_SET_COLORS
-        col_tints = {1: '#f0f0f0', 2: '#fff3e3', 3: '#e7f4ff'}  # A grey, B orange-tint, C blue-tint
+        light_tints = {
+            'A': '#f0f0f0', 'B': '#fff3e3', 'C': '#e7f4ff', 'D': '#f2e9f7', 'E': '#fbe9e7',
+        }
+        col_tints = {idx + 1: light_tints.get(s, '#f7f7f7') for idx, s in enumerate(PARAM_SET_ORDER)}
         for i in range(1, len(table_data)):
             cell = table[(i, 0)]
             cell.set_facecolor('#f7f7f7')
@@ -2958,13 +2987,13 @@ def plot_model_configuration(out_png: str):
             cell.set_edgecolor('#cccccc')
             cell.set_linewidth(1)
 
-            for j in (1, 2, 3):
+            for j in range(1, n_data_cols + 1):
                 cell = table[(i, j)]
                 cell.set_facecolor(col_tints[j])
                 cell.set_edgecolor('#cccccc')
                 cell.set_linewidth(1)
 
-        title_text = 'Hyperparameter Configuration — Sets A / B / C'
+        title_text = f"Hyperparameter Configuration — Sets {' / '.join(PARAM_SET_ORDER)}"
         fig.text(0.5, 0.95, title_text, ha='center', fontsize=15, fontweight='bold',
                 bbox=dict(boxstyle='round,pad=0.8', facecolor='#2b8cbe',
                          edgecolor='#1f4e79', linewidth=2, alpha=0.9),

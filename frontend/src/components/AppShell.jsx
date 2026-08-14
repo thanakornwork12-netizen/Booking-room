@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
   ChevronLeft,
   AlertTriangle,
+  Bell,
   BookOpen,
   KeyRound,
   Loader2,
@@ -22,7 +23,7 @@ import {
   ExternalLink,
   MessageSquareMore,
 } from 'lucide-react'
-import api, { changePassword, deleteAccount, logout } from '../api/axios'
+import api, { changePassword, deleteAccount, logout, getAccessToken, WS_BASE_URL } from '../api/axios'
 
 const navItems = [
   { to: '/', label: 'หน้าหลัก', icon: Home, exact: true },
@@ -580,6 +581,142 @@ function GuideModal({ open, onClose, onGoBooking }) {
   )
 }
 
+const NOTIF_TYPE_ICON = {
+  booking_approved:  '✅',
+  booking_rejected:  '❌',
+  booking_reminder:  '⏰',
+  booking_cancelled: '🚫',
+  term_approved:     '📚',
+  demand_alert:      '📈',
+  system:            '🔔',
+}
+
+const timeAgo = (iso) => {
+  const diffMin = Math.round((Date.now() - new Date(iso)) / 60000)
+  if (diffMin < 1) return 'เมื่อสักครู่'
+  if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`
+  const diffHr = Math.round(diffMin / 60)
+  if (diffHr < 24) return `${diffHr} ชม.ที่แล้ว`
+  return `${Math.round(diffHr / 24)} วันที่แล้ว`
+}
+
+function NotificationBell() {
+  const [notifications, setNotifications] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [open, setOpen] = useState(false)
+  const wsRef = useRef(null)
+
+  const refetch = () => {
+    api.get('/notifications/').then(res => {
+      const list = res.data.results || res.data || []
+      setNotifications(list)
+      setUnreadCount(list.filter(n => !n.is_read).length)
+    }).catch(() => {})
+  }
+
+  useEffect(() => {
+    refetch()
+
+    const token = getAccessToken()
+    if (!token) return
+
+    const ws = new WebSocket(`${WS_BASE_URL}notifications/?token=${token}`)
+    wsRef.current = ws
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'unread_count') {
+          setUnreadCount(data.count)
+        } else if (data.type === 'new_notification') {
+          // WS push ไม่ส่ง id ของ Notification มาด้วย — ดึงรายการจริงจาก REST
+          // ใหม่อีกที เพื่อให้ได้ id ที่ใช้กดอ่านทีหลังได้ถูกต้อง
+          refetch()
+        }
+      } catch { /* ข้อความไม่ตรงรูปแบบที่คาด ข้ามไป */ }
+    }
+
+    return () => ws.close()
+  }, [])
+
+  const markRead = async (n) => {
+    if (!n.is_read) {
+      try {
+        await api.post(`/notifications/${n.id}/read/`)
+        setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x))
+        setUnreadCount(prev => Math.max(0, prev - 1))
+      } catch { /* เดี๋ยวรอบหน้าค่อยลองใหม่ */ }
+    }
+  }
+
+  const markAllRead = async () => {
+    try {
+      await api.post('/notifications/read_all/')
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      setUnreadCount(0)
+    } catch { /* เดี๋ยวรอบหน้าค่อยลองใหม่ */ }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
+        aria-label="การแจ้งเตือน"
+      >
+        <Bell size={19} />
+        {unreadCount > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:w-96">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+              <p className="text-sm font-bold text-slate-900">การแจ้งเตือน</p>
+              {unreadCount > 0 && (
+                <button onClick={markAllRead} className="text-xs font-semibold text-blue-700 hover:underline">
+                  อ่านทั้งหมด
+                </button>
+              )}
+            </div>
+            <div className="max-h-[55vh] overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+                  <Bell size={26} className="text-slate-300" />
+                  <p className="text-sm text-slate-400">ยังไม่มีการแจ้งเตือน</p>
+                </div>
+              ) : (
+                notifications.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => markRead(n)}
+                    className={`flex w-full items-start gap-2.5 border-b border-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-50 ${!n.is_read ? 'bg-blue-50/50' : ''}`}
+                  >
+                    <span className="mt-0.5 text-base leading-none shrink-0">{NOTIF_TYPE_ICON[n.type] || '🔔'}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold text-slate-800">{n.title}</span>
+                        {!n.is_read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600" />}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500 break-words">{n.message}</span>
+                      <span className="mt-1 block text-[11px] text-slate-400">{timeAgo(n.created_at)}</span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function AppShell({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -603,6 +740,11 @@ function AppShell({ children }) {
     ],
   )
   const roleLabel = roleLabels[user?.role] || 'ผู้ใช้ระบบ'
+  const isAdminOrStaff = ['admin', 'staff'].includes(user?.role)
+  // แดชบอร์ดเป็นหน้าสำหรับแอดมิน/เจ้าหน้าที่เท่านั้น (AdminRoute เด้งกลับ
+  // หน้าแรกเงียบๆ ถ้า role ไม่ถึง) — ไม่โชว์เมนูนี้ให้ role อื่นเห็น กันกด
+  // แล้วรู้สึกว่า "ไม่ไปไหน" ทั้งที่จริงๆ คือถูกเด้งกลับแบบไม่มี feedback
+  const visibleNavItems = navItems.filter(item => item.to !== '/admin/dashboard' || isAdminOrStaff)
   const sectionLabel = useMemo(() => {
     if (location.pathname === '/') return 'หน้าหลัก'
     if (location.pathname.startsWith('/search')) return 'จองห้องประชุม'
@@ -728,6 +870,8 @@ function AppShell({ children }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <NotificationBell />
+
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
@@ -775,7 +919,7 @@ function AppShell({ children }) {
             </div>
 
             <nav className="flex flex-col gap-2">
-              {navItems.map(item => {
+              {visibleNavItems.map(item => {
                 const Icon = item.icon
                 const active = isActive(item.to, item.exact)
                 return (
@@ -870,7 +1014,7 @@ function AppShell({ children }) {
               </button>
             </div>
             <nav className="flex flex-1 flex-col gap-2 p-4">
-              {navItems.map(item => {
+              {visibleNavItems.map(item => {
                 const Icon = item.icon
                 const active = isActive(item.to, item.exact)
                 return (

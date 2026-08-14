@@ -1,7 +1,12 @@
 import axios from 'axios'
 
+const API_BASE_URL = 'http://127.0.0.1:8000/api/'
+// อ้างอิงจาก API_BASE_URL ตัวเดียวกัน กันพลาดเวลาแก้ host ตอน deploy จริง
+// (ต้องแก้แค่จุดเดียว ไม่ต้องไล่หาทุกที่ที่ hardcode url ไว้)
+export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api\/$/, '/ws/')
+
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000/api/',
+  baseURL: API_BASE_URL,
   timeout: 15000,
 })
 
@@ -85,9 +90,33 @@ function _clearAndRedirect() {
   window.location.href = '/login'
 }
 
+// ── กันยิง POST auth/login/ ซ้ำซ้อน ────────────────────────────────────────
+// เก็บ promise ของ request ที่กำลังทำอยู่ไว้ระดับ module (ไม่ใช่ระดับ
+// component) — ถ้ามีอะไรก็ตามเรียก loginWithLDAP ซ้ำระหว่างที่ request แรก
+// ยังไม่จบ (ไม่ว่าจะจาก UI สั่งซ้ำ, StrictMode, extension ของ browser ฯลฯ)
+// จะได้ promise เดิมกลับไปแทนที่จะยิง HTTP request ใหม่อีกเส้น กัน
+// connection ซ้อนกันที่ทำให้เกิด "Broken pipe" ตอน response แรกมาถึงช้ากว่า
+// เส้นที่สอง
+let _pendingLoginRequest = null
+
 // ── Helper: login แล้วเก็บ token อัตโนมัติ ────────────────────────────────
 export async function loginWithLDAP(username, password, remember = true) {
+  if (_pendingLoginRequest) {
+    console.log('[DIAG] loginWithLDAP: request already in flight, reusing existing promise')
+    return _pendingLoginRequest
+  }
+  _pendingLoginRequest = _doLoginWithLDAP(username, password, remember)
+  try {
+    return await _pendingLoginRequest
+  } finally {
+    _pendingLoginRequest = null
+  }
+}
+
+async function _doLoginWithLDAP(username, password, remember) {
+  console.log('[DIAG] loginWithLDAP: start, posting to auth/login/')
   const res = await api.post('auth/login/', { username, password })
+  console.log('[DIAG] loginWithLDAP: got response', res.status, res.data)
   const user = res.data.user || res.data
   const displayName =
     user.display_name ||
@@ -97,6 +126,7 @@ export async function loginWithLDAP(username, password, remember = true) {
     user.username
 
   _setTokens({ access: res.data.access, refresh: res.data.refresh, remember })
+  console.log('[DIAG] loginWithLDAP: tokens stored, access_token in storage now =', !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token')))
   const store = remember ? localStorage : sessionStorage
   store.setItem('user', JSON.stringify({
     username: user.username,
@@ -109,6 +139,7 @@ export async function loginWithLDAP(username, password, remember = true) {
     faculty:  user.faculty,
     role:     user.role,
   }))
+  console.log('[DIAG] loginWithLDAP: done, returning')
 
   return res.data
 }
@@ -135,6 +166,11 @@ export function getUser() {
   } catch {
     return null
   }
+}
+
+// ── Helper: ดึง access token ปัจจุบัน (เช่นไปใช้ต่อ WebSocket) ──────────────
+export function getAccessToken() {
+  return _getItem('access_token')
 }
 
 export default api

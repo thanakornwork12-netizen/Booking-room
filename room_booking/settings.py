@@ -2,15 +2,29 @@ import os
 import dj_database_url
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
 
 # ---------------- BASE ----------------
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# โหลดค่าจาก .env (ถ้ามี) — สำหรับตั้งค่าเฉพาะเครื่อง เช่น DATABASE_URL ตอน
+# dev local ไม่มีผลตอน production (Render ตั้ง env var ของตัวเองอยู่แล้ว
+# ไม่มีไฟล์ .env บนนั้น โค้ดนี้แค่ no-op เฉยๆ)
+load_dotenv(BASE_DIR / '.env')
 
 # ความปลอดภัย: ใน Production ควรดึงจาก Environment Variable
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-@top1u7dv$mxn%oyw!03)+xq*5nms@isl&bkfvi9lt=o141)sd')
 
 # จะ True เมื่อรันในเครื่อง (localhost) และเป็น False เมื่อรันบน Server (Render)
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+
+# NOTE: เคยลองบังคับ WSGIRequestHandler.protocol_version = "HTTP/1.0" ตรงนี้
+# เพื่อแก้ "Broken pipe" ตอน LDAP ช้า (connection ถูก reuse ผิดจังหวะ) แต่
+# พอ LDAP เร็วขึ้นแล้ว (แก้ที่ ldap_auth.py ให้ต่อ port 389 แทน 636) กลับพบว่า
+# HTTP/1.0 ทำให้ browser รอ response ค้างจนกว่า axios timeout (15s) แทน —
+# น่าจะเป็นเพราะ HTTP/1.0 ให้ browser ยึด "server ปิด connection" เป็นสัญญาณ
+# จบ response แทนที่จะเชื่อ Content-Length อย่างเดียว แต่ runserver ปิด
+# connection ไม่ตรงจังหวะพอ เลยเอาออก ปล่อยเป็น default (HTTP/1.1) ตามเดิม
 TIME_ZONE = 'Asia/Bangkok'
 USE_TZ    = True
 # ระบุ Domain ที่อนุญาตให้เข้าถึง
@@ -172,6 +186,6 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'yubm xsqs ndrp sucb')
 
-AUTH_LDAP_SERVER_URI = 'ldaps://202.28.50.28:636'
+AUTH_LDAP_SERVER_HOST = '202.28.50.28'
 AUTH_LDAP_DOMAIN     = 'UBU'
 AUTH_LDAP_BASE_OU    = 'OU=STD,OU=SCI,DC=UBU,DC=AC,DC=TH'

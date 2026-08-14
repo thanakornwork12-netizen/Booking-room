@@ -318,9 +318,11 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
 
 # ============================================================
 # DYNAMIC BOOKING — จองรายวัน
-# NOTE: การตรวจซ้อนหลักอยู่ใน views.py (perform_create)
-#       โดยใช้ select_for_update() เพื่อป้องกัน Race Condition
-#       Serializer ตรวจเบื้องต้นก่อน เพื่อ UX ที่ดี
+# NOTE: การตรวจซ้อนที่นี่เป็นแค่การตรวจเบื้องต้นเพื่อ UX ที่ดี (fail fast
+#       ก่อนแตะฐานข้อมูลจริง) การตรวจที่ป้องกัน Race Condition ได้จริงอยู่ใน
+#       views.py (BookingViewSet.perform_create) ซึ่งใช้
+#       select_for_update() ล็อกแถวห้องก่อนตรวจซ้ำอีกครั้งภายใน
+#       transaction.atomic()
 # ============================================================
 class BookingSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
@@ -351,7 +353,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         # ── ชั้นที่ 1: ตรวจ Dynamic Booking (เบื้องต้น ยังไม่ Lock) ──
         overlap_dynamic = Booking.objects.filter(
             room=room,
-            status__in=['pending', 'approved'],
+            status__in=['pending', 'approved', 'checked_in'],
             start_time__lt=end_time,
             end_time__gt=start_time,
         )
@@ -381,6 +383,18 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f'ห้องนี้ถูกจองทั้งเทอมโดย "{tb.subject_name}" '
                 f'({tb.start_time:%H:%M}–{tb.end_time:%H:%M})'
+            )
+
+        # ── ชั้นที่ 3: ตรวจ MaintenanceBlock (ห้องปิดซ่อมบำรุง) ──
+        overlap_maint = MaintenanceBlock.objects.filter(
+            room=room,
+            status__in=['scheduled', 'active'],
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if overlap_maint.exists():
+            raise serializers.ValidationError(
+                'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'
             )
 
         return data
@@ -522,14 +536,20 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         # =====================================================
         # รองรับกรอกทั้ง:
         # 6612345678
-        # และ
         # 6612345678@ubu.ac.th
+        # และอีเมลจริงของมหาลัย เช่น thanakorn.tho.66@ubu.ac.th (ไม่ตรงกับ
+        # sAMAccountName ที่เป็นตัวเลข — ส่งอีเมลเต็มไปลอง bind ตรงๆ เพิ่ม
+        # เป็นอีก candidate ใน authenticate_ldap ด้วย)
         # =====================================================
 
-        pure_username = username
+        pure_username   = username
+        extra_principal = None
 
         if '@' in username:
-            pure_username = username.split('@')[0]
+            local_part, _, _domain_part = username.partition('@')
+            pure_username = local_part
+            if not local_part.isdigit():
+                extra_principal = username
 
         # =====================================================
         # LDAP AUTH ก่อน แล้ว fallback ไปบัญชี local ที่สมัครผ่านระบบ
@@ -537,7 +557,8 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         ldap_user = authenticate_ldap(
             pure_username,
-            password
+            password,
+            extra_principal=extra_principal,
         )
 
         if not ldap_user:
@@ -578,9 +599,14 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         # =====================================================
         # CREATE / UPDATE DJANGO USER
         # =====================================================
+        # ใช้ username จริงที่ authenticate_ldap คืนมา (sAMAccountName จาก
+        # entry) ไม่ใช่ pure_username ที่เดาไว้ก่อน bind — กันกรณีล็อกอินด้วย
+        # อีเมลจริง (local-part ของอีเมล ≠ sAMAccountName ตัวเลข) แล้วสร้าง
+        # Django User ซ้ำเป็นคนละคนกับตอนล็อกอินด้วยรหัสนักศึกษา
+        resolved_username = ldap_user.get('username') or pure_username
 
         user, created = User.objects.get_or_create(
-            username=pure_username
+            username=resolved_username
         )
 
         # =====================================================
@@ -696,8 +722,55 @@ class MaintenanceBlockCreateSerializer(serializers.ModelSerializer):
         fields = ['room', 'start_time', 'end_time', 'reason', 'note', 'predicted_demand_avg']
 
     def validate(self, data):
-        if data['start_time'] >= data['end_time']:
+        room       = data['room']
+        start_time = data['start_time']
+        end_time   = data['end_time']
+
+        if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+
+        overlap_booking = Booking.objects.filter(
+            room=room,
+            status__in=['pending', 'approved', 'checked_in'],
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if overlap_booking.exists():
+            raise serializers.ValidationError(
+                'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'
+            )
+
+        target_date  = start_time.date()
+        target_dow   = target_date.weekday()
+        overlap_term = TermBooking.objects.filter(
+            room=room,
+            day_of_week=target_dow,
+            status='active',
+            term_start__lte=target_date,
+            term_end__gte=target_date,
+        ).exclude(
+            start_time__gte=end_time.time()
+        ).exclude(
+            end_time__lte=start_time.time()
+        )
+        if overlap_term.exists():
+            raise serializers.ValidationError(
+                'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'
+            )
+
+        overlap_maint = MaintenanceBlock.objects.filter(
+            room=room,
+            status__in=['scheduled', 'active'],
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if self.instance:
+            overlap_maint = overlap_maint.exclude(pk=self.instance.pk)
+        if overlap_maint.exists():
+            raise serializers.ValidationError(
+                'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว'
+            )
+
         return data
 
 

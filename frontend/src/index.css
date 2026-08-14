@@ -26,7 +26,6 @@
     min-height: 100dvh;
     width: 100%;
     overflow-x: hidden;
-    overflow-y: auto;
   }
 
   ::selection {
@@ -100,10 +99,7 @@
 
   .app-scrollable {
     flex: 1 1 auto;
-    min-height: 0;
     overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
   @media (min-width: 1024px) {

@@ -1363,7 +1363,8 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
 // ============================================================
 function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
-  onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding }) {
+  onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
+  hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
@@ -1588,6 +1589,15 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
                 </div>
               )
             })}
+            {hasMoreBookings && (
+              <button
+                onClick={onLoadMoreBookings}
+                disabled={loadingMoreBookings}
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+              >
+                {loadingMoreBookings ? 'กำลังโหลด...' : 'โหลดเพิ่มเติม'}
+              </button>
+            )}
           </div>
         )}
         </div>
@@ -1603,7 +1613,8 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
 // ============================================================
 function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
-  onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding }) {
+  onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
+  hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
@@ -1768,6 +1779,15 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                 </div>
               )
             })}
+            {hasMoreBookings && (
+              <button
+                onClick={onLoadMoreBookings}
+                disabled={loadingMoreBookings}
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+              >
+                {loadingMoreBookings ? 'กำลังโหลด...' : 'โหลดเพิ่มเติม'}
+              </button>
+            )}
           </div>
         )}
         </div>
@@ -1982,6 +2002,8 @@ export default function AdminPage() {
   const [dashboard,       setDashboard]      = useState(null)
   const [adminRooms,      setAdminRooms]      = useState([])
   const [bookings,        setBookings]        = useState([])
+  const [bookingsNextUrl, setBookingsNextUrl] = useState(null)
+  const [loadingMoreBookings, setLoadingMoreBookings] = useState(false)
   const [termBookings,    setTermBookings]    = useState([])
   const [tab,             setTab]             = useState('active')
   const [loading,         setLoading]         = useState(true)
@@ -1996,6 +2018,18 @@ export default function AdminPage() {
       const res = await api.get('rooms/admin-status/')
       setAdminRooms(Array.isArray(res.data) ? res.data : [])
     } catch { /* keep previous list on failure */ }
+  }
+
+  const loadMoreBookings = async () => {
+    if (!bookingsNextUrl || loadingMoreBookings) return
+    setLoadingMoreBookings(true)
+    try {
+      const res = await api.get(bookingsNextUrl)
+      setBookings(prev => [...prev, ...(res.data.results || [])])
+      setBookingsNextUrl(res.data.next || null)
+    } catch { /* เหลือรายการเดิมไว้ ให้กดลองใหม่ได้ */ } finally {
+      setLoadingMoreBookings(false)
+    }
   }
 
   const reloadBuildings = async () => {
@@ -2020,6 +2054,7 @@ export default function AdminPage() {
         setBuildingsList(Array.isArray(buildingsRes.data) ? buildingsRes.data : (buildingsRes.data.results || []))
         const all = bookingRes.data.results || []
         setBookings(all)
+        setBookingsNextUrl(bookingRes.data.next || null)
 
         // term bookings — รองรับ paginated หรือ array โดยตรง
         const termAll = termRes.data.results ?? termRes.data ?? []
@@ -2076,6 +2111,7 @@ export default function AdminPage() {
 
   const props = {
     dashboard, adminRooms, bookings, termBookings, weekStats, tab, setTab,
+    hasMoreBookings: !!bookingsNextUrl, loadingMoreBookings, onLoadMoreBookings: loadMoreBookings,
     selectedBooking, setSelectedBooking,
     handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
     buildingsList,

@@ -366,8 +366,8 @@ function BookingTypeSelector({ value, onChange }) {
 function RoomStatusBadge({ status }) {
   const cfg = ROOM_STATUS[status] ?? ROOM_STATUS.available
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border whitespace-nowrap ${cfg.cls}`}>
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: cfg.dot }} />
+    <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-bold ${cfg.cls}`}>
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cfg.dot }} />
       {cfg.label}
     </span>
   )
@@ -407,25 +407,61 @@ function SummaryTiles({ rooms }) {
 function RoomCard({ room, onClick, isTermMode, selectedEquipments, equipmentPresets, isBest }) {
   const level = getDemandLevel(room)
   const cfg = FORECAST_CONFIG[level]
+  const facilityCount = room.facilities?.length || 0
   return (
-    <div onClick={onClick} className={`bg-white border rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all flex gap-3 group ${isBest ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200'}`} style={{ borderLeftWidth: 3, borderLeftColor: cfg.dotColor }}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap mb-1">
-          <span className="font-bold text-slate-900 text-sm truncate group-hover:text-blue-700 transition-colors">{room.name}</span>
-          <RoomStatusBadge status={room.status} />
-          {isBest && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <Sparkles size={10} /> เหมาะสมที่สุด
-            </span>
+    <div
+      onClick={onClick}
+      className={`group cursor-pointer overflow-hidden rounded-[20px] border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg ${isBest ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200 hover:border-blue-200'}`}
+    >
+      <div className="flex gap-3 p-3">
+        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100 sm:h-24 sm:w-24">
+          {room.image ? (
+            <img src={room.image} alt={room.name} className="h-full w-full object-cover" loading="lazy" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-300">
+              <Building2 size={28} />
+            </div>
           )}
-          {level !== 'none' && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cfg.badgeCls}`}>{cfg.badge}</span>}
         </div>
-        <p className="text-xs text-slate-500 truncate mb-1.5">{room.building_name} · ชั้น {room.floor} · {room.capacity} ที่นั่ง</p>
-        <FacilityTags facilities={room.facilities} maxShow={3} highlight={selectedEquipments} equipmentPresets={equipmentPresets} />
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <span className="truncate text-sm font-bold text-slate-900 transition-colors group-hover:text-blue-700 sm:text-base">{room.name}</span>
+            <RoomStatusBadge status={room.status} />
+          </div>
+          <p className="mt-0.5 truncate text-xs text-slate-400">{room.building_name}</p>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1"><Building2 size={12} className="text-slate-400" /> ชั้น {room.floor}</span>
+            <span className="inline-flex items-center gap-1"><Users size={12} className="text-slate-400" /> รองรับ {room.capacity} คน</span>
+            {facilityCount > 0 && (
+              <span className="inline-flex items-center gap-1"><Sparkles size={12} className="text-slate-400" /> อุปกรณ์ {facilityCount} รายการ</span>
+            )}
+          </div>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {isBest && (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                <Sparkles size={10} /> เหมาะสมที่สุด
+              </span>
+            )}
+            {level !== 'none' && <span className={`whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold ${cfg.badgeCls}`}>{cfg.badge}</span>}
+          </div>
+        </div>
       </div>
-      <div className="flex flex-col items-end justify-center flex-shrink-0">
-        <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-      </div>
+
+      {facilityCount > 0 && (
+        <div className="border-t border-slate-100 px-3 pb-2 pt-2">
+          <FacilityTags facilities={room.facilities} maxShow={3} highlight={selectedEquipments} equipmentPresets={equipmentPresets} />
+        </div>
+      )}
+
+      <button
+        type="button"
+        className={`flex w-full items-center justify-center gap-1.5 border-t border-slate-100 py-2.5 text-sm font-bold transition-colors ${isBest ? 'bg-emerald-50 text-emerald-700 group-hover:bg-emerald-100' : 'bg-blue-50/70 text-blue-700 group-hover:bg-blue-100'}`}
+      >
+        {isTermMode ? 'เลือกห้องนี้' : 'เลือกเวลา'} <ChevronRight size={14} />
+      </button>
     </div>
   )
 }
@@ -1016,9 +1052,11 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                         <button
                           onClick={handleBook}
                           disabled={bookingLoading}
-                          className={`mt-4 w-full rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-200 disabled:bg-slate-300 disabled:shadow-none`}
+                          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-200 transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none`}
                         >
-                          {bookingLoading ? <><div className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> กำลังจอง...</> : <><CheckCircle size={18} /> ยืนยันการจอง</>}
+                          {bookingLoading
+                            ? <><div className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white" /> กำลังจอง...</>
+                            : <><CheckCircle size={18} className="shrink-0" /> ยืนยันการจอง</>}
                         </button>
                       </div>
                     </div>

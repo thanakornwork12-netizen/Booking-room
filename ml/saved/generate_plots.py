@@ -54,10 +54,36 @@ def main():
     except Exception as e:
         print(f'best_hyperparameters_card.png failed: {e}')
 
-    # NOTE: model_accuracy_loss_comparison.png and param_set_val_acc_comparison.png
-    # are intentionally no longer generated here — superseded by
-    # param_set_val_acc_by_model.png / param_set_val_loss_by_model.png
-    # (per-model panels) and param_set_ensemble_accuracy_comparison.png.
+    # param_set_val_acc_comparison.png is intentionally no longer generated —
+    # superseded by param_set_val_acc_by_model.png (per-model panels) below.
+
+    try:
+        ok = plotting.plot_param_set_val_acc_by_model(
+            log_file,
+            str(METRICS_DIR / 'param_set_val_acc_by_model.png'),
+        )
+        print(f'param_set_val_acc_by_model.png ok={ok}')
+    except Exception as e:
+        print(f'param_set_val_acc_by_model.png failed: {e}')
+
+    try:
+        ok = plotting.plot_param_set_val_loss_by_model(
+            log_file,
+            str(METRICS_DIR / 'param_set_val_loss_by_model.png'),
+        )
+        print(f'param_set_val_loss_by_model.png ok={ok}')
+    except Exception as e:
+        print(f'param_set_val_loss_by_model.png failed: {e}')
+
+    try:
+        ok = plotting._plot_model_accuracy_loss_comparison(
+            log_file,
+            str(METRICS_DIR / 'model_accuracy_loss_comparison.png'),
+            param_set='C',
+        )
+        print(f'model_accuracy_loss_comparison.png ok={ok}')
+    except Exception as e:
+        print(f'model_accuracy_loss_comparison.png failed: {e}')
 
     try:
         ok = plotting.plot_model_configuration(
@@ -66,6 +92,19 @@ def main():
         print(f'model_configuration.png ok={ok}')
     except Exception as e:
         print(f'model_configuration.png failed: {e}')
+
+    # Reads hyperparam_comparison.csv (written by compare_hyperparams.py) and
+    # overrides its Ensemble Acc column with the same meta-based source as
+    # best_hyperparameters.png, so both documents agree on one number.
+    try:
+        ok = plotting.plot_hyperparam_comparison_table_reconciled(
+            str(METRICS_DIR / 'hyperparam_comparison.csv'),
+            plotting.META_DIR,
+            str(METRICS_DIR / 'hyperparam_comparison_reconciled.png'),
+        )
+        print(f'hyperparam_comparison_reconciled.png ok={ok}')
+    except Exception as e:
+        print(f'hyperparam_comparison_reconciled.png failed: {e}')
 
 
 if __name__ == '__main__':

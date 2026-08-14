@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, Fragment } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Eye, EyeOff, LogIn, Building2, ShieldCheck, ArrowRight,
@@ -53,26 +53,37 @@ export default function LoginPage() {
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
   const [showPass, setShowPass] = useState(false)
+  // ล็อกแบบ sync ด้วย ref กันยิงซ้ำ — ต่างจาก loading (state) ที่ต้องรอ
+  // re-render ก่อนถึงจะมีผล ถ้ากด Enter สองครั้งหรือ Enter+คลิกไล่ๆ กัน
+  // ในช่วงที่ยังไม่ re-render ก็ยังหลุดผ่าน guard เดิมได้
+  const isSubmittingRef = useRef(false)
 
   const onSubmit = async () => {
+    if (isSubmittingRef.current) return
     if (!form.username.trim() || !form.password) {
       setError('กรุณากรอกชื่อผู้ใช้หรือรหัสนักศึกษาและรหัสผ่าน')
       return
     }
 
+    isSubmittingRef.current = true
     setLoading(true)
     setError('')
 
     try {
+      console.log('[DIAG] onSubmit: calling loginWithLDAP')
       // loginWithLDAP จัดการเก็บ token และข้อมูล user ให้อัตโนมัติ
       await loginWithLDAP(form.username.trim(), form.password, remember)
+      console.log('[DIAG] onSubmit: loginWithLDAP resolved, calling navigate("/")')
       navigate('/')
+      console.log('[DIAG] onSubmit: navigate("/") called')
     } catch (err) {
+      console.error('[DIAG] onSubmit: caught error', err, 'err.response=', err?.response, 'err.message=', err?.message, 'err.code=', err?.code)
       const msg = err?.response?.data?.detail
              || err?.response?.data?.non_field_errors?.[0]
-             || 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'
+             || (err?.response ? 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง' : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่')
       setError(msg)
     } finally {
+      isSubmittingRef.current = false
       setLoading(false)
     }
   }
@@ -115,8 +126,8 @@ export default function LoginPage() {
               ))}
 
               {SCHEDULE_ROOMS.map((room) => (
-                <>
-                  <p key={room.name} className="flex items-center text-[10px] font-semibold text-slate-500">{room.name}</p>
+                <Fragment key={room.name}>
+                  <p className="flex items-center text-[10px] font-semibold text-slate-500">{room.name}</p>
                   {SCHEDULE_TIMES.map((_, ci) => {
                     const isFree = room.free === ci
                     const isBusy = room.busy?.includes(ci)
@@ -135,7 +146,7 @@ export default function LoginPage() {
                       </div>
                     )
                   })}
-                </>
+                </Fragment>
               ))}
             </div>
 

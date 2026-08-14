@@ -25,11 +25,19 @@ META_DIR = CURRENT_DIR / "saved_meta"
 ARCHIVE_META_DIRS = [
     META_DIR,
 ]
+# D and E are experimental and never live in saved_meta/ (production default
+# is C) — their only source is the one-off archive from the ABCD(E)
+# comparison experiment.
+EXPERIMENTAL_ARCHIVE_DIRS = {
+    'D': CURRENT_DIR / "saved_meta_D_new",
+    'E': CURRENT_DIR / "saved_meta_E_new",
+}
 PARAM_SET_NAMES = {
     'A': 'A - Fast (Baseline)',
     'B': 'B - Balanced (Aggressive)',
     'C': 'C - High Quality',
     'D': 'D - Extra Deep (Experimental)',
+    'E': 'E - Maximum Depth (Experimental)',
 }
 METRICS_DIR = CURRENT_DIR / "metrics_plots"
 
@@ -38,7 +46,7 @@ os.makedirs(METRICS_DIR, exist_ok=True)
 
 def load_all_meta_by_set():
     """Load all metadata and group by parameter set."""
-    meta_by_set = {'A': [], 'B': [], 'C': [], 'D': [], 'UNKNOWN': []}
+    meta_by_set = {'A': [], 'B': [], 'C': [], 'D': [], 'E': [], 'UNKNOWN': []}
     known_dirs = {
         'saved_meta_A': 'A',
         'saved_meta_B': 'B',
@@ -59,10 +67,29 @@ def load_all_meta_by_set():
                 if not isinstance(meta, dict):
                     continue
                 param_set = meta.get('param_set') or source_label
-                if param_set in {'A', 'B', 'C'}:
+                if param_set in {'A', 'B', 'C', 'D', 'E'}:
                     meta_by_set[param_set].append(meta)
                 else:
                     meta_by_set['UNKNOWN'].append(meta)
+            except Exception as e:
+                print(f"⚠️  Failed to load {meta_file}: {e}")
+
+    # D/E archive (see EXPERIMENTAL_ARCHIVE_DIRS above) is a fallback only —
+    # D is now the production default (forecast.py), so fresh D retrains land
+    # in live saved_meta/ and get picked up above; the archive (a full
+    # saved_meta/ snapshot from the one-off ABCDE experiment, so it also
+    # contains stale entries from rooms that set didn't retrain) only fills
+    # in a letter that has no live entries yet, to avoid double-counting.
+    for set_name, archive_dir in EXPERIMENTAL_ARCHIVE_DIRS.items():
+        if meta_by_set.get(set_name):
+            continue
+        if not archive_dir.exists():
+            continue
+        for meta_file in sorted(archive_dir.glob('*_meta.pkl')):
+            try:
+                meta = joblib.load(meta_file)
+                if isinstance(meta, dict) and meta.get('param_set') == set_name:
+                    meta_by_set[set_name].append(meta)
             except Exception as e:
                 print(f"⚠️  Failed to load {meta_file}: {e}")
 
@@ -354,7 +381,7 @@ def main():
         print("   These files have no param_set tag and are not counted in A/B/C.")
     
     comparison_data = {}
-    for set_name in ['A', 'B', 'C']:
+    for set_name in ['A', 'B', 'C', 'D', 'E']:
         metas = meta_by_set.get(set_name, [])
         if not metas:
             print(f"\n⚠️  Set {set_name}: No trained models found")
@@ -407,11 +434,15 @@ def main():
     csv_path = METRICS_DIR / 'hyperparam_comparison.csv'
     write_comparison_csv(comparison_data, csv_path)
     print(f"\n📄 Saved comparison CSV: {csv_path}")
-    
-    # NOTE: hyperparam_comparison.png and hyperparam_comparison_table.png are
-    # intentionally no longer generated here (superseded by
-    # hyperparam_comparison_reconciled.png, which reads the CSV written above
-    # and reconciles Ensemble Acc against the saved_meta/ live source).
+
+    # NOTE: this table's own "Ensemble Acc" column is computed straight from
+    # this script's per-room average (compute_set_statistics), which can
+    # disagree with param_set_summary_table.png's meta-based number — see
+    # plot_hyperparam_comparison_table_reconciled() in plotting.py (run via
+    # generate_plots.py) for the version that reconciles the two.
+    table_png = METRICS_DIR / 'hyperparam_comparison_table.png'
+    if plot_comparison_table(comparison_data, str(table_png)):
+        print(f"📄 Saved comparison table image: {table_png}")
 
     print("\n" + "=" * 70)
 
