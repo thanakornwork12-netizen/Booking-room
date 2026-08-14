@@ -104,6 +104,9 @@ if os.environ.get('DATABASE_URL'):
         conn_max_age=600,
         conn_health_checks=True,
     )
+    # บังคับค่า sslmode ให้ชัวร์ ไม่พึ่งพา query string ที่มากับ DATABASE_URL
+    # (กัน error "invalid sslmode value" ถ้า env var ถูกวางซ้ำ/เพี้ยนมา)
+    DATABASES['default']['OPTIONS'] = {'sslmode': 'require'}
 
 # ---------------- CORS ----------------
 CORS_ALLOWED_ORIGINS = [
