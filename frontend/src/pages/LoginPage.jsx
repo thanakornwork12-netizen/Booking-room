@@ -20,7 +20,7 @@ const ANIM = `
 }
 `
 
-const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-3 text-sm
+const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-2.5 sm:py-3 text-sm
   text-slate-800 outline-none transition-all placeholder:text-slate-400
   focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
 
@@ -95,7 +95,7 @@ export default function LoginPage() {
     >
       <style>{ANIM}</style>
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-8 px-4 py-8 sm:px-6 lg:h-screen lg:flex-row lg:items-center lg:justify-center lg:gap-16 lg:py-0">
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-8 lg:h-screen lg:flex-row lg:items-center lg:justify-center lg:gap-16 lg:py-0">
 
         {/* ── Brand (desktop only) ───────────────────────────── */}
         <div className="hidden max-w-md flex-col lg:flex au">
@@ -173,33 +173,33 @@ export default function LoginPage() {
 
         {/* ── Login card ─────────────────────────────────────── */}
         <div className="w-full max-w-md">
-          <div className="mb-6 text-center lg:hidden au">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-lg shadow-blue-200">
-              <Building2 size={24} color="#fff" />
+          <div className="mb-5 text-center sm:mb-6 lg:hidden au">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-lg shadow-blue-200 sm:mb-4 sm:h-14 sm:w-14">
+              <Building2 size={22} color="#fff" />
             </div>
-            <h1 className="text-xl font-extrabold text-slate-900">ระบบจองห้องประชุม</h1>
+            <h1 className="text-lg font-extrabold text-slate-900 sm:text-xl">ระบบจองห้องประชุม</h1>
             <p className="mt-1 text-xs text-slate-500">มหาวิทยาลัยอุบลราชธานี</p>
           </div>
 
-          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.10)] au1">
-            <div className="flex items-center justify-between gap-4 p-6 pb-0">
+          <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.10)] au1 sm:rounded-[28px]">
+            <div className="flex items-center justify-between gap-4 p-5 pb-0 sm:p-6 sm:pb-0">
               <div>
                 <p className="text-[11px] font-bold tracking-[0.22em] text-slate-400 uppercase">Sign in</p>
                 <p className="mt-1 text-xl font-extrabold text-slate-900">เข้าสู่ระบบ</p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-700">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-700 sm:h-11 sm:w-11">
                 <ShieldCheck size={20} />
               </div>
             </div>
 
-            <div className="p-6 pt-4">
+            <div className="p-5 pt-4 sm:p-6 sm:pt-4">
               {error && (
                 <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                   {error}
                 </div>
               )}
 
-              <div className="space-y-4">
+              <div className="space-y-3.5 sm:space-y-4">
                 <div>
                   <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">
                     ชื่อผู้ใช้ / รหัสนักศึกษา
@@ -259,7 +259,7 @@ export default function LoginPage() {
               <button
                 onClick={onSubmit}
                 disabled={loading}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none sm:py-3.5"
               >
                 {loading ? (
                   <>
