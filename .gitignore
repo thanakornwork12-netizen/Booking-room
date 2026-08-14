@@ -6,4 +6,6 @@ ml/saved/saved_models
 ml/saved/saved_models_*
 ml/saved/saved_meta
 ml/saved/saved_meta_*
+/saved_models
+node_modules
 .env
