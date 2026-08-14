@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api/'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/'
 // อ้างอิงจาก API_BASE_URL ตัวเดียวกัน กันพลาดเวลาแก้ host ตอน deploy จริง
 // (ต้องแก้แค่จุดเดียว ไม่ต้องไล่หาทุกที่ที่ hardcode url ไว้)
 export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api\/$/, '/ws/')
@@ -62,7 +62,7 @@ api.interceptors.response.use(
 
       try {
         const res = await axios.post(
-          'http://127.0.0.1:8000/api/auth/refresh/',
+          `${API_BASE_URL}auth/refresh/`,
           { refresh }
         )
         const newAccess = res.data.access

@@ -108,6 +108,7 @@ if os.environ.get('DATABASE_URL'):
 # ---------------- CORS ----------------
 CORS_ALLOWED_ORIGINS = [
     'https://room-booking-1-7u7e.onrender.com', # Frontend บน Render
+    'https://booking-room-gray.vercel.app', # Frontend บน Vercel
 ]
 # อนุญาตทุกพอร์ตของ localhost/127.0.0.1 เพราะ Vite dev server เปลี่ยนพอร์ตอัตโนมัติ
 # เมื่อพอร์ตเดิม (5173) ถูกใช้งานอยู่แล้ว (เช่นรันหลายรอบพร้อมกัน)
