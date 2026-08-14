@@ -49,6 +49,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = User(**validated_data)
         user.set_password(password)
         user.save()
+
+        from .signals import send_email_after_commit, send_welcome_email
+        send_email_after_commit(send_welcome_email, user)
+
         return user
 
 

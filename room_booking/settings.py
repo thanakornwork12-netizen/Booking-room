@@ -188,7 +188,12 @@ EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'nookkup47@gmail.com')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'yubm xsqs ndrp sucb')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+
+# ใช้ประกอบลิงก์ในอีเมล (check-in/ยกเลิกเป็น endpoint ฝั่ง backend เอง
+# ส่วน login ต้องพาไปหน้าเว็บฝั่ง frontend)
+SITE_URL     = os.environ.get('SITE_URL', 'http://127.0.0.1:8000')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
 AUTH_LDAP_SERVER_HOST = '202.28.50.28'
 AUTH_LDAP_DOMAIN     = 'UBU'

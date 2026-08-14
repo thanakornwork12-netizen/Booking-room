@@ -15,8 +15,9 @@ import socket
 
 from .models import Booking, Notification, TermBooking
 
-THAI_TZ  = pytz.timezone('Asia/Bangkok')
-SITE_URL = getattr(settings, 'SITE_URL', 'http://localhost:8000')
+THAI_TZ      = pytz.timezone('Asia/Bangkok')
+SITE_URL     = getattr(settings, 'SITE_URL', 'http://localhost:8000')
+FRONTEND_URL = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
 logger = logging.getLogger(__name__)
 
 
@@ -128,6 +129,100 @@ def push_notification(sender, instance, created, **kwargs):
 
 
 # ─── Email Functions ───────────────────────────────────────────
+
+def send_welcome_email(user):
+    """ส่งอีเมลต้อนรับหลังสมัครสมาชิกสำเร็จ"""
+    user_email = get_recipient_email(user)
+    if not user_email:
+        logger.warning('ไม่ส่งอีเมลต้อนรับ เพราะ user %s ไม่มี email', user.id)
+        return
+
+    display_name = user.get_full_name() or user.username
+    login_url = f'{FRONTEND_URL}/login'
+
+    plain_text = f'''
+สวัสดีคุณ {display_name}
+
+สมัครสมาชิกระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี สำเร็จแล้ว 🎉
+
+ชื่อผู้ใช้: {user.username}
+
+เข้าสู่ระบบได้ที่: {login_url}
+
+ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+    '''
+
+    html_message = f'''
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
+  <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+    <!-- Header -->
+    <div style="background:#1d4ed8;padding:28px 32px;">
+      <h1 style="color:white;margin:0;font-size:22px;">🎉 ยินดีต้อนรับ</h1>
+      <p style="color:#bfdbfe;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+    </div>
+
+    <!-- Yellow accent -->
+    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
+
+    <!-- Body -->
+    <div style="padding:28px 32px;">
+      <p style="font-size:16px;color:#374151;">
+        สวัสดีคุณ <b>{display_name}</b>
+      </p>
+      <p style="color:#6b7280;">สมัครสมาชิกสำเร็จแล้ว ตอนนี้สามารถเข้าสู่ระบบเพื่อค้นหาและจองห้องประชุมได้ทันที</p>
+
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;border-radius:8px;overflow:hidden;">
+        <tr style="background:#eff6ff;">
+          <td style="padding:10px 12px;color:#6b7280;width:40%;">👤 ชื่อผู้ใช้</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{user.username}</td>
+        </tr>
+      </table>
+
+      <div style="text-align:center;margin:24px 0;">
+        <a href="{login_url}"
+           style="display:inline-block;background:#1d4ed8;color:white;
+                  padding:14px 36px;text-decoration:none;border-radius:8px;
+                  font-size:16px;font-weight:bold;">
+          เข้าสู่ระบบ
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
+        ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
+    '''
+
+    try:
+        logger.info(
+            'Attempting send_mail to %s (welcome email, user id=%s) via %s:%s backend=%s',
+            user_email,
+            user.id,
+            getattr(settings, 'EMAIL_HOST', None),
+            getattr(settings, 'EMAIL_PORT', None),
+            getattr(settings, 'EMAIL_BACKEND', None),
+        )
+        send_mail(
+            subject='🎉 ยินดีต้อนรับสู่ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี',
+            message=plain_text,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            recipient_list=[user_email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+    except Exception as e:
+        log_email_error('ส่งอีเมลต้อนรับไม่สำเร็จ', e)
+
 
 def send_booking_confirmation_email(instance):
     """ส่งอีเมลยืนยันเมื่อจองสำเร็จ พร้อมปุ่ม Check-in และ ยกเลิก"""
