@@ -178,7 +178,7 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
 }
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'room_booking.email_backend.EmailBackend')
 
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 
