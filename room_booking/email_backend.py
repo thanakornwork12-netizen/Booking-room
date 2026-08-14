@@ -1,48 +1,66 @@
-import smtplib
-import socket
+import requests
 
-from django.core.mail.backends.smtp import EmailBackend as DjangoSMTPBackend
-
-
-class IPv4SMTP(smtplib.SMTP):
-    """smtplib.SMTP ที่บังคับต่อผ่าน IPv4 เท่านั้น"""
-
-    def _get_socket(self, host, port, timeout):
-        family, socktype, proto, _canonname, sockaddr = socket.getaddrinfo(
-            host, port, socket.AF_INET, socket.SOCK_STREAM
-        )[0]
-        sock = socket.socket(family, socktype, proto)
-        if timeout is not None:
-            sock.settimeout(timeout)
-        sock.connect(sockaddr)
-        return sock
+from django.conf import settings
+from django.core.mail.backends.base import BaseEmailBackend
 
 
-class EmailBackend(DjangoSMTPBackend):
+class BrevoAPIBackend(BaseEmailBackend):
     """
-    Container บน Render resolve smtp.gmail.com ได้ทั้ง IPv4/IPv6 แต่ไม่มี
-    เส้นทาง IPv6 ออกจริง — smtplib เลือกต่อ IPv6 ก่อนตามลำดับที่ getaddrinfo
-    คืนมา แล้วเจอ OSError: Network is unreachable (errno 101) ทุกครั้ง
-    ต่อให้ credential ถูกก็ไม่มีทางส่งผ่าน จึงบังคับให้ต่อผ่าน IPv4 เสมอ
+    ส่งอีเมลผ่าน Brevo REST API (HTTPS) แทน SMTP ตรงๆ
+
+    Render บล็อก outbound port 587 (ยืนยันแล้วจาก OSError: Network is
+    unreachable ตอนแรก แล้วพอบังคับ IPv4 กลับกลายเป็น timeout พอดี 30
+    วินาทีทุกครั้ง — รูปแบบ packet ถูกทิ้งเงียบๆ แบบนี้คือ egress firewall
+    บล็อก port ไม่ใช่ปัญหา credential/network route) เปลี่ยนมาใช้ HTTPS
+    (port 443) ผ่าน API แทนเลยหลีกเลี่ยงปัญหานี้ได้ทั้งหมด
     """
 
-    def open(self):
-        if self.connection:
-            return False
-        try:
-            self.connection = IPv4SMTP(
-                self.host, self.port,
-                local_hostname='localhost',
-                timeout=self.timeout,
-            )
-            self.connection.ehlo()
-            if self.use_tls:
-                self.connection.starttls()
-                self.connection.ehlo()
-            if self.username and self.password:
-                self.connection.login(self.username, self.password)
-            return True
-        except OSError:
+    API_URL = 'https://api.brevo.com/v3/smtp/email'
+
+    def send_messages(self, email_messages):
+        if not email_messages:
+            return 0
+
+        api_key = getattr(settings, 'BREVO_API_KEY', '')
+        if not api_key:
             if not self.fail_silently:
-                raise
-            return None
+                raise ValueError('BREVO_API_KEY ยังไม่ได้ตั้งค่า')
+            return 0
+
+        sent = 0
+        for message in email_messages:
+            try:
+                self._send_one(message, api_key)
+                sent += 1
+            except Exception:
+                if not self.fail_silently:
+                    raise
+        return sent
+
+    def _send_one(self, message, api_key):
+        html_body = None
+        for content, mimetype in getattr(message, 'alternatives', []):
+            if mimetype == 'text/html':
+                html_body = content
+                break
+
+        payload = {
+            'sender': {'email': message.from_email},
+            'to': [{'email': addr} for addr in message.to],
+            'subject': message.subject,
+            'textContent': message.body,
+        }
+        if html_body:
+            payload['htmlContent'] = html_body
+
+        response = requests.post(
+            self.API_URL,
+            json=payload,
+            headers={
+                'api-key': api_key,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            timeout=15,
+        )
+        response.raise_for_status()

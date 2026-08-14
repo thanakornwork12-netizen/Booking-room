@@ -15,6 +15,7 @@ whitenoise
 ldap3
 pytz
 Pillow
+requests
 joblib
 numpy
 pandas

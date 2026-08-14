@@ -178,7 +178,8 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
 }
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'room_booking.email_backend.EmailBackend')
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'room_booking.email_backend.BrevoAPIBackend')
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '')
 
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 
