@@ -775,6 +775,10 @@ function AppShell({ children }) {
 
   useEffect(() => {
     setIsMobileNavOpen(false)
+    // React Router ไม่รีเซ็ต scroll position ให้เองตอนเปลี่ยนหน้า — ถ้าหน้า
+    // ก่อนหน้า scroll ลงไปอยู่ล่างๆ แล้วหน้าใหม่สั้นกว่า จะเห็นเหมือนจอ
+    // "กระโดด" ไปอยู่ท้ายหน้าแทนที่จะเริ่มจากบนสุด
+    window.scrollTo(0, 0)
   }, [location.pathname])
 
   useEffect(() => {

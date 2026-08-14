@@ -1133,6 +1133,14 @@ export default function SearchPage({ embedded = false }) {
     }).catch(() => {})
   }, [])
 
+  // wizard นี้เปลี่ยนหน้าจอด้วย step/success state ไม่ใช่เปลี่ยน route — พอ
+  // เนื้อหาแต่ละขั้นสูงไม่เท่ากัน ถ้าไม่รีเซ็ต scroll เอง จอจะ "ค้าง"
+  // ตำแหน่งเดิมจากขั้นก่อนหน้า ดูเหมือนกระโดดไปอยู่ท้ายหน้าตอนกดยืนยัน
+  // (กดยืนยันจอง → success เปลี่ยนเป็น true โดย step ยังเป็น 3 เหมือนเดิม)
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [step, success])
+
   useEffect(() => {
     api.get('buildings/').then(res => {
       const data = res.data?.results ?? res.data ?? []
