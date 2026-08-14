@@ -1,5 +1,1892 @@
 [
 {
+  "model": "booking.building",
+  "pk": 73,
+  "fields": {
+    "name": "อาคาร ODL (Online Digital Learning)",
+    "code": "ODL",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 74,
+  "fields": {
+    "name": "อาคารเฉลิมพระเกียรติ 7 รอบฯ",
+    "code": "อาคารเฉลิม",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 75,
+  "fields": {
+    "name": "อาคารสำนักคอมพิวเตอร์",
+    "code": "อาคารสำนัก",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 76,
+  "fields": {
+    "name": "อาคารเรียนคณะนิติศาสตร์",
+    "code": "อาคารเรียน",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 77,
+  "fields": {
+    "name": "อาคารคณะรัฐศาสตร์",
+    "code": "อาคารคณะรั",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 78,
+  "fields": {
+    "name": "ภาควิชาวิทยาศาสตร์ชีวภาพ",
+    "code": "ภาควิชาวิท",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 79,
+  "fields": {
+    "name": "อาคารวิจัย คณะวิทยาศาสตร์",
+    "code": "อาคารวิจัย",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 80,
+  "fields": {
+    "name": "อาคาร EN6",
+    "code": "อาคารEN6",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 81,
+  "fields": {
+    "name": "ชั้น 2 อาคารเทคโนโลยีการเกษตร",
+    "code": "ชั้น2อาคาร",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 82,
+  "fields": {
+    "name": "อาคารวิทยาลัยแพทยศาสตร์ฯ",
+    "code": "อาคารวิทยา",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 83,
+  "fields": {
+    "name": "อาคารโภชนาการ",
+    "code": "อาคารโภชนา",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 84,
+  "fields": {
+    "name": "อาคารกิจกรรม",
+    "code": "อาคารกิจกร",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 85,
+  "fields": {
+    "name": "ตึกอธิการบดีหลังใหม่",
+    "code": "ตึกอธิการบ",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 86,
+  "fields": {
+    "name": "สนค./สนว./อาคารเรียนรวม 4",
+    "code": "สนค./สนว./",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 87,
+  "fields": {
+    "name": "อาคารสารสนเทศ ชั้น 2",
+    "code": "อาคารสารสน",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.building",
+  "pk": 88,
+  "fields": {
+    "name": "อาคารข้อมูลท้องถิ่น ชั้น 1",
+    "code": "อาคารข้อมู",
+    "description": "ข้อมูลจริงจากมหาวิทยาลัย",
+    "is_active": true
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 438,
+  "fields": {
+    "building": 74,
+    "name": "ห้องกันเกรา",
+    "floor": 1,
+    "capacity": 4000,
+    "room_type": "ประชุม/จัดเลี้ยง/นิทรรศการ",
+    "status": "available",
+    "image": "",
+    "description": "ห้องกันเกรา | ประชุม/จัดเลี้ยง/นิทรรศการ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.398Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 439,
+  "fields": {
+    "building": 74,
+    "name": "ห้องประดู่1–6",
+    "floor": 1,
+    "capacity": 50,
+    "room_type": "ประชุม/จัดกิจกรรม",
+    "status": "available",
+    "image": "",
+    "description": "ห้องประดู่ 1–6 | ประชุม/จัดกิจกรรม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.408Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 440,
+  "fields": {
+    "building": 74,
+    "name": "ห้องพวงพยอม",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ประชุม",
+    "status": "available",
+    "image": "",
+    "description": "ห้องพวงพยอม | ประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.418Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 441,
+  "fields": {
+    "building": 74,
+    "name": "ห้องชัยพฤกษ์",
+    "floor": 1,
+    "capacity": 100,
+    "room_type": "ประชุม/จัดเลี้ยง/นิทรรศการ",
+    "status": "available",
+    "image": "",
+    "description": "ห้องชัยพฤกษ์ | ประชุม/จัดเลี้ยง/นิทรรศการ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.429Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 442,
+  "fields": {
+    "building": 75,
+    "name": "1C-MEETING",
+    "floor": 1,
+    "capacity": 8,
+    "room_type": "ห้องประชุม",
+    "status": "maintenance",
+    "image": "",
+    "description": "ห้องประชุม ชั้น 1 | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.437Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 443,
+  "fields": {
+    "building": 75,
+    "name": "2C05-06",
+    "floor": 2,
+    "capacity": 61,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "2C 05-06 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.448Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 444,
+  "fields": {
+    "building": 75,
+    "name": "2C07",
+    "floor": 2,
+    "capacity": 16,
+    "room_type": "ห้องปฏิบัติการ iMac",
+    "status": "available",
+    "image": "",
+    "description": "2C 07 (iMac) | ห้องปฏิบัติการ iMac | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.458Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 445,
+  "fields": {
+    "building": 75,
+    "name": "2C09",
+    "floor": 2,
+    "capacity": 31,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "2C 09 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.469Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 446,
+  "fields": {
+    "building": 75,
+    "name": "2C10-11",
+    "floor": 2,
+    "capacity": 61,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "2C 10-11 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.482Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 447,
+  "fields": {
+    "building": 75,
+    "name": "2C16-17",
+    "floor": 2,
+    "capacity": 61,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "2C 16-17 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.494Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 448,
+  "fields": {
+    "building": 75,
+    "name": "3C05-06",
+    "floor": 3,
+    "capacity": 51,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "3C 05-06 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.507Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 449,
+  "fields": {
+    "building": 75,
+    "name": "3C10-11(SMARTCLASSROOM)",
+    "floor": 3,
+    "capacity": 80,
+    "room_type": "Smart Classroom",
+    "status": "available",
+    "image": "",
+    "description": "3C 10-11 (Smart Classroom) | Smart Classroom | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.519Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 450,
+  "fields": {
+    "building": 75,
+    "name": "3C12",
+    "floor": 3,
+    "capacity": 15,
+    "room_type": "ห้องประชุม/สัมมนา",
+    "status": "disabled",
+    "image": "",
+    "description": "3C 12 | ห้องประชุม/สัมมนา | PC 0 เครื่อง",
+    "is_active": false,
+    "created_at": "2026-07-09T16:49:29.532Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 451,
+  "fields": {
+    "building": 75,
+    "name": "3C15-16",
+    "floor": 3,
+    "capacity": 51,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "3C 15-16 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.544Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 452,
+  "fields": {
+    "building": 75,
+    "name": "4C05(VDOCONFERENCE)",
+    "floor": 4,
+    "capacity": 32,
+    "room_type": "ห้องประชุม/VDO Conference",
+    "status": "available",
+    "image": "",
+    "description": "4C 05 (VDO Conference) | ห้องประชุม/VDO Conference | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.553Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 453,
+  "fields": {
+    "building": 76,
+    "name": "ห้องบรรยาย2110",
+    "floor": 1,
+    "capacity": 80,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "ห้องบรรยาย 2110 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.566Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 454,
+  "fields": {
+    "building": 76,
+    "name": "ห้องบรรยาย2201",
+    "floor": 1,
+    "capacity": 50,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "ห้องบรรยาย 2201 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.576Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 455,
+  "fields": {
+    "building": 76,
+    "name": "ห้องบรรยาย2203",
+    "floor": 1,
+    "capacity": 70,
+    "room_type": "ห้องบรรยาย",
+    "status": "disabled",
+    "image": "",
+    "description": "ห้องบรรยาย 2203 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": false,
+    "created_at": "2026-07-09T16:49:29.587Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 456,
+  "fields": {
+    "building": 76,
+    "name": "ห้องบรรยาย2205",
+    "floor": 1,
+    "capacity": 50,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "ห้องบรรยาย 2205 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.599Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 457,
+  "fields": {
+    "building": 76,
+    "name": "ห้องบรรยาย2209",
+    "floor": 1,
+    "capacity": 150,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "ห้องบรรยาย 2209 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.607Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 458,
+  "fields": {
+    "building": 76,
+    "name": "ห้องบรรยาย2305",
+    "floor": 1,
+    "capacity": 380,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "ห้องบรรยาย 2305 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.617Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 459,
+  "fields": {
+    "building": 77,
+    "name": "1C-MEETING",
+    "floor": 3,
+    "capacity": 380,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "POL 301 ห้องประชุมใหญ่ชั้น 3 | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.629Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 460,
+  "fields": {
+    "building": 77,
+    "name": "POL123(สำนักงานชั้น1)",
+    "floor": 1,
+    "capacity": 10,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "POL 123 (สำนักงานชั้น 1) | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.640Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 461,
+  "fields": {
+    "building": 77,
+    "name": "POL228ห้องเรียนชั้น2",
+    "floor": 2,
+    "capacity": 50,
+    "room_type": "ห้องเรียน",
+    "status": "available",
+    "image": "",
+    "description": "POL 228 ห้องเรียนชั้น 2 | ห้องเรียน | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.645Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 462,
+  "fields": {
+    "building": 77,
+    "name": "POLSMARTCLASSROOM(C)",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "Smart Classroom",
+    "status": "available",
+    "image": "",
+    "description": "POL Smart Classroom (C) | Smart Classroom | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.658Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 463,
+  "fields": {
+    "building": 78,
+    "name": "BIOACTIVELEARNING(บรรยาย5ชั้น1)",
+    "floor": 1,
+    "capacity": 20,
+    "room_type": "ห้องเรียน/Active Learning",
+    "status": "disabled",
+    "image": "",
+    "description": "Bio Active Learning (บรรยาย 5 ชั้น 1) | ห้องเรียน/Active Learning | PC 0 เครื่อง",
+    "is_active": false,
+    "created_at": "2026-07-09T16:49:29.663Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 464,
+  "fields": {
+    "building": 78,
+    "name": "BIO1ห้องบรรยาย1ชั้น1",
+    "floor": 1,
+    "capacity": 120,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "Bio 1 ห้องบรรยาย 1 ชั้น 1 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.668Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 465,
+  "fields": {
+    "building": 78,
+    "name": "BIO3ห้องบรรยาย3ชั้น3",
+    "floor": 3,
+    "capacity": 60,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "Bio 3 ห้องบรรยาย 3 ชั้น 3 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.672Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 466,
+  "fields": {
+    "building": 78,
+    "name": "BIO4ห้องบรรยาย4ชั้น1",
+    "floor": 1,
+    "capacity": 100,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "Bio 4 ห้องบรรยาย 4 ชั้น 1 | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.678Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 467,
+  "fields": {
+    "building": 79,
+    "name": "SC302ชั้น3",
+    "floor": 3,
+    "capacity": 15,
+    "room_type": "ห้องเรียน/ประชุม",
+    "status": "available",
+    "image": "",
+    "description": "SC 302 ชั้น 3 | ห้องเรียน/ประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.683Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 468,
+  "fields": {
+    "building": 79,
+    "name": "SC349ชั้น3",
+    "floor": 3,
+    "capacity": 40,
+    "room_type": "ห้องเรียน/ประชุม",
+    "status": "available",
+    "image": "",
+    "description": "SC 349 ชั้น 3 | ห้องเรียน/ประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.688Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 469,
+  "fields": {
+    "building": 79,
+    "name": "SC350ชั้น3",
+    "floor": 3,
+    "capacity": 40,
+    "room_type": "ห้องเรียน/ประชุม",
+    "status": "available",
+    "image": "",
+    "description": "SC 350 ชั้น 3 | ห้องเรียน/ประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.694Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 470,
+  "fields": {
+    "building": 80,
+    "name": "EN6206ปฏิบัติการคอมพิวเตอร์",
+    "floor": 2,
+    "capacity": 60,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "EN 6206 ปฏิบัติการคอมพิวเตอร์ | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.699Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 471,
+  "fields": {
+    "building": 80,
+    "name": "1C-MEETING",
+    "floor": 6,
+    "capacity": 30,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "EN 6607 ห้องประชุม 6-4 | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.711Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 472,
+  "fields": {
+    "building": 80,
+    "name": "ลานกิจกรรมEN6ชั้น1ZONEB",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ลานกิจกรรม",
+    "status": "available",
+    "image": "",
+    "description": "ลานกิจกรรม EN6 ชั้น 1 Zone B | ลานกิจกรรม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.735Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 473,
+  "fields": {
+    "building": 81,
+    "name": "AGCOMPUTER1",
+    "floor": 2,
+    "capacity": 15,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "AG Computer 1 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.741Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 474,
+  "fields": {
+    "building": 81,
+    "name": "AGCOMPUTER2",
+    "floor": 2,
+    "capacity": 50,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "AG Computer 2 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.752Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 475,
+  "fields": {
+    "building": 81,
+    "name": "AGCOMPUTER3",
+    "floor": 2,
+    "capacity": 60,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "AG Computer 3 | ห้องปฏิบัติการคอมพิวเตอร์ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.761Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 476,
+  "fields": {
+    "building": 82,
+    "name": "CMP_101ออดิทอเรียม",
+    "floor": 1,
+    "capacity": 300,
+    "room_type": "Auditorium",
+    "status": "available",
+    "image": "",
+    "description": "CMP_101 ออดิทอเรียม | Auditorium | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.771Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 477,
+  "fields": {
+    "building": 82,
+    "name": "CMP_103ห้องบรรยาย",
+    "floor": 1,
+    "capacity": 150,
+    "room_type": "ห้องบรรยาย",
+    "status": "available",
+    "image": "",
+    "description": "CMP_103 ห้องบรรยาย | ห้องบรรยาย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.775Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 478,
+  "fields": {
+    "building": 82,
+    "name": "CMP_131SMARTCLASSROOM",
+    "floor": 1,
+    "capacity": 40,
+    "room_type": "Smart Classroom",
+    "status": "available",
+    "image": "",
+    "description": "CMP_131 Smart Classroom | Smart Classroom | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.782Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 479,
+  "fields": {
+    "building": 82,
+    "name": "CMP_201ห้องวิจัย",
+    "floor": 1,
+    "capacity": 72,
+    "room_type": "ห้องวิจัย",
+    "status": "available",
+    "image": "",
+    "description": "CMP_201 ห้องวิจัย | ห้องวิจัย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.785Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 480,
+  "fields": {
+    "building": 82,
+    "name": "CMP_211ปฏิบัติการชีวเคมีฯ",
+    "floor": 1,
+    "capacity": 100,
+    "room_type": "ห้องปฏิบัติการ",
+    "status": "available",
+    "image": "",
+    "description": "CMP_211 ปฏิบัติการชีวเคมีฯ | ห้องปฏิบัติการ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.787Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 481,
+  "fields": {
+    "building": 82,
+    "name": "CMP_213ปฏิบัติการสรีรวิทยาฯ",
+    "floor": 1,
+    "capacity": 100,
+    "room_type": "ห้องปฏิบัติการ",
+    "status": "available",
+    "image": "",
+    "description": "CMP_213 ปฏิบัติการสรีรวิทยาฯ | ห้องปฏิบัติการ | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.791Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 482,
+  "fields": {
+    "building": 82,
+    "name": "1C-MEETING",
+    "floor": 1,
+    "capacity": 20,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "CMP_316 ห้องประชุม | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.793Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 483,
+  "fields": {
+    "building": 83,
+    "name": "NTC_313ห้องเรียน",
+    "floor": 1,
+    "capacity": 80,
+    "room_type": "ห้องเรียน",
+    "status": "available",
+    "image": "",
+    "description": "NTC_313 ห้องเรียน | ห้องเรียน | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.797Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 484,
+  "fields": {
+    "building": 83,
+    "name": "NTC_409ห้องเรียน",
+    "floor": 1,
+    "capacity": 160,
+    "room_type": "ห้องเรียน",
+    "status": "available",
+    "image": "",
+    "description": "NTC_409 ห้องเรียน | ห้องเรียน | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.799Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 485,
+  "fields": {
+    "building": 84,
+    "name": "ห้องโถงกิจกรรมชั้น1",
+    "floor": 1,
+    "capacity": 300,
+    "room_type": "โถง/ห้องกิจกรรม",
+    "status": "available",
+    "image": "",
+    "description": "ห้องโถงกิจกรรมชั้น 1 | โถง/ห้องกิจกรรม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.802Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 486,
+  "fields": {
+    "building": 84,
+    "name": "1C-MEETING",
+    "floor": 2,
+    "capacity": 25,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "ห้องประชุมกิจกรรมชั้น 2 | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.804Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 487,
+  "fields": {
+    "building": 85,
+    "name": "1C-MEETING",
+    "floor": 1,
+    "capacity": 11,
+    "room_type": "ห้องประชุม",
+    "status": "disabled",
+    "image": "",
+    "description": "ห้องประชุมเดชอุดม | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": false,
+    "created_at": "2026-07-09T16:49:29.810Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 488,
+  "fields": {
+    "building": 76,
+    "name": "CLB4100บันทึกวีดิโอ",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ห้อง VDO Recording",
+    "status": "available",
+    "image": "",
+    "description": "CLB 4100 บันทึกวีดิโอ | ห้อง VDO Recording | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.842Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 489,
+  "fields": {
+    "building": 76,
+    "name": "CLB4104LIVEONLINE",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ห้อง Live/Self-Record",
+    "status": "available",
+    "image": "",
+    "description": "CLB 4104 Live Online | ห้อง Live/Self-Record | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.849Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 490,
+  "fields": {
+    "building": 76,
+    "name": "CLB4201SMARTCLASSROOM",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "Smart Classroom VDO",
+    "status": "available",
+    "image": "",
+    "description": "CLB 4201 Smart Classroom | Smart Classroom VDO | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.857Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 491,
+  "fields": {
+    "building": 76,
+    "name": "CLB4202SMARTCLASSROOM",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "Smart Classroom VDO",
+    "status": "available",
+    "image": "",
+    "description": "CLB 4202 Smart Classroom | Smart Classroom VDO | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.867Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 492,
+  "fields": {
+    "building": 76,
+    "name": "CLB4203SMARTCLASSROOM",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "Smart Classroom VDO",
+    "status": "available",
+    "image": "",
+    "description": "CLB 4203 Smart Classroom | Smart Classroom VDO | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.875Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 493,
+  "fields": {
+    "building": 86,
+    "name": "OARทองกวาวVDOSTUDIO",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "VDO Studio",
+    "status": "available",
+    "image": "",
+    "description": "OAR ทองกวาว VDO Studio | VDO Studio | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.884Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 494,
+  "fields": {
+    "building": 86,
+    "name": "OARยางนาOBSSTUDIO",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "OBS Studio",
+    "status": "available",
+    "image": "",
+    "description": "OAR ยางนา OBS Studio | OBS Studio | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.888Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 495,
+  "fields": {
+    "building": 87,
+    "name": "บัวบา1",
+    "floor": 2,
+    "capacity": 5,
+    "room_type": "ห้องกลุ่มย่อย",
+    "status": "available",
+    "image": "",
+    "description": "บัวบา 1 | ห้องกลุ่มย่อย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.893Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 496,
+  "fields": {
+    "building": 87,
+    "name": "บัวบา2",
+    "floor": 2,
+    "capacity": 5,
+    "room_type": "ห้องกลุ่มย่อย",
+    "status": "available",
+    "image": "",
+    "description": "บัวบา 2 | ห้องกลุ่มย่อย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.898Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 497,
+  "fields": {
+    "building": 87,
+    "name": "บัวบา4",
+    "floor": 2,
+    "capacity": 10,
+    "room_type": "ห้องกลุ่มย่อย",
+    "status": "available",
+    "image": "",
+    "description": "บัวบา 4 | ห้องกลุ่มย่อย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.902Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 498,
+  "fields": {
+    "building": 87,
+    "name": "บัวบา6",
+    "floor": 2,
+    "capacity": 10,
+    "room_type": "ห้องกลุ่มย่อย",
+    "status": "available",
+    "image": "",
+    "description": "บัวบา 6 | ห้องกลุ่มย่อย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.905Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 499,
+  "fields": {
+    "building": 87,
+    "name": "บัวบา7",
+    "floor": 2,
+    "capacity": 10,
+    "room_type": "ห้องกลุ่มย่อย",
+    "status": "available",
+    "image": "",
+    "description": "บัวบา 7 | ห้องกลุ่มย่อย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.909Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 500,
+  "fields": {
+    "building": 87,
+    "name": "บัวบา9",
+    "floor": 3,
+    "capacity": 15,
+    "room_type": "ห้องกลุ่มย่อย",
+    "status": "available",
+    "image": "",
+    "description": "บัวบา 9 | ห้องกลุ่มย่อย | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.914Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 501,
+  "fields": {
+    "building": 87,
+    "name": "ห้องบัวหลวง",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "ห้องบัวหลวง | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.920Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 502,
+  "fields": {
+    "building": 87,
+    "name": "ห้องESANZONE",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ห้องกิจกรรม",
+    "status": "available",
+    "image": "",
+    "description": "ห้อง Esan Zone | ห้องกิจกรรม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.923Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 503,
+  "fields": {
+    "building": 87,
+    "name": "LOCKARD",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ห้องเรียน",
+    "status": "available",
+    "image": "",
+    "description": "Lockard | ห้องเรียน | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.925Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 504,
+  "fields": {
+    "building": 88,
+    "name": "ห้องยางนา",
+    "floor": 1,
+    "capacity": 30,
+    "room_type": "ห้องประชุม",
+    "status": "available",
+    "image": "",
+    "description": "ห้องยางนา | ห้องประชุม | PC 0 เครื่อง",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.928Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 505,
+  "fields": {
+    "building": 73,
+    "name": "3C16-17",
+    "floor": 3,
+    "capacity": 50,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "ODL1_3C16-17: ห้องปฏิบัติการคอมพิวเตอร์ (50 ที่นั่ง)",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.936Z"
+  }
+},
+{
+  "model": "booking.room",
+  "pk": 506,
+  "fields": {
+    "building": 73,
+    "name": "4C05",
+    "floor": 4,
+    "capacity": 50,
+    "room_type": "ห้องปฏิบัติการคอมพิวเตอร์",
+    "status": "available",
+    "image": "",
+    "description": "ODL1_4C05: ห้องประชุม/VDO Conference",
+    "is_active": true,
+    "created_at": "2026-07-09T16:49:29.940Z"
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 224,
+  "fields": {
+    "name": "ระบบเสียง ไมค์ 8 ตัว โปรเจคเตอร์+จอแขวน PC พาร์ทิชั่น แอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 225,
+  "fields": {
+    "name": "โต๊ะพับ เก้าอี้บุนวม/พลาสติก แอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 226,
+  "fields": {
+    "name": "ตู้ลำโพง ไมค์ลอย แอร์ โต๊ะ เก้าอี้นวม/พลาสติก",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 227,
+  "fields": {
+    "name": "Flipboard 1 เครื่อง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 228,
+  "fields": {
+    "name": "PC 61 เครื่อง (Core i3/3.4-3.7GHz/8GB/240GB) โปรเจกเตอร์ ไมค์ ระบบเสียง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 229,
+  "fields": {
+    "name": "iMac 16 เครื่อง (Core i5/2.3GHz/8GB/1TB) โปรเจกเตอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 230,
+  "fields": {
+    "name": "PC 31 เครื่อง (Athlon X2/3.4GHz/8GB/250GB) โปรเจกเตอร์ ไมค์ ระบบเสียง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 231,
+  "fields": {
+    "name": "PC 61 เครื่อง (Core i3/3.3GHz/8GB/240GB) โปรเจกเตอร์ ไมค์ ระบบเสียง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 232,
+  "fields": {
+    "name": "PC 61 เครื่อง (Athlon X2/3.4GHz/8GB/240GB) โปรเจกเตอร์ ไมค์ ระบบเสียง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 233,
+  "fields": {
+    "name": "PC 51 เครื่อง (Core i5/3.0GHz/8GB/240GB) โปรเจกเตอร์ TV 43\" 2 เครื่อง ไมค์ ระบบเสียง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 234,
+  "fields": {
+    "name": "PC 1 เครื่อง (Core i5/8GB/1TB) Interactive โปรเจกเตอร์ Flipboard TV 55\" 2 เครื่อง ไมค์ ระบบเสียง VDO",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 235,
+  "fields": {
+    "name": "PC 1 เครื่อง (Core i5/8GB/1TB) โปรเจกเตอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 236,
+  "fields": {
+    "name": "PC 1 เครื่อง (Core i5/8GB/1TB) Interactive โปรเจกเตอร์ ไมค์ประชุม 9 ตัว ระบบเสียง ระบบ Video Conference",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 237,
+  "fields": {
+    "name": "All in One วิชวล โปรเจกเตอร์ 2 เครื่อง ระบบเสียง ไมค์สาย 1 ไมค์ลอย 2 แอร์ 3",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 238,
+  "fields": {
+    "name": "All in One วิชวล โปรเจกเตอร์ 1 ระบบเสียง ไมค์สาย 1 ไมค์ลอย 1 แอร์ 1",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 239,
+  "fields": {
+    "name": "All in One วิชวล โปรเจกเตอร์ 1 ระบบเสียง ไมค์สาย 1 ไมค์ลอย 1 แอร์ 2",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 240,
+  "fields": {
+    "name": "All in One วิชวล โปรเจกเตอร์ 2 ระบบเสียง ไมค์สาย 1 ไมค์ลอย 2 แอร์ 4",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 241,
+  "fields": {
+    "name": "All in One วิชวล โปรเจกเตอร์ 3 ระบบเสียง ไมค์สายเวที 2+รอบห้อง 4 ไมค์ลอย 2 แอร์ 14",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 242,
+  "fields": {
+    "name": "คอมพิวเตอร์ โปรเจคเตอร์ ไมโครโฟน",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 243,
+  "fields": {
+    "name": "ห้องเปล่า (ไม่มีเครื่อง)",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 244,
+  "fields": {
+    "name": "เครื่อง Plotter แอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 245,
+  "fields": {
+    "name": "PC 27 เครื่อง โปรเจกเตอร์ ระบบเสียง+ไมค์ แอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 246,
+  "fields": {
+    "name": "PC 50 เครื่อง โปรเจกเตอร์ ระบบเสียง+ไมค์ แอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 247,
+  "fields": {
+    "name": "เก้าอี้แลคเชอร์",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 248,
+  "fields": {
+    "name": "ไมค์ประชุม ไมค์ลอย 4 ตัว โปรเจกเตอร์ จอรับภาพแขวนมือดึง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 249,
+  "fields": {
+    "name": "ตัว U 40 ที่นั่ง | Show/Mixer 16ch | PC พรีเซน+บันทึกเสียง | โปรเจกเตอร์ วิชวลไลเซอร์ | ไมค์สาย+ไร้สาย | จอแขวนผนัง",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 250,
+  "fields": {
+    "name": "ตัว U | YAMAHA Mixer 24ch | ไมค์กด Bose | PC พรีเซน+บันทึกเสียง | โปรเจกเตอร์ วิชวลไลเซอร์ | ลำโพง Bose | ไมค์สาย+ไร้สาย | จอไฟฟ้า",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 251,
+  "fields": {
+    "name": "96 ที่นั่งแบบฟังบรรยาย | YAMAHA Mixer 32ch | PC พรีเซน+บันทึกเสียง | โปรเจกเตอร์ วิชวลไลเซอร์ | ลำโพง Bose | ไมค์สาย+ไร้สาย | จอมอเตอร์ไฟฟ้า",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 252,
+  "fields": {
+    "name": "โต๊ะกลม 10 ที่นั่ง | ไม่มีระบบเสียง | โปรเจกเตอร์ คอมพิวเตอร์ จอแขวน",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 253,
+  "fields": {
+    "name": "กล้อง Sony 4K | PC ตั้งโต๊ะ | จอ Touch screen",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 254,
+  "fields": {
+    "name": "PC | Webcam | WiFi | ระบบเสียง | Zoom/Teams/Meet/OBS/PowerPoint/Loom",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 255,
+  "fields": {
+    "name": "PC Touch screen | ไมค์ไร้สาย | กล้องติดตาม+กล้องคงที่ | เครื่องบันทึก | Acu Console/Room Tracker MP4",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 256,
+  "fields": {
+    "name": "Whiteboard (นำปากกามาเอง)",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.facility",
+  "pk": 257,
+  "fields": {
+    "name": "Whiteboard (นำปากกามาเอง) | จอ Samsung Flip2",
+    "icon": ""
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1697,
+  "fields": {
+    "room": 438,
+    "facility": 224,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1698,
+  "fields": {
+    "room": 439,
+    "facility": 225,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1699,
+  "fields": {
+    "room": 440,
+    "facility": 226,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1700,
+  "fields": {
+    "room": 441,
+    "facility": 225,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1701,
+  "fields": {
+    "room": 442,
+    "facility": 227,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1702,
+  "fields": {
+    "room": 443,
+    "facility": 228,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1703,
+  "fields": {
+    "room": 444,
+    "facility": 229,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1704,
+  "fields": {
+    "room": 445,
+    "facility": 230,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1705,
+  "fields": {
+    "room": 446,
+    "facility": 231,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1706,
+  "fields": {
+    "room": 447,
+    "facility": 232,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1707,
+  "fields": {
+    "room": 448,
+    "facility": 233,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1708,
+  "fields": {
+    "room": 449,
+    "facility": 234,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1709,
+  "fields": {
+    "room": 450,
+    "facility": 235,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1710,
+  "fields": {
+    "room": 451,
+    "facility": 233,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1711,
+  "fields": {
+    "room": 452,
+    "facility": 236,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1712,
+  "fields": {
+    "room": 453,
+    "facility": 237,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1713,
+  "fields": {
+    "room": 454,
+    "facility": 238,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1714,
+  "fields": {
+    "room": 455,
+    "facility": 239,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1715,
+  "fields": {
+    "room": 456,
+    "facility": 239,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1716,
+  "fields": {
+    "room": 457,
+    "facility": 240,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1717,
+  "fields": {
+    "room": 458,
+    "facility": 241,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1719,
+  "fields": {
+    "room": 470,
+    "facility": 243,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1720,
+  "fields": {
+    "room": 473,
+    "facility": 244,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1721,
+  "fields": {
+    "room": 474,
+    "facility": 245,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1722,
+  "fields": {
+    "room": 475,
+    "facility": 246,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1723,
+  "fields": {
+    "room": 477,
+    "facility": 247,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1724,
+  "fields": {
+    "room": 486,
+    "facility": 248,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1728,
+  "fields": {
+    "room": 487,
+    "facility": 252,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1729,
+  "fields": {
+    "room": 488,
+    "facility": 253,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1730,
+  "fields": {
+    "room": 489,
+    "facility": 254,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1731,
+  "fields": {
+    "room": 490,
+    "facility": 255,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1732,
+  "fields": {
+    "room": 491,
+    "facility": 255,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1733,
+  "fields": {
+    "room": 492,
+    "facility": 255,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1734,
+  "fields": {
+    "room": 495,
+    "facility": 256,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1735,
+  "fields": {
+    "room": 496,
+    "facility": 256,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1736,
+  "fields": {
+    "room": 497,
+    "facility": 256,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1737,
+  "fields": {
+    "room": 498,
+    "facility": 257,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1738,
+  "fields": {
+    "room": 499,
+    "facility": 256,
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.roomfacility",
+  "pk": 1739,
+  "fields": {
+    "room": 500,
+    "facility": 256,
+    "quantity": 1
+  }
+},
+{
   "model": "booking.demandforecast",
   "pk": 477163,
   "fields": {
