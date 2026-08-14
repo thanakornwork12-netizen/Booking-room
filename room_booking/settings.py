@@ -118,6 +118,9 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^http://localhost:\d+$',
     r'^http://127\.0\.0\.1:\d+$',
+    # Vercel สร้าง URL เพิ่มอัตโนมัติต่อ branch/deployment (booking-room-git-*,
+    # booking-room-<hash>-*) นอกเหนือจาก production domain ด้านบน
+    r'^https://booking-room-[a-z0-9-]*\.vercel\.app$',
 ]
 CORS_ALLOW_CREDENTIALS = True
 
