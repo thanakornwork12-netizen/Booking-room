@@ -581,6 +581,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                 User.objects.filter(username=username).first()
                 or User.objects.filter(username=pure_username).first()
                 or User.objects.filter(student_id=pure_username).first()
+                or User.objects.filter(email__iexact=username).first()
             )
 
             if not user or not user.check_password(password):

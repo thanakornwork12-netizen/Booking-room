@@ -13,13 +13,6 @@ const FACULTIES = [
   'เกษตรศาสตร์','ศิลปศาสตร์','สาธารณสุขศาสตร์','เภสัชศาสตร์',
 ]
 
-const ROLES = [
-  { value: 'student', label: 'นักศึกษา', icon: '🎓' },
-  { value: 'lecturer', label: 'อาจารย์', icon: '👨‍🏫' },
-  { value: 'staff', label: 'เจ้าหน้าที่', icon: '🏢' },
-  { value: 'admin', label: 'ผู้ดูแลระบบ', icon: '🔑' },
-]
-
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes rot{to{transform:rotate(360deg)}}
@@ -83,10 +76,7 @@ export default function RegisterPage() {
     if (!form.first_name) return setError('กรุณากรอกชื่อ-นามสกุล')
     if (!form.username) return setError('กรุณากรอกชื่อผู้ใช้')
     if (!form.email) return setError('กรุณากรอกอีเมล')
-    if (form.role === 'student') {
-      if (!form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
-      if (!/^\d+$/.test(form.student_id)) return setError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
-    }
+    if (form.student_id && !/^\d+$/.test(form.student_id)) return setError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
     setError('')
     setStep(2)
   }
@@ -265,23 +255,24 @@ export default function RegisterPage() {
                       />
                     </div>
                   </div>
-                  {form.role === 'student' && (
-                    <div className="au2">
-                      <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">รหัสนักศึกษา</label>
-                      <div className="relative">
-                        <Hash size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="เช่น 66114640275"
-                          className={inputCls}
-                          value={form.student_id}
-                          onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
-                          style={{ fontFamily: 'inherit' }}
-                        />
-                      </div>
+                  <div className="au2">
+                    <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-blue-700">
+                      รหัสนักศึกษา
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-blue-500">#ไม่บังคับ</span>
+                    </label>
+                    <div className="relative">
+                      <Hash size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="เช่น 66114640275 (อาจารย์ไม่ต้องกรอก)"
+                        className={inputCls}
+                        value={form.student_id}
+                        onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
+                        style={{ fontFamily: 'inherit' }}
+                      />
                     </div>
-                  )}
+                  </div>
                   <div className="au3">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">อีเมล</label>
                     <div className="relative">
@@ -294,27 +285,6 @@ export default function RegisterPage() {
                         onChange={e => set('email', e.target.value)}
                         style={{ fontFamily: 'inherit' }}
                       />
-                    </div>
-                  </div>
-
-                  <div className="au3">
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ประเภทผู้ใช้ (Role)</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {ROLES.map(r => (
-                        <button
-                          key={r.value}
-                          type="button"
-                          onClick={() => set('role', r.value)}
-                          className={`rounded-2xl border-2 px-2 py-3 text-center text-xs font-semibold shadow-sm transition-all
-                            ${form.role === r.value
-                              ? 'border-blue-700 bg-blue-700 text-white shadow-blue-200'
-                              : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50'
-                            }`}
-                        >
-                          <div className="mb-0.5 text-lg">{r.icon}</div>
-                          {r.label}
-                        </button>
-                      ))}
                     </div>
                   </div>
 
@@ -345,7 +315,7 @@ export default function RegisterPage() {
                 <div className="space-y-3.5 sm:space-y-4">
                   <div className="au2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
                     <p className="text-sm font-bold text-slate-800">{form.first_name}</p>
-                    <p className="mt-0.5 text-xs text-blue-500">{form.role.toUpperCase()} · {form.faculty || '—'}</p>
+                    <p className="mt-0.5 text-xs text-blue-500">{form.faculty || '—'}</p>
                   </div>
 
                   <div className="au2">

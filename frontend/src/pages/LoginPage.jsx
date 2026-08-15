@@ -202,13 +202,13 @@ export default function LoginPage() {
               <div className="space-y-3.5 sm:space-y-4">
                 <div>
                   <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">
-                    ชื่อผู้ใช้ / รหัสนักศึกษา
+                    ชื่อผู้ใช้ / รหัสนักศึกษา / อีเมล
                   </label>
                   <div className="relative">
                     <UserRound size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="เช่น somchai123 หรือ 66114640275"
+                      placeholder="เช่น somchai123, 66114640275 หรืออีเมล"
                       value={form.username}
                       onChange={e => setForm({ ...form, username: e.target.value })}
                       onKeyDown={e => e.key === 'Enter' && onSubmit()}
