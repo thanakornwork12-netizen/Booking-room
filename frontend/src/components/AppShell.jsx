@@ -841,6 +841,14 @@ function AppShell({ children }) {
             <div className="h-1.5 bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-600" />
             <div className="flex h-20 w-full items-center gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsMobileNavOpen(true)}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700 lg:hidden"
+              aria-label="Open navigation"
+            >
+              <Menu size={19} />
+            </button>
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-blue-700 shadow-[0_12px_28px_rgba(37,99,235,0.18)]">
               <Building2 size={24} />
             </div>
@@ -984,15 +992,6 @@ function AppShell({ children }) {
 
       <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} />
       <SupportModal open={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
-
-      <button
-        type="button"
-        className="fixed bottom-4 left-4 z-50 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-700 text-white shadow-lg shadow-blue-200 lg:hidden"
-        onClick={() => setIsMobileNavOpen(true)}
-        aria-label="Open navigation"
-      >
-        <Menu size={18} />
-      </button>
 
       {isMobileNavOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
