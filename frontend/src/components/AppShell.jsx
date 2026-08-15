@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
@@ -604,7 +605,9 @@ function NotificationBell() {
   const [notifications, setNotifications] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
+  const [panelPos, setPanelPos] = useState(null)
   const wsRef = useRef(null)
+  const buttonRef = useRef(null)
 
   const refetch = () => {
     api.get('/notifications/').then(res => {
@@ -656,11 +659,27 @@ function NotificationBell() {
     } catch { /* เดี๋ยวรอบหน้าค่อยลองใหม่ */ }
   }
 
+  const toggleOpen = () => {
+    setOpen(o => {
+      const next = !o
+      if (next && buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect()
+        const panelWidth = Math.min(384, window.innerWidth - 32) // sm:w-96 = 384px, w-[calc(100vw-2rem)] มือถือ
+        const margin = 16
+        let left = rect.right - panelWidth
+        left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin))
+        setPanelPos({ top: rect.bottom + 8, left })
+      }
+      return next
+    })
+  }
+
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={toggleOpen}
         className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
         aria-label="การแจ้งเตือน"
       >
@@ -672,10 +691,13 @@ function NotificationBell() {
         )}
       </button>
 
-      {open && (
+      {open && panelPos && createPortal(
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:w-96">
+          <div
+            className="fixed z-50 max-h-[70vh] w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:w-96"
+            style={{ top: panelPos.top, left: panelPos.left }}
+          >
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
               <p className="text-sm font-bold text-slate-900">การแจ้งเตือน</p>
               {unreadCount > 0 && (
@@ -711,7 +733,8 @@ function NotificationBell() {
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
