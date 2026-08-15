@@ -30,6 +30,14 @@ USE_TZ    = True
 # ระบุ Domain ที่อนุญาตให้เข้าถึง
 ALLOWED_HOSTS = ['room-booking-1-7u7e.onrender.com', 'localhost', '127.0.0.1', '*']
 
+# Django 4+ ต้องมี origin ที่เชื่อถือได้ชัดเจนถึงจะ accept POST แบบ
+# form-based (เช่น Django admin login, ปุ่มยกเลิก/check-in ในอีเมล) เวลา
+# request มาจาก HTTPS — ไม่งั้นได้ 403 "Origin checking failed" ทุกครั้ง
+CSRF_TRUSTED_ORIGINS = [
+    'https://booking-room-1rvd.onrender.com',
+    'https://booking-room-gray.vercel.app',
+]
+
 # ---------------- INSTALLED APPS ----------------
 INSTALLED_APPS = [
     'django.contrib.admin',
