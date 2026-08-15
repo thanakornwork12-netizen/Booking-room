@@ -173,7 +173,7 @@ function SettingsModal({ open, onClose, user }) {
     }
   }
 
-  const note = 'ถ้าเป็นบัญชี LDAP ให้เปลี่ยนรหัสผ่านที่ระบบมหาวิทยาลัย ส่วนบัญชีที่สมัครในระบบนี้จะเปลี่ยนได้ทันที'
+  const note = 'แนะนำให้ใช้รหัสผ่านที่เดายากและไม่ซ้ำกับบัญชีอื่น'
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -368,7 +368,7 @@ function SettingsModal({ open, onClose, user }) {
 
               <div className="flex items-center justify-between gap-3 pt-1">
                 <p className="text-xs leading-6 text-slate-500">
-                  ถ้าเป็นบัญชี LDAP ระบบจะข้ามการตรวจรหัสผ่านภายใน แต่ยังต้องยืนยันด้วยชื่อผู้ใช้และ DELETE
+                  ต้องยืนยันด้วยชื่อผู้ใช้และพิมพ์ DELETE ให้ถูกต้องก่อนลบบัญชี
                 </p>
                 <button
                   type="submit"

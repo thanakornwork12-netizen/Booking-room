@@ -6,6 +6,7 @@ import SearchPage from './pages/SearchPage'
 import AdminPage from './pages/AdminPage'
 import GuidePage from './pages/GuidePage'
 import AppShell from './components/AppShell'
+import SlowRequestBanner from './components/SlowRequestBanner'
 import { getUser } from './api/axios'
 
 const hasToken = () => !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
@@ -29,6 +30,7 @@ const AdminRoute = ({ children }) => {
 export default function App() {
   return (
     <BrowserRouter>
+      <SlowRequestBanner />
       <div className="app-container">
         <div className="app-scrollable">
           <Routes>

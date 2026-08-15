@@ -42,7 +42,7 @@ const SCHEDULE_ROOMS = [
 
 const FEATURE_CHIPS = [
   { icon: CalendarRange, label: 'จองง่าย',   sub: 'เลือกวัน เวลา ได้ทันที' },
-  { icon: ShieldIcon,    label: 'ปลอดภัย',   sub: 'เชื่อมต่อด้วยบัญชี LDAP' },
+  { icon: ShieldIcon,    label: 'ปลอดภัย',   sub: 'ข้อมูลถูกเข้ารหัส' },
   { icon: Bell,          label: 'แจ้งเตือน', sub: 'ไม่พลาดทุกการจอง' },
 ]
 
@@ -108,7 +108,7 @@ export default function LoginPage() {
           </h1>
           <div className="mt-3 h-1 w-14 rounded-full bg-blue-600" />
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            ค้นหาห้องว่าง จองรายวันหรือรายเทอม ด้วยบัญชี LDAP ของมหาวิทยาลัย
+            ค้นหาห้องว่าง จองรายวันหรือรายเทอมได้ทันที
           </p>
 
           {/* ── Schedule grid mock ──────────────────────────── */}

@@ -7,8 +7,43 @@ export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api\/$
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  // 60s ไม่ใช่ 15s เดิม — backend อยู่บน Render free tier ที่ sleep เวลาไม่มี
+  // คนใช้งาน request แรกหลัง sleep (cold start) อาจใช้เวลา 30-50 วินาทีกว่า
+  // จะตื่น ถ้า timeout สั้นกว่านั้น request จะพังก่อนที่ server จะตอบจริงๆ
+  timeout: 60000,
 })
+
+// ── แจ้งเตือน "เซิร์ฟเวอร์กำลังตื่น" ตอน request ช้าผิดปกติ (cold start) ───
+// ยิง CustomEvent ให้ component ไหนก็ได้ subscribe ได้ ไม่ผูกกับ UI ตรงนี้
+const SLOW_REQUEST_MS = 4000
+let slowRequestCount = 0
+
+function _notifySlow(isSlow) {
+  window.dispatchEvent(new CustomEvent('slow-request', { detail: { slow: isSlow } }))
+}
+
+api.interceptors.request.use(config => {
+  config._slowFired = false
+  config._slowTimer = setTimeout(() => {
+    config._slowFired = true
+    slowRequestCount += 1
+    _notifySlow(true)
+  }, SLOW_REQUEST_MS)
+  return config
+})
+
+function _clearSlowTimer(config) {
+  clearTimeout(config?._slowTimer)
+  if (config?._slowFired) {
+    slowRequestCount = Math.max(0, slowRequestCount - 1)
+    if (slowRequestCount === 0) _notifySlow(false)
+  }
+}
+
+api.interceptors.response.use(
+  res => { _clearSlowTimer(res.config); return res },
+  err => { _clearSlowTimer(err.config); return Promise.reject(err) },
+)
 
 // ── Dual-storage helpers: "จดจำการเข้าสู่ระบบ" → localStorage (คงอยู่ข้ามเซสชัน)
 // ไม่ติ๊ก → sessionStorage (หายเมื่อปิดแท็บ) ────────────────────────────────
