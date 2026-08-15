@@ -1012,6 +1012,8 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                   )
                 }
 
+                const demandLevel = getDemandLevel(selectedRoom)
+                const demandCfg = FORECAST_CONFIG[demandLevel]
                 return (
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                     <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-5 sm:p-6 space-y-3.5">
@@ -1023,6 +1025,15 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                         <h2 className="text-2xl font-bold text-slate-900 break-words">{selectedRoom.name}</h2>
                         <p className="mt-1 text-sm text-slate-500">{selectedRoom.building_name} · ชั้น {selectedRoom.floor} · {selectedRoom.room_type}</p>
                       </div>
+                      {demandLevel !== 'none' && (
+                        <div className={`flex items-center gap-2.5 rounded-2xl px-4 py-3 ${demandCfg.cardBg} border ${demandCfg.cardBorder}`}>
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: demandCfg.dotColor }} />
+                          <div className="min-w-0">
+                            <p className={`text-sm font-bold ${demandCfg.textCls}`}>{demandCfg.badge}</p>
+                            {demandCfg.sub && <p className={`text-xs ${demandCfg.subCls}`}>{demandCfg.sub}</p>}
+                          </div>
+                        </div>
+                      )}
                       <div className="grid gap-2.5 rounded-[24px] border border-slate-200 bg-slate-50 p-3.5 text-sm">
                         <div className="flex justify-between gap-4"><span className="text-slate-500">ประเภท</span><span className="font-semibold text-slate-900">{isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน'}</span></div>
                         <div className="flex justify-between gap-4"><span className="text-slate-500">วัน/วันที่</span><span className="font-semibold text-slate-900">{isTermMode ? `ทุก${getDayLabel(dayOfWeek)}` : formatDate(date)}</span></div>
