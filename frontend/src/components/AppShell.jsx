@@ -1095,7 +1095,25 @@ function AppShell({ children }) {
       )}
 
       <footer className="border-t border-blue-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] text-slate-700 shadow-[0_-10px_34px_rgba(37,99,235,0.10)]">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
+        {/* มือถือ: การ์ดย่อ 2 บรรทัด + ปุ่มเปิด modal ติดต่อ (ใช้ SupportModal เดิม) แทน
+            การ stack 3 คอลัมน์เต็มที่กินพื้นที่จอสูงมากบนจอแคบ */}
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-3 sm:hidden">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-white/90 px-4 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-bold text-slate-900">{supportInfo.organization}</p>
+              <p className="mt-0.5 truncate text-[11px] text-slate-400">{supportInfo.copyright}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSupportOpen(true)}
+              className="shrink-0 rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-bold text-blue-700"
+            >
+              ติดต่อ
+            </button>
+          </div>
+        </div>
+
+        <div className="mx-auto hidden w-full max-w-[1600px] px-4 py-5 sm:block sm:px-6 lg:px-8">
           <div className="overflow-hidden rounded-[28px] border border-blue-100 bg-white/90 shadow-[0_18px_50px_rgba(37,99,235,0.08)] backdrop-blur-xl">
             <div className="h-1.5 bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-600" />
             <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.2fr_0.9fr_0.9fr]">
