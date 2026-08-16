@@ -669,6 +669,8 @@ function NotificationBell() {
         let left = rect.right - panelWidth
         left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin))
         setPanelPos({ top: rect.bottom + 8, left })
+        // เปิดดูแล้วถือว่าอ่านเลย ไม่ต้องรอกดทีละอันหรือกด "อ่านทั้งหมด" เอง
+        if (unreadCount > 0) markAllRead()
       }
       return next
     })
