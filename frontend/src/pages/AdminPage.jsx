@@ -1094,9 +1094,9 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
 
   return (
     <div className="au flex flex-col gap-4 max-h-[calc(100vh-11rem)] overflow-y-auto pr-1 pb-4">
-      <div className="bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white rounded-3xl p-6 shadow-xl shadow-blue-900/20 overflow-hidden relative">
+      <div className="bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white rounded-3xl p-6 shadow-xl shadow-blue-900/20 relative">
         <div
-          className="absolute inset-0 opacity-15 pointer-events-none"
+          className="absolute inset-0 opacity-15 pointer-events-none rounded-3xl overflow-hidden"
           style={{
             background:
               'radial-gradient(circle at top right, #fde047 0%, transparent 28%), radial-gradient(circle at bottom left, #38bdf8 0%, transparent 35%)',
