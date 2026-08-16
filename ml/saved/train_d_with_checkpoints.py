@@ -228,11 +228,10 @@ def plot_metric_curve(by_epoch: dict, epochs: list, png_path: str, metric: str =
     panels = [
         ('fixed_ensemble', 'Fixed Ensemble (20/40/40)', '#9e9e9e'),
         ('adaptive_ensemble', 'Adaptive Ensemble (model decides)', '#2b8cbe'),
-        ('lstm', 'LSTM (solo, for reference)', '#ff7f0e'),
     ]
 
     with plt.style.context({'axes.grid': True, 'grid.alpha': 0.45, 'font.size': 10}):
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5.5), dpi=300, sharey=True)
+        fig, axes = plt.subplots(1, 2, figsize=(11, 5.5), dpi=300, sharey=True)
         all_values = []
         for ax, (key, title, color) in zip(axes, panels):
             vals = [np.mean([r['metrics'][key][metric] for r in by_epoch[e]]) for e in epochs]
