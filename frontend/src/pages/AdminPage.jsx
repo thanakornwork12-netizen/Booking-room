@@ -1627,7 +1627,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
   const tabs = [
     {key:'active',   label:'จอง',     count:currentB.length},
     {key:'rooms',    label:'ห้อง',    count:adminRooms?.length ?? null},
-    {key:'maintenance', label:'ซ่อม', count:null},
+    {key:'maintenance', label:'ซ่อม AI', count:null},
     {key:'overview', label:'ภาพรวม',  count:null},
     {key:'all',      label:'ทั้งหมด', count:bookings.length},
   ]
