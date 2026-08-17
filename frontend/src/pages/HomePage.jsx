@@ -611,7 +611,7 @@ export default function HomePage() {
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-100">Welcome back</p>
-                <h1 className="mt-2 text-2xl font-extrabold leading-tight sm:text-3xl">สวัสดี {displayName}</h1>
+                <h1 className="mt-2 break-words text-2xl font-extrabold leading-tight sm:text-3xl lg:text-2xl">สวัสดี {displayName}</h1>
                 <p className="mt-2 text-sm text-blue-50/90">{user?.faculty || 'ระบบจองห้องประชุม'}</p>
               </div>
               <button
