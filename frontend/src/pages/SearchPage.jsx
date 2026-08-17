@@ -84,19 +84,29 @@ const FALLBACK_EQUIPMENT_PRESETS = [
   { key: 'sound',      label: 'ระบบเสียง', shortLabel: 'เสียง', icon: '🔊', keywords: ['ระบบเสียง', 'เครื่องเสียง', 'ลำโพง', 'mixer'], group_key: 'sound', group_label: 'ระบบเสียง', is_category: true },
   { key: 'tv',         label: 'TV / จอแสดงผล', shortLabel: 'TV/จอ', icon: '📺', keywords: ['tv', 'จอแสดงผล', 'จอ ', 'จอแขวน', 'จอมอเตอร์', 'จอไฟฟ้า', 'นิ้ว'], group_key: 'tv', group_label: 'TV / จอแสดงผล', is_category: true },
   { key: 'video_conf', label: 'Video Conference', shortLabel: 'VDO Conf', icon: '📹', keywords: ['video conference', 'วีดีโอ', 'vdo', 'webcam', 'zoom', 'teams', 'meet'], group_key: 'video_conf', group_label: 'Video Conference', is_category: true },
+  { key: 'flipboard', label: 'Flipboard', shortLabel: 'Flipboard', icon: '📋', keywords: ['flipboard', 'flip2'], group_key: 'flipboard', group_label: 'Flipboard', is_category: true },
+  { key: 'interactive', label: 'โปรเจกเตอร์อินเทอร์แอคทีฟ', shortLabel: 'อินเทอร์แอคทีฟ', icon: '🖊️', keywords: ['อินเทอร์แอคทีฟ', 'interactive', 'touch screen'], group_key: 'interactive', group_label: 'โปรเจกเตอร์อินเทอร์แอคทีฟ', is_category: true },
 ]
 
+// keyword ของแต่ละ preset ต้องครอบคลุมเท่ากับ category ที่ backend ให้มา
+// (booking/views.py equipment_filters) ไม่งั้นปุ่ม quick preset จะกรองห้องตกหล่น
+// เทียบกับถ้าเลือกผ่าน chip category ตรงๆ ทั้งที่ควรให้ผลเหมือนกัน
 const QUICK_EQUIPMENT_PRESETS = [
-  { key: 'presentation_ready', label: 'นำเสนอ / บรรยาย', shortLabel: 'นำเสนอ', icon: '📽️', hint: 'โปรเจกเตอร์ + จอ', keywords: ['โปรเจกเตอร์', 'projector', 'จอ'] },
-  { key: 'computer_lab', label: 'คอมพิวเตอร์แลบ', shortLabel: 'คอมแลบ', icon: '💻', hint: 'PC / iMac', keywords: ['pc', 'คอมพิวเตอร์', 'imac'] },
-  { key: 'audio_room', label: 'ประชุมพร้อมเสียง', shortLabel: 'ระบบเสียง', icon: '🔊', hint: 'ไมค์ + ลำโพง', keywords: ['ไมค์', 'ระบบเสียง', 'ลำโพง'] },
-  { key: 'video_meeting', label: 'Video Conference', shortLabel: 'วิดีโอ', icon: '📹', hint: 'กล้อง / Zoom', keywords: ['video conference', 'zoom', 'กล้อง'] },
+  { key: 'presentation_ready', label: 'นำเสนอ / บรรยาย', shortLabel: 'นำเสนอ', icon: '📽️', hint: 'โปรเจกเตอร์ + จอ', keywords: ['โปรเจกเตอร์', 'โปรเจคเตอร์', 'projector', 'จอ'] },
+  { key: 'computer_lab', label: 'คอมพิวเตอร์แลบ', shortLabel: 'คอมแลบ', icon: '💻', hint: 'PC / iMac', keywords: ['pc', 'คอมพิวเตอร์', 'computer', 'imac'] },
+  { key: 'audio_room', label: 'ประชุมพร้อมเสียง', shortLabel: 'ระบบเสียง', icon: '🔊', hint: 'ไมค์ + ลำโพง', keywords: ['ไมค์', 'ไมโครโฟน', 'microphone', 'ระบบเสียง', 'เครื่องเสียง', 'ลำโพง', 'mixer'] },
+  { key: 'video_meeting', label: 'Video Conference', shortLabel: 'วิดีโอ', icon: '📹', hint: 'กล้อง / Zoom', keywords: ['video conference', 'zoom', 'กล้อง', 'วีดีโอ', 'vdo', 'webcam', 'teams', 'meet'] },
 ]
+
+// key พวกนี้ถูกครอบคลุมโดย QUICK_EQUIPMENT_PRESETS อยู่แล้ว (นำเสนอ→projector,
+// คอมพิวเตอร์แลบ→computer, ประชุมพร้อมเสียง→microphone/sound, Video Conference→video_conf)
+// ไม่งั้นจะโผล่ซ้ำเป็นปุ่มคนละอันที่หน้าตาเหมือนกัน
+const QUICK_PRESET_COVERED_KEYS = ['computer', 'projector', 'microphone', 'sound', 'video_conf']
 
 const getEquipmentOptions = (presets = []) => {
   const categoryOptions = (presets?.length ? presets : FALLBACK_EQUIPMENT_PRESETS)
     .filter(eq => eq.is_category)
-    .filter(eq => !['computer', 'projector', 'microphone', 'sound'].includes(eq.key))
+    .filter(eq => !QUICK_PRESET_COVERED_KEYS.includes(eq.key))
   return [...QUICK_EQUIPMENT_PRESETS, ...categoryOptions]
 }
 
