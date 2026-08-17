@@ -24,7 +24,7 @@
 #  Outputs:
 #    metrics_plots/d_checkpoint_curve.jsonl   (per-room, per-checkpoint detail)
 #    metrics_plots/d_checkpoint_curve.csv     (aggregated per-checkpoint)
-#    metrics_plots/d_checkpoint_curve.png     (3-panel epoch curve, Set D only)
+#    metrics_plots/d_checkpoint_curve.png     (2x2: accuracy+loss x Fixed/Adaptive, Set D only)
 #
 #  Usage: python ml/saved/train_d_with_checkpoints.py
 #  Takes hours — same order of magnitude as the original D training run.
@@ -206,7 +206,7 @@ def plot_checkpoint_curve(jsonl_path, png_path):
         by_epoch.setdefault(r['checkpoint_epoch'], []).append(r)
 
     epochs = sorted(by_epoch.keys())
-    plot_metric_curve(by_epoch, epochs, png_path, metric='accuracy')
+    plot_combined_curve(by_epoch, epochs, png_path)
 
     rows = []
     for e in epochs:
@@ -221,36 +221,45 @@ def plot_checkpoint_curve(jsonl_path, png_path):
     pd.DataFrame(rows).to_csv(CSV_PATH, index=False)
 
 
-def plot_metric_curve(by_epoch: dict, epochs: list, png_path: str, metric: str = 'accuracy'):
-    """metric='accuracy' -> d_checkpoint_curve.png; metric='loss' -> d_checkpoint_curve_loss.png.
-    Pure plotting, reusable for a quick re-plot without retraining."""
-    is_loss = metric == 'loss'
+def plot_combined_curve(by_epoch: dict, epochs: list, png_path: str):
+    """รวม accuracy (แถวบน) กับ loss (แถวล่าง) ไว้ในรูปเดียว 2x2 (Fixed/Adaptive
+    x accuracy/loss) แทนที่จะแยกเป็น d_checkpoint_curve.png กับ
+    d_checkpoint_curve_loss.png คนละไฟล์เหมือนเดิม — pure plotting, เรียกซ้ำ
+    เพื่อ re-plot ได้โดยไม่ต้อง retrain"""
     panels = [
         ('fixed_ensemble', 'Fixed Ensemble (20/40/40)', '#9e9e9e'),
         ('adaptive_ensemble', 'Adaptive Ensemble (model decides)', '#2b8cbe'),
     ]
+    rows = [
+        ('accuracy', 'Accuracy', 'Ensemble Accuracy'),
+        ('loss', 'Loss', 'Loss (cross-entropy)'),
+    ]
 
     with plt.style.context({'axes.grid': True, 'grid.alpha': 0.45, 'font.size': 10}):
-        fig, axes = plt.subplots(1, 2, figsize=(11, 5.5), dpi=300, sharey=True)
-        all_values = []
-        for ax, (key, title, color) in zip(axes, panels):
-            vals = [np.mean([r['metrics'][key][metric] for r in by_epoch[e]]) for e in epochs]
-            all_values.extend(vals)
-            ax.plot(epochs, vals, color=color, linewidth=2.5, marker='o', markersize=5)
-            ax.set_title(title, fontweight='bold')
-            ax.set_xlabel('Epoch / Round')
-            ax.grid(True, alpha=0.45)
-        if is_loss:
-            lo, hi = min(all_values), max(all_values)
-            pad = (hi - lo) * 0.1 or 0.1
-            for ax in axes:
-                ax.set_ylim(max(0, lo - pad), hi + pad)
-        else:
-            for ax in axes:
-                ax.set_ylim(0.0, 1.05)
-        axes[0].set_ylabel('Loss (cross-entropy)' if is_loss else 'Ensemble Accuracy')
+        fig, axes = plt.subplots(2, 2, figsize=(11, 10), dpi=300, sharex=True)
+        for row_idx, (metric, row_title, ylabel) in enumerate(rows):
+            row_axes = axes[row_idx]
+            all_values = []
+            for ax, (key, title, color) in zip(row_axes, panels):
+                vals = [np.mean([r['metrics'][key][metric] for r in by_epoch[e]]) for e in epochs]
+                all_values.extend(vals)
+                ax.plot(epochs, vals, color=color, linewidth=2.5, marker='o', markersize=5)
+                ax.set_title(f'{row_title}: {title}', fontweight='bold', fontsize=11)
+                ax.grid(True, alpha=0.45)
+                if row_idx == len(rows) - 1:
+                    ax.set_xlabel('Epoch / Round')
+            if metric == 'loss':
+                lo, hi = min(all_values), max(all_values)
+                pad = (hi - lo) * 0.1 or 0.1
+                for ax in row_axes:
+                    ax.set_ylim(max(0, lo - pad), hi + pad)
+            else:
+                for ax in row_axes:
+                    ax.set_ylim(0.0, 1.05)
+            row_axes[0].set_ylabel(ylabel)
+
         fig.suptitle(
-            f'Set D: {"Loss" if is_loss else "Accuracy"} vs Training Round (real checkpoints, no retraining trick)',
+            'Set D: Accuracy & Loss vs Training Round (real checkpoints, no retraining trick)',
             fontweight='bold', fontsize=13,
         )
         fig.text(
@@ -259,7 +268,7 @@ def plot_metric_curve(by_epoch: dict, epochs: list, png_path: str, metric: str =
             'LGB/XGB use partial-round prediction on the already-trained Set D boosters (no retraining for those two).',
             ha='center', fontsize=8, style='italic',
         )
-        plt.tight_layout(rect=[0, 0.03, 1, 0.93])
+        plt.tight_layout(rect=[0, 0.02, 1, 0.95])
         plt.savefig(png_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
         plt.close(fig)
 
@@ -280,11 +289,8 @@ def main():
             by_epoch.setdefault(r['checkpoint_epoch'], []).append(r)
         epochs = sorted(by_epoch.keys())
         print(f"📋 {len(records)} records across {len(epochs)} checkpoint epoch(s): {epochs}")
-        plot_metric_curve(by_epoch, epochs, PNG_PATH, metric='accuracy')
+        plot_combined_curve(by_epoch, epochs, PNG_PATH)
         print(f"📄 Saved: {PNG_PATH}")
-        loss_png = os.path.join(METRICS_DIR, 'd_checkpoint_curve_loss.png')
-        plot_metric_curve(by_epoch, epochs, loss_png, metric='loss')
-        print(f"📄 Saved: {loss_png}")
         return
 
     print("=" * 70)
@@ -313,19 +319,6 @@ def main():
     plot_checkpoint_curve(JSONL_PATH, PNG_PATH)
     print(f"📄 Saved: {CSV_PATH}")
     print(f"📄 Saved: {PNG_PATH}")
-
-    records = []
-    with open(JSONL_PATH, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                records.append(json.loads(line))
-    by_epoch = {}
-    for r in records:
-        by_epoch.setdefault(r['checkpoint_epoch'], []).append(r)
-    loss_png = os.path.join(METRICS_DIR, 'd_checkpoint_curve_loss.png')
-    plot_metric_curve(by_epoch, sorted(by_epoch.keys()), loss_png, metric='loss')
-    print(f"📄 Saved: {loss_png}")
     print("\n" + "=" * 70)
 
 
