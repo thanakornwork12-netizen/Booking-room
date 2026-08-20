@@ -91,18 +91,24 @@ export default function LandingPage() {
       <style>{FLOAT_ANIM}</style>
 
       {/* ── Navbar ─────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-slate-100 bg-white/80 shadow-sm backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
-          <p className="text-lg font-extrabold text-blue-700">🏫 UBU Smart Booking</p>
-          <button
-            type="button"
-            onClick={goToApp}
-            className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm shadow-blue-500/20 transition-all hover:-translate-y-0.5 hover:shadow-md hover:shadow-blue-500/30"
-          >
-            {loggedIn ? 'ไปที่หน้าหลัก' : 'เข้าสู่ระบบ'}
-          </button>
+      {/* สไตล์เดียวกับ header ของ AppShell (หน้า Home/ค้นหา/คู่มือ) — การ์ดขาวมี
+          แถบ gradient บนสุด ลอยอยู่บนพื้นหลังไล่สีฟ้าอ่อน ให้ดูเป็นเว็บชุดเดียวกัน */}
+      <header className="sticky top-0 z-30 border-b border-blue-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] shadow-[0_10px_34px_rgba(37,99,235,0.10)]">
+        <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 lg:px-8">
+          <div className="overflow-hidden rounded-[26px] border border-blue-100 bg-white shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
+            <div className="h-1.5 bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-600" />
+            <div className="flex items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
+              <p className="text-lg font-extrabold text-blue-700">🏫 UBU Smart Booking</p>
+              <button
+                type="button"
+                onClick={goToApp}
+                className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm shadow-blue-500/20 transition-all hover:-translate-y-0.5 hover:shadow-md hover:shadow-blue-500/30"
+              >
+                {loggedIn ? 'ไปที่หน้าหลัก' : 'เข้าสู่ระบบ'}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="h-[2px] bg-gradient-to-r from-blue-500/40 via-purple-500/40 to-transparent" />
       </header>
 
       {/* ── Hero ───────────────────────────────────────── */}
