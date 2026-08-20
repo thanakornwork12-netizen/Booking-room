@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Clock, Users, Search, X, XCircle,
   Building2, ChevronRight, CheckCircle2,
-  ArrowRight, BookOpen, Zap, AlertCircle, History
+  ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
 
@@ -609,8 +609,15 @@ export default function HomePage() {
       {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} userId={user?.id} />}
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 sm:gap-5">
+        <button
+          onClick={() => navigate('/')}
+          className="flex w-fit items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline"
+        >
+          <ArrowLeft size={14} /> หน้าแนะนำระบบ
+        </button>
+
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
-          <div className="lg:col-span-4 rounded-[26px] bg-gradient-to-br from-blue-600 to-indigo-600 p-4 text-white shadow-[0_18px_50px_rgba(37,99,235,0.22)]">
+          <div className="lg:col-span-4 rounded-2xl bg-blue-700 p-4 text-white shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-100">Welcome back</p>
@@ -627,24 +634,18 @@ export default function HomePage() {
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 onClick={() => navigate('/search')}
-                className="rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-transform hover:-translate-y-0.5"
+                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-transform hover:-translate-y-0.5"
               >
                 จองห้องประชุม
               </button>
               {user?.role && ['admin','staff'].includes(user.role) && (
                 <button
                   onClick={() => navigate('/admin/dashboard')}
-                  className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
                 >
                   ไป Dashboard
                 </button>
               )}
-              <button
-                onClick={() => navigate('/')}
-                className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-              >
-                หน้าแนะนำระบบ
-              </button>
             </div>
           </div>
 
@@ -658,7 +659,7 @@ export default function HomePage() {
         </section>
 
         {todayFeed.length > 0 && (
-          <section className="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+          <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Zap size={16} className="text-amber-500" />
@@ -703,8 +704,8 @@ export default function HomePage() {
         )}
 
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
-          <div className="flex min-h-[260px] flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <div className="flex items-center gap-2 border-b border-blue-100 bg-gradient-to-r from-purple-50 via-white to-blue-50 px-4 py-3">
+          <div className="flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
               <BookOpen size={16} className="text-purple-600" />
               <span className="text-sm font-bold text-slate-800">วิชาที่จอง (รายเทอม)</span>
             </div>
@@ -738,8 +739,8 @@ export default function HomePage() {
             )}
           </div>
 
-          <div className="lg:col-span-2 flex min-h-[260px] flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/40 px-4 py-3">
+          <div className="lg:col-span-2 flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
               <div className="flex min-w-0 items-center gap-2">
                 <CalendarDays size={16} className="shrink-0 text-blue-600" />
                 <span className="truncate text-sm font-bold text-slate-800">การจองของฉัน (รายวัน)</span>
@@ -755,7 +756,7 @@ export default function HomePage() {
                 <p className="mb-4 text-sm font-medium text-slate-500">ยังไม่มีการจองห้องประชุม</p>
                 <button
                   onClick={() => navigate('/search')}
-                  className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition-colors hover:from-blue-700 hover:to-indigo-700"
+                  className="rounded-full bg-blue-700 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
                 >
                   จองห้องเลย
                 </button>
