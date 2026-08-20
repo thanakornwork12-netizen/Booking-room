@@ -447,8 +447,9 @@ class RoomViewSet(viewsets.ModelViewSet):
         building_code = (d.get('building_code') or '').strip()
         room_type     = (d.get('room_type') or '').strip()
 
+        # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ — เหมือน _search_dynamic/_search_term
         base_qs = Room.objects.filter(
-            is_active=True, status='available',
+            is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
         ).select_related('building').prefetch_related(
             'room_facilities__facility', 'forecasts',
         )
@@ -879,7 +880,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         preferred_room = None
         if preferred_room_id is not None:
             preferred_room = Room.objects.filter(
-                id=preferred_room_id, is_active=True, status='available'
+                id=preferred_room_id, is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
             ).select_related('building').first()
 
         def is_room_blocked(room_obj, period_start, period_end):
@@ -928,10 +929,12 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
             return score
 
+        # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ — เหมือน _search_dynamic/_search_term
         base_qs = Room.objects.filter(
             is_active=True,
             status='available',
             capacity__gte=attendees,
+            id__in=AI_FORECAST_ROOM_IDS,
         ).select_related('building')
         if building_code:
             preferred_rooms = list(base_qs.filter(building__code=building_code).order_by('capacity', 'name'))
