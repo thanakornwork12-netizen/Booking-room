@@ -49,32 +49,6 @@ const STATS = [
   { value: '4', label: 'บทบาทที่รองรับ' },
 ]
 
-function DashboardMock() {
-  const rows = [
-    { room: '2C09', level: 'ต่ำ', color: 'bg-emerald-500' },
-    { room: '3C05-06', level: 'ปานกลาง', color: 'bg-amber-400' },
-    { room: '1C-MEETING', level: 'ด่วน', color: 'bg-rose-500' },
-  ]
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-bold text-slate-800">ห้องแนะนำวันนี้</p>
-        <span className="text-xs font-semibold text-slate-400">อัปเดตล่าสุด</span>
-      </div>
-      <div className="mt-4 space-y-2.5">
-        {rows.map(r => (
-          <div key={r.room} className="flex items-center justify-between rounded-xl bg-slate-50 px-3.5 py-2.5">
-            <span className="text-sm font-semibold text-slate-700">{r.room}</span>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-white ${r.color}`}>
-              {r.level}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export default function LandingPage() {
   const navigate = useNavigate()
 
@@ -95,34 +69,31 @@ export default function LandingPage() {
       </header>
 
       {/* ── Hero ───────────────────────────────────────── */}
-      <section className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:px-8 lg:grid-cols-2 lg:items-center lg:py-20">
-        <div>
-          <h1 className="text-3xl font-extrabold leading-tight text-blue-700 sm:text-4xl">
-            ระบบจองห้องอัจฉริยะ
-            <span className="mt-1 block text-indigo-600">มหาวิทยาลัยอุบลราชธานี</span>
-          </h1>
-          <p className="mt-4 max-w-lg text-sm leading-7 text-slate-600 sm:text-base">
-            ยกระดับการจัดการพื้นที่การศึกษาด้วยเทคโนโลยี AI ที่ช่วยคาดการณ์และแนะนำห้องที่เหมาะสมที่สุดสำหรับคุณ
-            พร้อมระบบค้นหาตามอุปกรณ์และจัดการตารางเวลาอย่างมีประสิทธิภาพ
-          </p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/login')}
-              className="rounded-full bg-blue-700 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-800"
-            >
-              เข้าสู่ระบบ
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/login')}
-              className="rounded-full border border-blue-200 px-6 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-50"
-            >
-              ดูวิธีใช้งาน
-            </button>
-          </div>
+      <section className="mx-auto max-w-3xl px-5 py-14 text-center sm:px-8 lg:py-20">
+        <h1 className="text-3xl font-extrabold leading-tight text-blue-700 sm:text-4xl">
+          ระบบจองห้องอัจฉริยะ
+          <span className="mt-1 block text-indigo-600">มหาวิทยาลัยอุบลราชธานี</span>
+        </h1>
+        <p className="mx-auto mt-4 max-w-lg text-sm leading-7 text-slate-600 sm:text-base">
+          ยกระดับการจัดการพื้นที่การศึกษาด้วยเทคโนโลยี AI ที่ช่วยคาดการณ์และแนะนำห้องที่เหมาะสมที่สุดสำหรับคุณ
+          พร้อมระบบค้นหาตามอุปกรณ์และจัดการตารางเวลาอย่างมีประสิทธิภาพ
+        </p>
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/login')}
+            className="rounded-full bg-blue-700 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-800"
+          >
+            เข้าสู่ระบบ
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/login')}
+            className="rounded-full border border-blue-200 px-6 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-50"
+          >
+            ดูวิธีใช้งาน
+          </button>
         </div>
-        <DashboardMock />
       </section>
 
       {/* ── Features ───────────────────────────────────── */}
