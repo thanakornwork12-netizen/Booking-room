@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const hasToken = () => !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
@@ -54,11 +53,10 @@ const STATS = [
 
 export default function LandingPage() {
   const navigate = useNavigate()
-
-  // คนที่ล็อกอินค้างอยู่แล้วไม่ควรเห็นหน้าโฆษณานี้ซ้ำ — เด้งไป Dashboard ทันที
-  useEffect(() => {
-    if (hasToken()) navigate('/home', { replace: true })
-  }, [navigate])
+  // ผู้ใช้ที่ล็อกอินอยู่แล้วเข้าหน้านี้ได้ตามปกติ (เช่นกดกลับมาดูจากหน้า Dashboard)
+  // แค่เปลี่ยนปุ่ม CTA ให้พาไปหน้าหลักแทนหน้า login ที่ไม่จำเป็นอีกแล้ว
+  const loggedIn = hasToken()
+  const goToApp = () => navigate(loggedIn ? '/home' : '/login')
 
   return (
     <div className="min-h-screen w-full bg-slate-50 text-slate-900">
@@ -68,10 +66,10 @@ export default function LandingPage() {
           <p className="text-lg font-extrabold text-blue-700">🏢 UBU Smart Booking</p>
           <button
             type="button"
-            onClick={() => navigate('/login')}
+            onClick={goToApp}
             className="rounded-full bg-blue-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-800"
           >
-            เข้าสู่ระบบ
+            {loggedIn ? 'ไปที่หน้าหลัก' : 'เข้าสู่ระบบ'}
           </button>
         </div>
       </header>
@@ -89,14 +87,14 @@ export default function LandingPage() {
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           <button
             type="button"
-            onClick={() => navigate('/login')}
+            onClick={goToApp}
             className="rounded-full bg-blue-700 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-800"
           >
-            เข้าสู่ระบบ
+            {loggedIn ? 'ไปที่หน้าหลัก' : 'เข้าสู่ระบบ'}
           </button>
           <button
             type="button"
-            onClick={() => navigate('/login')}
+            onClick={() => navigate(loggedIn ? '/guide' : '/login')}
             className="rounded-full border border-blue-200 px-6 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-50"
           >
             ดูวิธีใช้งาน

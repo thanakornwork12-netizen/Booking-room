@@ -485,19 +485,22 @@ export default function HomePage() {
   const [rebookBooking, setRebookBooking] = useState(null)
   const [showTutorial, setShowTutorial] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const [todayFeed, setTodayFeed] = useState([])
 
   const load = async () => {
     setLoading(true)
     setLoadError(false)
     try {
-      const [p, b, t] = await Promise.all([
+      const [p, b, t, feed] = await Promise.all([
         api.get('/auth/profile/'),
         api.get('/bookings/'),
-        api.get('/term-bookings/').catch(() => ({ data: [] }))
+        api.get('/term-bookings/').catch(() => ({ data: [] })),
+        api.get('/rooms/today-feed/').catch(() => ({ data: [] })),
       ])
       setUser(p.data)
       setBookings(b.data.results || b.data || [])
       setTermBookings(Array.isArray(t.data) ? t.data : (t.data.results || []))
+      setTodayFeed(Array.isArray(feed.data) ? feed.data : [])
       if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
     } catch (err) {
       console.error("Load Data Error", err)
@@ -636,6 +639,12 @@ export default function HomePage() {
                   ไป Dashboard
                 </button>
               )}
+              <button
+                onClick={() => navigate('/')}
+                className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+              >
+                หน้าแนะนำระบบ
+              </button>
             </div>
           </div>
 
@@ -647,6 +656,46 @@ export default function HomePage() {
             <StatCard label="รายเทอม" value={termBookings.length} color="text-purple-600" bg="bg-purple-50" icon={BookOpen} />
           </div>
         </section>
+
+        {todayFeed.length > 0 && (
+          <section className="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Zap size={16} className="text-amber-500" />
+                <span className="text-sm font-bold text-slate-800">ห้องว่างตอนนี้</span>
+              </div>
+              <button
+                onClick={() => navigate('/search')}
+                className="text-xs font-semibold text-blue-700 hover:underline"
+              >
+                ดูทั้งหมด
+              </button>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {todayFeed.map(room => (
+                <button
+                  key={room.id}
+                  onClick={() => navigate('/search', {
+                    state: {
+                      quickRoom: room,
+                      quickStartTime: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+                    },
+                  })}
+                  className="w-48 shrink-0 rounded-2xl border border-slate-100 bg-white p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> ว่างตอนนี้
+                  </div>
+                  <p className="mt-1.5 truncate text-sm font-bold text-slate-900">{room.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">{room.building_name}</p>
+                  <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400">
+                    <Users size={11} /> รองรับ {room.capacity} คน
+                  </p>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
           <div className="flex min-h-[260px] flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">

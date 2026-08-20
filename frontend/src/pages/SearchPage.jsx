@@ -12,8 +12,11 @@ import api from '../api/axios'
 const DEFAULT_BUILDINGS = [{ code: '', label: 'ทั้งหมด' }]
 const TIME_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00']
 const DURATIONS  = [{ label: '1 ชม.', hours: 1 },{ label: '2 ชม.', hours: 2 },{ label: '3 ชม.', hours: 3 }]
-const ATTENDEES_PRESETS = [2, 5, 10, 20, 30, 50]
-const CAPACITY_BUFFER   = 10
+// ห้องที่มีข้อมูล AI จริง (ดู AI_FORECAST_ROOM_IDS ฝั่ง backend) ตอนนี้เป็นห้อง
+// Lab คอมพิวเตอร์ขนาดใหญ่ล้วน (ความจุ 31-61 คน) ไม่มีห้องเล็ก — ปรับค่าเริ่มต้น/
+// ขั้นต่ำผู้เข้าร่วมเป็น 20 คน ให้ตรงกับห้องที่มีจริง กันค้นหากลุ่มเล็กแล้วไม่เจอห้องเลย
+const MIN_ATTENDEES     = 20
+const ATTENDEES_PRESETS = [20, 30, 40, 50, 60]
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'จ.',  full: 'วันจันทร์' },
@@ -718,7 +721,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                           <span className="text-sm font-bold text-blue-700">{attendees} คน</span>
                         </div>
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 mb-2">
-                          <button onClick={() => setAttendees(Math.max(1, attendees - 1))} className="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 hover:border-blue-200 hover:text-blue-700 transition-colors flex items-center justify-center text-lg font-light shadow-sm">−</button>
+                          <button onClick={() => setAttendees(Math.max(MIN_ATTENDEES, attendees - 1))} className="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 hover:border-blue-200 hover:text-blue-700 transition-colors flex items-center justify-center text-lg font-light shadow-sm">−</button>
                           <p className="text-lg font-bold text-slate-900 leading-none">{attendees}</p>
                           <button onClick={() => setAttendees(attendees + 1)} className="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:shadow-blue-200 transition-all flex items-center justify-center text-lg font-light">+</button>
                         </div>
@@ -958,7 +961,14 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                               attendees={attendees}
                               selectedEquipments={selectedEquipments}
                               equipmentPresets={equipmentPresets}
-                              onSelect={() => { setSplitPlan(null); setSelectedRoom(room); setTitle(''); setStep(3) }}
+                              onSelect={() => {
+                                setSplitPlan(null); setSelectedRoom(room); setTitle('')
+                                // แผนสองบางใบแนะนำห้องเดิมแต่คนละวัน (suggested_date) —
+                                // ต้องอัปเดตวันที่จองให้ตรงกับวันที่ห้องว่างจริง ไม่งั้น
+                                // ฟอร์มยืนยันจะยังพยายามจองวันเดิมที่ห้องไม่ว่างอยู่ดี
+                                if (room.suggested_date) setDate(room.suggested_date)
+                                setStep(3)
+                              }}
                             />
                           ))}
                         </div>
@@ -1099,7 +1109,7 @@ export default function SearchPage({ embedded = false }) {
   const searchState = location.state || {}
   const [step, setStep] = useState(1)
   const [bookingType, setBookingType] = useState('daily')
-  const [attendees, setAttendees] = useState(5)
+  const [attendees, setAttendees] = useState(MIN_ATTENDEES)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [dayOfWeek, setDayOfWeek] = useState(null)
   const [startTime, setStartTime] = useState('')
@@ -1219,11 +1229,14 @@ export default function SearchPage({ embedded = false }) {
       if (resolvedRoom.building_code !== undefined) {
         setBuilding(resolvedRoom.building_code || '')
       }
+      // มาจากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ตั้งเวลาเริ่มให้ตรงกับตอนนี้แทนที่
+      // จะปล่อยว่าง (ค่าเริ่มต้นของ startTime คือ '' ซึ่งจองต่อไม่ได้จนกว่าจะกรอกเอง)
+      if (searchState.quickStartTime) setStartTime(searchState.quickStartTime)
     }
 
     applyQuickRoom()
     return () => { active = false }
-  }, [searchState.quickRoom, searchState.quickSearch])
+  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime])
 
   const endTime = startTime ? addHours(startTime, duration) : ''
 
@@ -1301,7 +1314,10 @@ export default function SearchPage({ embedded = false }) {
       }
       const res = await api.post('/rooms/search/', payload)
       const roomsData = Array.isArray(res.data) ? res.data : []
-      let filtered = roomsData.filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
+      // ห้องที่มีจริงตอนนี้ล้วนความจุใหญ่ (31-61 คน) ไม่มีห้องเล็ก — เดิมมี upper-bound
+      // buffer กันไม่ให้จับคู่ห้องใหญ่เกินไป แต่กับชุดห้องนี้มันตัดออกจนไม่เจอห้องเลย
+      // เอาแค่ "ห้องต้องจุพอ" พอ ไม่ต้องกังวลเรื่องห้องใหญ่เกินความจำเป็นอีกต่อไป
+      let filtered = roomsData.filter(r => r.capacity >= attendees)
       if (bookingType === 'term') filtered = filtered.filter(r => isClassroomType(r))
       if (selectedEquipments.length > 0) filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments, equipmentPresets))
       // building_code from the backend is only a soft ordering hint (preferred

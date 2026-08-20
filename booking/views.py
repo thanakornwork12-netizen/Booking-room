@@ -518,17 +518,76 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         all_scored.sort(key=lambda x: (-x[0], x[1].capacity))
         top_rooms = [r for _, r, _ in all_scored[:max_results]]
-        if not top_rooms:
-            return []
 
-        enriched = self._enrich_rooms(
-            top_rooms, target_date, start_time, end_time, 'dynamic', request,
+        enriched = []
+        if top_rooms:
+            enriched = self._enrich_rooms(
+                top_rooms, target_date, start_time, end_time, 'dynamic', request,
+            )
+            reason_map = {r.id: reason for _, r, reason in all_scored[:max_results]}
+            for item in enriched:
+                item['is_similar_recommendation'] = True
+                item['recommendation_reason'] = reason_map.get(item['id'], 'ห้องใกล้เคียงที่ว่าง')
+
+        # Tier 4: วันเดียวกันหาห้องไม่ได้เลย (หรือได้ไม่ครบ) — ลองห้องเดิม/ห้องใกล้
+        # เคียงแบบเดียวกันแต่ขยับไปวันอื่นแทน (พรุ่งนี้ / มะรืนนี้ / 3 วันถัดไป) คนละ
+        # เรื่องกับ Tier 3 ที่ขยับแค่ "เวลา" ในวันเดิม — นี่ขยับ "วัน" ทั้งวัน แต่ละ
+        # วันมีวันที่ไม่เหมือนกัน เลย enrich แยกทีละวันแทนที่จะโยนรวมกับ top_rooms
+        # ข้างบน (ซึ่ง _enrich_rooms รับวันที่เดียวสำหรับทุกห้องในก้อนเดียวกัน)
+        day_suggestions = []
+        if len(enriched) < max_results:
+            seen_ids = {item['id'] for item in enriched}
+            for days_ahead in (1, 2, 3):
+                if len(enriched) + len(day_suggestions) >= max_results:
+                    break
+                other_date = target_date + td(days=days_ahead)
+                blocked_other_day = self._blocked_room_ids(other_date, start_time, end_time)
+                candidates = base_qs.filter(capacity__gte=attendees).exclude(id__in=blocked_other_day)
+                day_scored = []
+                for room in candidates:
+                    if room.id in seen_ids:
+                        continue
+                    sc, _ = self._score_similar_room(room, attendees, building_code or None, room_type or None)
+                    if sc is None:
+                        continue
+                    day_scored.append((sc, room))
+                day_scored.sort(key=lambda x: (-x[0], x[1].capacity))
+                day_label = other_date.strftime('%d/%m')
+                for sc, room in day_scored:
+                    if len(enriched) + len(day_suggestions) >= max_results:
+                        break
+                    day_enriched = self._enrich_rooms([room], other_date, start_time, end_time, 'dynamic', request)
+                    for item in day_enriched:
+                        item['is_similar_recommendation'] = True
+                        item['recommendation_reason'] = f'ห้องเดิมว่าง แต่คนละวัน — {day_label}'
+                        item['suggested_date'] = other_date.isoformat()
+                        day_suggestions.append(item)
+                    seen_ids.add(room.id)
+
+        return enriched + day_suggestions
+
+    @action(detail=False, methods=['get'], url_path='today-feed')
+    def today_feed(self, request):
+        """ห้องว่าง ณ ตอนนี้ สำหรับฟีดแนะนำในหน้าแรก — จำกัดแค่ห้องที่มีข้อมูล AI
+        จริงเหมือนเส้นทางจองอื่นๆ (ดู AI_FORECAST_ROOM_IDS)"""
+        from datetime import time as time_type
+
+        now = timezone.localtime()
+        today = now.date()
+        now_time = now.time()
+        window_end = (datetime.combine(today, now_time) + timedelta(hours=1)).time()
+        if window_end < now_time:
+            window_end = time_type(23, 59)
+
+        blocked = self._blocked_room_ids(today, now_time, window_end)
+        rooms = list(
+            Room.objects.filter(
+                is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
+            ).exclude(id__in=blocked).select_related('building')
+            .prefetch_related('room_facilities__facility', 'forecasts')
+            .order_by('capacity')[:5]
         )
-        reason_map = {r.id: reason for _, r, reason in all_scored[:max_results]}
-        for item in enriched:
-            item['is_similar_recommendation'] = True
-            item['recommendation_reason'] = reason_map.get(item['id'], 'ห้องใกล้เคียงที่ว่าง')
-        return enriched
+        return Response(self._enrich_rooms(rooms, today, now_time, window_end, 'dynamic', request))
 
     @action(detail=False, methods=['post'], url_path='dynamic-recommend')
     def dynamic_recommend(self, request):
