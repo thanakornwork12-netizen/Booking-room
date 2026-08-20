@@ -114,7 +114,11 @@ if os.environ.get('DATABASE_URL'):
     )
     # บังคับค่า sslmode ให้ชัวร์ ไม่พึ่งพา query string ที่มากับ DATABASE_URL
     # (กัน error "invalid sslmode value" ถ้า env var ถูกวางซ้ำ/เพี้ยนมา)
-    DATABASES['default']['OPTIONS'] = {'sslmode': 'require'}
+    # แต่ Postgres localhost (dev เครื่องนี้) ไม่รองรับ SSL — ถ้าบังคับ require จะต่อไม่ติดเลย
+    # เลยเช็คก่อนว่า host เป็น localhost/127.0.0.1 ไหม ถ้าใช่ปิด SSL, ถ้าไม่ใช่ (Render จริง) บังคับ require เหมือนเดิม
+    _db_host = DATABASES['default'].get('HOST', '')
+    _is_local_db = _db_host in ('', 'localhost', '127.0.0.1')
+    DATABASES['default']['OPTIONS'] = {'sslmode': 'disable' if _is_local_db else 'require'}
 
 # ---------------- CORS ----------------
 CORS_ALLOWED_ORIGINS = [
