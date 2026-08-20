@@ -603,7 +603,7 @@ export default function HomePage() {
   )
 
   return (
-    <div className="w-full" style={{ fontFamily: "'Inter','Prompt','Sarabun','Noto Sans Thai',sans-serif" }}>
+    <div className="w-full rounded-2xl bg-slate-100/70 p-3 sm:p-4" style={{ fontFamily: "'Inter','Prompt','Sarabun','Noto Sans Thai',sans-serif" }}>
       <style>{ANIM}</style>
 
       {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} userId={user?.id} />}
@@ -659,7 +659,7 @@ export default function HomePage() {
         </section>
 
         {todayFeed.length > 0 && (
-          <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-md">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Zap size={16} className="text-amber-500" />
@@ -704,7 +704,7 @@ export default function HomePage() {
         )}
 
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
-          <div className="flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <div className="flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
             <div className="flex items-center gap-2 border-b border-purple-100 bg-purple-50 px-4 py-3">
               <BookOpen size={16} className="text-purple-600" />
               <span className="text-sm font-bold text-slate-800">วิชาที่จอง (รายเทอม)</span>
@@ -739,7 +739,7 @@ export default function HomePage() {
             )}
           </div>
 
-          <div className="lg:col-span-2 flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <div className="lg:col-span-2 flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
             <div className="flex items-center justify-between gap-2 border-b border-blue-100 bg-blue-50 px-4 py-3">
               <div className="flex min-w-0 items-center gap-2">
                 <CalendarDays size={16} className="shrink-0 text-blue-600" />
