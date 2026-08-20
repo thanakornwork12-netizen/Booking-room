@@ -17,12 +17,6 @@ const PrivateRoute = ({ children }) => {
   return hasToken() ? children : <Navigate to="/login" />
 }
 
-// "/" คือ Landing Page สำหรับคนที่ยังไม่ล็อกอิน แต่ถ้าล็อกอินแล้วให้เห็นหน้า
-// Dashboard เดิมทันที — กันไม่ให้ต้องไปแก้ navigate('/') ที่กระจายอยู่ทั่วแอป
-const RootRoute = () => {
-  return hasToken() ? <AppShell><HomePage /></AppShell> : <LandingPage />
-}
-
 const normalizeRole = (role) => String(role || '').trim().toLowerCase()
 
 // เช็คว่าเป็น Admin หรือ Staff จริงไหม (ป้องกัน User แอบเข้า)
@@ -31,7 +25,7 @@ const AdminRoute = ({ children }) => {
   const isAdmin = role === 'admin' || role === 'staff'
 
   if (!hasToken()) return <Navigate to="/login" />;
-  return isAdmin ? children : <Navigate to="/" />; // ถ้าไม่ใช่แอดมิน ให้ดีดกลับหน้าแรก
+  return isAdmin ? children : <Navigate to="/home" />; // ถ้าไม่ใช่แอดมิน ให้ดีดกลับหน้า Dashboard
 }
 
 export default function App() {
@@ -42,11 +36,12 @@ export default function App() {
         <div className="app-scrollable">
           <Routes>
         {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
         {/* User Routes */}
-        <Route path="/" element={<RootRoute />} />
+        <Route path="/home" element={<PrivateRoute><AppShell><HomePage /></AppShell></PrivateRoute>} />
         <Route path="/search" element={<PrivateRoute><AppShell><SearchPage embedded /></AppShell></PrivateRoute>} />
         <Route path="/guide" element={<PrivateRoute><AppShell><GuidePage /></AppShell></PrivateRoute>} />
 

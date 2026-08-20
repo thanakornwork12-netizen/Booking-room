@@ -42,7 +42,7 @@ export default function LoginPage() {
     try {
       // loginWithLDAP จัดการเก็บ token และข้อมูล user ให้อัตโนมัติ
       await loginWithLDAP(form.username.trim(), form.password, remember)
-      navigate('/')
+      navigate('/home')
     } catch (err) {
       const msg = err?.response?.data?.detail
              || err?.response?.data?.non_field_errors?.[0]

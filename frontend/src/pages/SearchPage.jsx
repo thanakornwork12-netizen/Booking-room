@@ -570,7 +570,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
   const visibleSimilarRooms = similarRooms.slice(0, 2)
   const selectedBuildingLabel = buildings.find(b => b.code === building)?.label || 'ทั้งหมด'
   const navItems = [
-    { key: 'home', icon: Home, label: 'Home', active: location === '/' || location === '/dashboard', onClick: () => navigate('/') },
+    { key: 'home', icon: Home, label: 'Home', active: location === '/home', onClick: () => navigate('/home') },
     { key: 'booking', icon: CalendarDays, label: 'Booking', active: location === '/search', onClick: () => navigate('/search') },
   ]
   const chipsSummary = [
@@ -602,7 +602,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
               {isTermMode ? `ทุก${getDayLabel(dayOfWeek)} · ${startTime} - ${endTime} น.` : `${formatDate(date)} · ${startTime} - ${endTime} น.`}
             </p>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/home')}
               className={`mt-6 w-full rounded-2xl py-3.5 text-sm font-bold text-white bg-gradient-to-r ${accentBg} shadow-lg shadow-blue-200/70 hover:shadow-xl transition-all`}
             >
               กลับหน้าหลัก

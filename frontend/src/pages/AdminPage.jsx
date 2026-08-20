@@ -1387,7 +1387,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
       <style>{ANIM}</style>
       <div className="sticky top-0 z-30 bg-white border-b border-white/70 shadow-[0_12px_40px_rgba(37,99,235,0.06)] flex-shrink-0">
         <div className="max-w-7xl mx-auto px-4 lg:px-5 h-14 flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-slate-600 hover:text-blue-700 text-sm font-medium">
+          <button onClick={() => navigate('/home')} className="flex items-center gap-2 text-slate-600 hover:text-blue-700 text-sm font-medium">
             <ArrowLeft size={15} />หน้าหลัก
           </button>
           <div className="h-5 w-px bg-slate-200" />
@@ -1637,7 +1637,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
       <style>{ANIM}</style>
       <div className="sticky top-0 z-40 bg-white border-b border-white/70 shadow-[0_12px_40px_rgba(37,99,235,0.06)] flex-shrink-0">
         <div className="max-w-lg mx-auto px-4 h-12 flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="text-slate-600 hover:text-blue-700 flex items-center"><ArrowLeft size={14} /></button>
+          <button onClick={() => navigate('/home')} className="text-slate-600 hover:text-blue-700 flex items-center"><ArrowLeft size={14} /></button>
           <span className="text-slate-900 font-bold text-sm flex-1">Admin Dashboard</span>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-100 text-xs font-bold rounded-full px-2 py-0.5"><Zap size={9} />AI</div>

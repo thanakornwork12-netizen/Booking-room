@@ -27,7 +27,7 @@ import {
 import api, { changePassword, deleteAccount, logout, getAccessToken, WS_BASE_URL } from '../api/axios'
 
 const navItems = [
-  { to: '/', label: 'หน้าหลัก', icon: Home, exact: true },
+  { to: '/home', label: 'หน้าหลัก', icon: Home, exact: true },
   { to: '/search', label: 'จองห้องประชุม', icon: Search },
   { to: '/admin/dashboard', label: 'แดชบอร์ด', icon: LayoutDashboard },
 ]
@@ -771,7 +771,7 @@ function AppShell({ children }) {
   // แล้วรู้สึกว่า "ไม่ไปไหน" ทั้งที่จริงๆ คือถูกเด้งกลับแบบไม่มี feedback
   const visibleNavItems = navItems.filter(item => item.to !== '/admin/dashboard' || isAdminOrStaff)
   const sectionLabel = useMemo(() => {
-    if (location.pathname === '/') return 'หน้าหลัก'
+    if (location.pathname === '/home') return 'หน้าหลัก'
     if (location.pathname.startsWith('/search')) return 'จองห้องประชุม'
     if (location.pathname.startsWith('/admin/dashboard')) return 'รายงาน'
     return 'ระบบจองห้องประชุม'

@@ -1,4 +1,7 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+const hasToken = () => !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -51,6 +54,11 @@ const STATS = [
 
 export default function LandingPage() {
   const navigate = useNavigate()
+
+  // คนที่ล็อกอินค้างอยู่แล้วไม่ควรเห็นหน้าโฆษณานี้ซ้ำ — เด้งไป Dashboard ทันที
+  useEffect(() => {
+    if (hasToken()) navigate('/home', { replace: true })
+  }, [navigate])
 
   return (
     <div className="min-h-screen w-full bg-slate-50 text-slate-900">
