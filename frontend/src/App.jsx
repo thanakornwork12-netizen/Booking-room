@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import HomePage from './pages/HomePage'
@@ -14,6 +15,12 @@ const hasToken = () => !!(localStorage.getItem('access_token') || sessionStorage
 // เช็คแค่ว่า Login หรือยัง
 const PrivateRoute = ({ children }) => {
   return hasToken() ? children : <Navigate to="/login" />
+}
+
+// "/" คือ Landing Page สำหรับคนที่ยังไม่ล็อกอิน แต่ถ้าล็อกอินแล้วให้เห็นหน้า
+// Dashboard เดิมทันที — กันไม่ให้ต้องไปแก้ navigate('/') ที่กระจายอยู่ทั่วแอป
+const RootRoute = () => {
+  return hasToken() ? <AppShell><HomePage /></AppShell> : <LandingPage />
 }
 
 const normalizeRole = (role) => String(role || '').trim().toLowerCase()
@@ -39,7 +46,7 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
 
         {/* User Routes */}
-        <Route path="/" element={<PrivateRoute><AppShell><HomePage /></AppShell></PrivateRoute>} />
+        <Route path="/" element={<RootRoute />} />
         <Route path="/search" element={<PrivateRoute><AppShell><SearchPage embedded /></AppShell></PrivateRoute>} />
         <Route path="/guide" element={<PrivateRoute><AppShell><GuidePage /></AppShell></PrivateRoute>} />
 
