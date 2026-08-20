@@ -1178,7 +1178,7 @@ export default function SearchPage({ embedded = false }) {
 
       if (!quickRoom && !quickSearch) return
 
-      const resolvedRoom = quickRoom || await (async () => {
+      const suggestedRoom = quickRoom || await (async () => {
         try {
           const res = await api.get('/rooms/suggestions/', {
             params: { q: quickSearch, limit: 1 },
@@ -1187,6 +1187,22 @@ export default function SearchPage({ embedded = false }) {
           return suggestions[0] || null
         } catch {
           return null
+        }
+      })()
+
+      if (!active || !suggestedRoom) return
+
+      // /rooms/suggestions/ (and quickRoom, which comes from the same
+      // lightweight endpoint) only returns id/name/building/floor/capacity —
+      // no facilities/image/description. Re-fetch the full room record so
+      // step 3 shows real data instead of silently dropping those sections.
+      const resolvedRoom = await (async () => {
+        if (!suggestedRoom.id) return suggestedRoom
+        try {
+          const res = await api.get(`/rooms/${suggestedRoom.id}/`)
+          return res.data || suggestedRoom
+        } catch {
+          return suggestedRoom
         }
       })()
 
