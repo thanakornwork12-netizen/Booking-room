@@ -1163,7 +1163,10 @@ export default function SearchPage({ embedded = false }) {
   }, [step, success])
 
   useEffect(() => {
-    api.get('buildings/').then(res => {
+    // bookable_only: จำกัดตัวเลือกอาคารให้เหลือแค่อาคารที่มีห้องพยากรณ์ AI จริงให้
+    // จอง — ไม่งั้น admin ที่เข้ามาจองห้องจริง (ไม่ใช่จัดการ inventory) จะเห็น
+    // อาคารที่ไม่มีห้องให้จองเลยสักห้องปนอยู่ด้วย
+    api.get('buildings/', { params: { bookable_only: 'true' } }).then(res => {
       const data = res.data?.results ?? res.data ?? []
       setBuildings([{ code: '', label: 'ทั้งหมด' }, ...data.map(b => ({ code: b.code || b.id, label: b.name }))])
     }).catch(() => {})

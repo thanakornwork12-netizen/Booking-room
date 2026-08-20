@@ -94,10 +94,11 @@ class BuildingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Building.objects.filter(is_active=True).order_by('name')
-        is_staff = getattr(self.request.user, 'role', None) in ['admin', 'staff']
-        # เหลือแค่อาคารที่มีห้องพยากรณ์ AI จริงอย่างน้อย 1 ห้อง กันไม่ให้ผู้ใช้ทั่วไป
-        # เลือกอาคารที่ไม่มีห้องให้จองเลยสักห้อง (ดู AI_FORECAST_ROOM_IDS ด้านบน)
-        if not is_staff:
+        # การจอง (SearchPage) กับการจัดการ inventory (AdminPage) เรียก endpoint
+        # นี้ร่วมกัน แยกด้วย query param แทน role ของผู้ใช้ — ไม่งั้น admin ที่เข้า
+        # หน้าค้นหาห้องเพื่อจองจริงจะเห็นอาคารที่ไม่มีห้องให้จองเลยสักห้องไปด้วย
+        # (แต่ยังต้องเห็นครบ 16 อาคารตอนจัดการ inventory ในหน้าแอดมิน)
+        if self.request.query_params.get('bookable_only') == 'true':
             qs = qs.filter(rooms__id__in=AI_FORECAST_ROOM_IDS, rooms__is_active=True).distinct()
         return qs
 
@@ -185,9 +186,10 @@ class RoomViewSet(viewsets.ModelViewSet):
         except (TypeError, ValueError):
             limit = 8
 
-        rooms_qs = Room.objects.filter(is_active=True)
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
-            rooms_qs = rooms_qs.filter(id__in=AI_FORECAST_ROOM_IDS)
+        # การค้นหา/จองห้องจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ ไม่ว่าใครจะเป็นคนจอง
+        # (ต่างจาก RoomViewSet.get_queryset ทั่วไปที่ยังให้ staff/admin เห็นครบ
+        # สำหรับจัดการ inventory)
+        rooms_qs = Room.objects.filter(is_active=True, id__in=AI_FORECAST_ROOM_IDS)
         rooms = list(rooms_qs.select_related('building').order_by('building__name', 'name'))
 
         if not q:
@@ -238,12 +240,11 @@ class RoomViewSet(viewsets.ModelViewSet):
          .values_list('room_id', flat=True)
 
         blocked   = set(list(booked_dynamic) + list(booked_term) + list(maint_blocked))
+        # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ ไม่ว่าใครจะเป็นคนจอง
         available = Room.objects.filter(
-            is_active=True, status='available', capacity__gte=d['attendees'],
+            is_active=True, status='available', capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(id__in=blocked).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
-            available = available.filter(id__in=AI_FORECAST_ROOM_IDS)
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -274,12 +275,11 @@ class RoomViewSet(viewsets.ModelViewSet):
             start_time__date__lte=t_end, end_time__date__gte=t_start,
         ).values_list('room_id', flat=True)
 
+        # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ ไม่ว่าใครจะเป็นคนจอง
         available = Room.objects.filter(
-            is_active=True, status='available', capacity__gte=d['attendees'],
+            is_active=True, status='available', capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(id__in=set(list(booked_term) + list(maint_blocked))).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
-            available = available.filter(id__in=AI_FORECAST_ROOM_IDS)
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
