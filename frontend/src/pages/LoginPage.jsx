@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, ArrowRight, UserRound, Lock, CheckCircle2, XCircle, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight, UserRound, Lock, Brain, CalendarClock, CheckCircle2 } from 'lucide-react'
 import { loginWithLDAP } from '../api/axios'
 
 const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-3 text-sm
@@ -8,18 +8,12 @@ const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 p
   focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
 
 // การ์ดตัวอย่างฝั่งขวา — ข้อมูลตกแต่งเฉยๆ ไม่ใช่ข้อมูลจริงจาก API
-const HIGHLIGHT_CHIPS = [
-  { emoji: '🤖', label: 'แนะนำโดย AI' },
-  { emoji: '🔍', label: 'กรองอัจฉริยะ' },
-  { emoji: '✅', label: 'เช็คอินง่าย' },
+// หมายเหตุ: เช็คอินจริงในระบบเป็นการกดปุ่มยืนยันในเว็บ ไม่มีการสแกน QR
+const FEATURES = [
+  { icon: Brain, title: 'แนะนำห้องด้วย AI', desc: 'ระบบแนะนำห้องอัจฉริยะตามความต้องการของคุณ' },
+  { icon: CalendarClock, title: 'เช็คสถานะห้องว่างแบบเรียลไทม์', desc: 'ตรวจสอบสถานะห้องว่างแบบเรียลไทม์' },
+  { icon: CheckCircle2, title: 'เช็คอินง่ายในระบบ', desc: 'กดยืนยันเช็คอินในระบบ ไม่ต้องสแกนอะไรเพิ่ม' },
 ]
-const SAMPLE_ROOMS = [
-  { code: '2C09', capacity: 50, available: true, facilities: ['จอฉาย', 'Wi-Fi'] },
-  { code: '3C05-06', capacity: 120, available: false, facilities: ['ไมค์', 'กล้อง'] },
-]
-const RECOMMENDED_ROOM = {
-  code: '1C-MEETING (Lab)', capacity: 30, facilities: ['โปรเจกเตอร์', 'อินเทอร์เน็ตความเร็วสูง'],
-}
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -169,56 +163,21 @@ export default function LoginPage() {
       </div>
 
       {/* ── ฝั่งขวา: ตกแต่ง (desktop only) ─────────────────── */}
-      <div className="hidden w-full flex-1 flex-col justify-center gap-5 bg-indigo-50 px-10 py-10 lg:flex xl:px-16">
-        <div className="flex flex-wrap gap-3">
-          {HIGHLIGHT_CHIPS.map(chip => (
-            <span
-              key={chip.label}
-              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm"
-            >
-              {chip.emoji} {chip.label}
-            </span>
-          ))}
+      <div className="hidden w-full flex-1 flex-col items-center justify-center gap-8 bg-indigo-50 px-10 py-10 text-center lg:flex xl:px-16">
+        <div>
+          <h2 className="text-2xl font-extrabold text-slate-900">ฟีเจอร์เด่นของระบบ</h2>
+          <p className="mt-2 text-sm text-slate-500">ระบบจองห้องอัจฉริยะที่ช่วยให้ชีวิตวิชาการของคุณง่ายขึ้น</p>
         </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          {SAMPLE_ROOMS.map(room => (
-            <div key={room.code} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-base font-bold text-slate-900">{room.code}</p>
-                {room.available ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white">
-                    <CheckCircle2 size={11} /> ว่าง
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2.5 py-1 text-xs font-bold text-white">
-                    <XCircle size={11} /> ไม่ว่าง
-                  </span>
-                )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {FEATURES.map(f => (
+            <div key={f.title} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                <f.icon size={22} />
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">👥 {room.capacity} ที่นั่ง</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {room.facilities.map(f => (
-                  <span key={f} className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{f}</span>
-                ))}
-              </div>
+              <p className="mt-4 text-sm font-bold text-slate-900">{f.title}</p>
+              <p className="mt-1.5 text-xs leading-5 text-slate-500">{f.desc}</p>
             </div>
           ))}
-        </div>
-
-        <div className="rounded-2xl border-2 border-violet-500 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-base font-bold text-slate-900">{RECOMMENDED_ROOM.code}</p>
-            <span className="inline-flex items-center gap-1 rounded-full bg-violet-500 px-2.5 py-1 text-xs font-bold text-white">
-              <Sparkles size={11} /> แนะนำสำหรับคุณ
-            </span>
-          </div>
-          <p className="mt-1.5 text-xs text-slate-500">👥 {RECOMMENDED_ROOM.capacity} ที่นั่ง</p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {RECOMMENDED_ROOM.facilities.map(f => (
-              <span key={f} className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{f}</span>
-            ))}
-          </div>
         </div>
       </div>
     </div>
