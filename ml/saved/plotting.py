@@ -2928,7 +2928,6 @@ def plot_model_configuration(out_png: str):
     nothing inferred or added beyond what that dict literally contains.
     """
     rows = [
-        ('Name', 'name'),
         ('LSTM Epochs', 'lstm_epochs'),
         ('LSTM Batch', 'lstm_batch'),
         ('LSTM Lookback', 'lstm_lookback'),
@@ -2940,7 +2939,19 @@ def plot_model_configuration(out_png: str):
         ('XGB Depth', 'xgb_depth'),
         ('XGB LR', 'xgb_lr'),
     ]
-    header = ['Parameter'] + [f'{s} ({PARAM_SET_CONFIGS.get(s, {}).get("name", "")})' for s in PARAM_SET_ORDER]
+    def _header_label(s):
+        name = PARAM_SET_CONFIGS.get(s, {}).get('name', '')
+        # name already starts with "<letter> - ", e.g. "D - Extra Deep
+        # (Experimental)" — repeating the letter as a prefix just doubles it
+        # and overflows the column, so split into two short lines instead.
+        if ' - ' in name:
+            _, rest = name.split(' - ', 1)
+        else:
+            rest = name
+        rest = rest.replace('(Experimental)', '(Exp.)')
+        return f'{s}\n{rest}'
+
+    header = ['Parameter'] + [_header_label(s) for s in PARAM_SET_ORDER]
     table_data = [header]
     for label, key in rows:
         table_data.append(

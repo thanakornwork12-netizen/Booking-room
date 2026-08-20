@@ -10,24 +10,24 @@ PARAM_SETS = {
     # depth/leaves/lr per set were chosen alongside those round counts.
     'A': {
         'name': 'A - Fast (Baseline)',
-        'lstm_epochs': 20, 'lstm_batch': 16,
+        'lstm_epochs': 10, 'lstm_batch': 16,
         'lstm_lookback': 20,
-        'lgb_estimators': 20, 'lgb_depth': 6, 'lgb_leaves': 31, 'lgb_lr': 0.15,
-        'xgb_estimators': 20, 'xgb_depth': 5, 'xgb_lr': 0.15,
+        'lgb_estimators': 10, 'lgb_depth': 6, 'lgb_leaves': 31, 'lgb_lr': 0.30,
+        'xgb_estimators': 10, 'xgb_depth': 5, 'xgb_lr': 0.30,
     },
     'B': {
         'name': 'B - Balanced',
-        'lstm_epochs': 40, 'lstm_batch': 8,
+        'lstm_epochs': 20, 'lstm_batch': 8,
         'lstm_lookback': 40,
-        'lgb_estimators': 40, 'lgb_depth': 8, 'lgb_leaves': 63, 'lgb_lr': 0.06,
-        'xgb_estimators': 40, 'xgb_depth': 6, 'xgb_lr': 0.06,
+        'lgb_estimators': 20, 'lgb_depth': 8, 'lgb_leaves': 63, 'lgb_lr': 0.12,
+        'xgb_estimators': 20, 'xgb_depth': 6, 'xgb_lr': 0.12,
     },
     'C': {
         'name': 'C - High Quality',
-        'lstm_epochs': 60, 'lstm_batch': 8,
+        'lstm_epochs': 30, 'lstm_batch': 8,
         'lstm_lookback': 60,
-        'lgb_estimators': 60, 'lgb_depth': 10, 'lgb_leaves': 127, 'lgb_lr': 0.04,
-        'xgb_estimators': 60, 'xgb_depth': 8, 'xgb_lr': 0.04,
+        'lgb_estimators': 30, 'lgb_depth': 10, 'lgb_leaves': 127, 'lgb_lr': 0.08,
+        'xgb_estimators': 30, 'xgb_depth': 8, 'xgb_lr': 0.08,
     },
     # Experimental — trains harder than C to test whether more training keeps
     # helping or plateaus/hurts. Not the production default; used only for
@@ -35,10 +35,10 @@ PARAM_SETS = {
     # saved_meta_E_new archives).
     'D': {
         'name': 'D - Extra Deep (Experimental)',
-        'lstm_epochs': 70, 'lstm_batch': 8,
+        'lstm_epochs': 40, 'lstm_batch': 8,
         'lstm_lookback': 70,
-        'lgb_estimators': 70, 'lgb_depth': 12, 'lgb_leaves': 255, 'lgb_lr': 0.03,
-        'xgb_estimators': 70, 'xgb_depth': 10, 'xgb_lr': 0.03,
+        'lgb_estimators': 40, 'lgb_depth': 12, 'lgb_leaves': 255, 'lgb_lr': 0.0525,
+        'xgb_estimators': 40, 'xgb_depth': 10, 'xgb_lr': 0.0525,
     },
     # Deeper still than D — the control for the "does more depth keep
     # helping" question. If E measures worse than C/D despite training the
@@ -46,9 +46,9 @@ PARAM_SETS = {
     # just haven't trained past yet.
     'E': {
         'name': 'E - Maximum Depth (Experimental)',
-        'lstm_epochs': 90, 'lstm_batch': 8,
+        'lstm_epochs': 50, 'lstm_batch': 8,
         'lstm_lookback': 90,
-        'lgb_estimators': 90, 'lgb_depth': 14, 'lgb_leaves': 511, 'lgb_lr': 0.02,
-        'xgb_estimators': 90, 'xgb_depth': 12, 'xgb_lr': 0.02,
+        'lgb_estimators': 50, 'lgb_depth': 14, 'lgb_leaves': 511, 'lgb_lr': 0.036,
+        'xgb_estimators': 50, 'xgb_depth': 12, 'xgb_lr': 0.036,
     },
 }

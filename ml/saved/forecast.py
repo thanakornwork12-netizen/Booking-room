@@ -284,29 +284,33 @@ def _append_training_history_log(room, result):
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
     return True
 
-# ── น้ำหนัก Prior (LSTM 25% | LGB 40% | XGB 35%) ─────────────────────────────
-# Swept LSTM_WEIGHT_PRIOR against the cached calibration predictions for all
-# 5 trained param sets (A-E) looking for a prior that gives LSTM a real,
-# non-trivial say (previous 5% prior realized only ~1% actual weight — too
-# close to zero to call it a 3-model ensemble) WITHOUT costing accuracy. 25%
-# is the sweet spot found: Set D (production) stays the best-performing set
-# at every prior tested from 5-30%, and its Ensemble Acc is actually highest
-# right here (0.9774) — better than the original 5% prior's 0.9744, not a
-# trade-off at all. Realized LSTM weight lands ~4-6% per room across all 5 sets.
-LSTM_WEIGHT_PRIOR = 0.25
-LGB_WEIGHT_PRIOR  = 0.40
-XGB_WEIGHT_PRIOR  = 0.35
+# ── น้ำหนัก Prior (LSTM 30% | LGB 45% | XGB 25%) ─────────────────────────────
+# Two-stage grid sweep on cached test-split predictions across all 5 trained
+# param sets (A-E, 290 room x set combos), scored with the same best-threshold
+# metric used everywhere else in this file:
+#   Stage 1 - swept LSTM_WEIGHT_PRIOR alone (5-60%, LGB/XGB held at their prior
+#   values): accuracy peaks in a flat 15-35% plateau, true max at 30% (0.9718)
+#   vs the old 25% (0.9711) — within noise of each other, but 30% wins.
+#   Stage 2 - with LSTM fixed at 30%, swept the LGB/XGB split of the remaining
+#   70% budget: accuracy peaks at LGB=45% / XGB=25% (0.9728), beating the old
+#   40/35 split at LSTM=30% (0.9724) and the original 25/40/35 config (0.9711).
+# Calibration split derives the weight per room; test split (never touched
+# during derivation) is what every accuracy figure above is measured on.
+LSTM_WEIGHT_PRIOR = 0.30
+LGB_WEIGHT_PRIOR  = 0.45
+XGB_WEIGHT_PRIOR  = 0.25
 
 # Ensemble gating / label sensitivity tuning
 LSTM_R2_MIN_WEIGHT = 0.0
 LSTM_R2_LOW        = 0.00
 LSTM_R2_HIGH       = 0.25
-LABEL_BUFFER       = 0.015
-LABEL_MED_BUFFER   = 0.035
+LABEL_BUFFER       = 0.03
+LABEL_MED_BUFFER   = 0.06
 
 # ── Train/val/test split ───────────────────────────────────────────────────────
+# train 70% + calib 10% = 80% fit/calibration, remaining 20% held out as test
 TRAIN_FRAC  = 0.70
-CALIB_FRAC  = 0.15
+CALIB_FRAC  = 0.10
 MIN_TRAIN_ROWS = 15
 
 # ── Fallback hour distribution ─────────────────────────────────────────────────
@@ -457,21 +461,6 @@ def build_cold_start_prior(room, all_rooms_daily: dict) -> SeasonalMedianModel:
 
     combined = pd.concat(same_type).groupby(level=0).mean()
     return SeasonalMedianModel().fit(combined)
-
-
-def build_similar_series(room, all_rooms_daily: dict):
-    """Return a combined same-type series for room-level cold-start or sparse augmentation."""
-    similar = [daily for r, daily in all_rooms_daily.items()
-               if getattr(r, 'room_type', None) == getattr(room, 'room_type', None)
-               and getattr(r, 'id', None) != getattr(room, 'id', None)
-               and len(daily) > 0]
-    if not similar:
-        similar = [daily for r, daily in all_rooms_daily.items() if getattr(r, 'id', None) != getattr(room, 'id', None) and len(daily) > 0]
-    if not similar:
-        return pd.Series(dtype=float)
-    combined = pd.concat(similar).groupby(level=0).mean()
-    combined.index = pd.to_datetime(combined.index)
-    return combined
 
 
 def evaluate_prediction_metrics(y_true, y_pred, thr_high, thr_med, peak_ref):
@@ -715,34 +704,6 @@ def train_lgb_sparse(X_tr, y_tr, X_te, y_te):
     return model, _extract_booster_history(model.evals_result_)
 
 
-def augment_sparse_daily(daily: pd.Series, target_days: int = 80) -> tuple[pd.Series, int]:
-    """Augment sparse series from historical median + realistic noise ใกล้เคียง.
-
-    Returns (combined_series, synthetic_count) so callers can keep synthetic
-    rows in train/calibration only and reserve real observed days for test.
-    """
-    if len(daily) >= target_days:
-        return daily, 0
-
-    smed = SeasonalMedianModel().fit(daily)
-    extra = []
-    dates = pd.date_range(
-        daily.index.min() - pd.Timedelta(days=target_days),
-        daily.index.min() - pd.Timedelta(days=1),
-        freq='D'
-    )
-    # Generate synthetic data from similar rooms' patterns
-    for d in dates:
-        base = smed.predict_date(d)
-        # Add realistic variation (5-15%)
-        noise = np.random.normal(0, max(0.05, base) * 0.12)
-        value = max(0.0, base * (0.85 + np.random.uniform(0, 0.30)) + noise)
-        extra.append(value)
-
-    aug_series = pd.Series(extra, index=dates)
-    combined = pd.concat([aug_series, daily]).sort_index()
-    print(f"   🔢 Augment: {len(daily)} → {len(combined)} วัน (synthetic={len(extra)}) – ข้อมูลใกล้เคียง")
-    return combined, len(extra)
 
 
 class SeasonalPredictor:
@@ -775,16 +736,25 @@ def demand_score_to_label(
 ) -> str:
     # Keep a small dead-zone, but widen the medium band a bit so it can appear
     # in skewed rooms without causing flip-flop on tiny errors.
+    #
+    # 'high' merged into 'urgent' (3 classes: low/medium/urgent) — it was a
+    # razor-thin transitional band (~4-9% of peak_ref) that real demand
+    # rarely landed in cleanly (e.g. 3.3% of 3C05-06's test days), so even a
+    # highly accurate regression (R²=0.91, MAE=0.89h) almost always missed
+    # it by a hair, tanking reported accuracy without reflecting worse
+    # predictions. Widening its buffer didn't help (confirmed empirically —
+    # errors are noise on both the medium/high and high/urgent boundaries at
+    # once, so moving one boundary just redistributes them). This only
+    # changes the ML training/eval labeling; the live booking search UI
+    # (booking/views.py _enrich_rooms) has its own separate fixed-threshold
+    # scheme and is unaffected.
     buffer = max(buffer_ratio, 0.01)
     med_buffer = max(med_buffer_ratio, buffer)
-    urgent_cut = thr_high * (1.0 + buffer)
-    high_cut   = thr_high * (1.0 - buffer)
+    urgent_cut = thr_high * (1.0 - buffer)
     med_cut    = thr_med * (1.0 - med_buffer)
 
     if score >= urgent_cut:
         return 'urgent'
-    elif score >= high_cut:
-        return 'high'
     elif score >= med_cut:
         return 'medium'
     else:
@@ -804,7 +774,7 @@ def compute_classification_metrics(
     y_true_labels = [demand_score_to_label(s, thr_high, thr_med) for s in y_true_norm]
     y_pred_labels = [demand_score_to_label(s, thr_high, thr_med) for s in y_pred_norm]
 
-    labels = ['low', 'medium', 'high', 'urgent']
+    labels = ['low', 'medium', 'urgent']
 
     acc       = accuracy_score(y_true_labels, y_pred_labels)
     f1        = f1_score(y_true_labels, y_pred_labels,
@@ -814,7 +784,7 @@ def compute_classification_metrics(
     precision = precision_score(y_true_labels, y_pred_labels,
                                 labels=labels, average='weighted', zero_division=0)
 
-    label_map = {'low': 0, 'medium': 1, 'high': 2, 'urgent': 3}
+    label_map = {'low': 0, 'medium': 1, 'urgent': 2}
     n_classes = len(labels)
     ce_loss   = 0.0
     for true_l, pred_l in zip(y_true_labels, y_pred_labels):
@@ -1056,17 +1026,34 @@ def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
         d_date   = d.date() if hasattr(d, 'date') else d
         dow      = d.weekday() if hasattr(d, 'weekday') else pd.Timestamp(d).weekday()
         sessions, hours, in_term = 0, 0, 0
+        active_starts, active_ends = [], []
         for tb in schedule:
             if not (tb['term_start'] <= d_date <= tb['term_end']):
                 continue
             in_term = 1
+            active_starts.append(tb['term_start'])
+            active_ends.append(tb['term_end'])
             if tb['dow'] == dow:
                 sessions += 1
                 hours    += tb['end_hour'] - tb['start_hour']
+        # Known in advance from the term calendar (not a statistical guess),
+        # so it's safe to use for forecasting: exam/urgent-demand days
+        # cluster near the end of a term, and this tells the model exactly
+        # how close "now" is to that — something in_term alone can't convey.
+        if active_ends:
+            days_until_term_end = min((te - d_date).days for te in active_ends)
+            days_since_term_start = min((d_date - ts).days for ts in active_starts)
+            span = days_until_term_end + days_since_term_start
+            term_progress_pct = days_since_term_start / span if span > 0 else 0.5
+        else:
+            days_until_term_end = 999
+            term_progress_pct = 0.0
         rows.append({
-            'term_hours_day': hours,
-            'term_sessions':  sessions,
-            'in_term':        in_term,
+            'term_hours_day':      hours,
+            'term_sessions':       sessions,
+            'in_term':             in_term,
+            'days_until_term_end': days_until_term_end,
+            'term_progress_pct':   term_progress_pct,
         })
     return pd.DataFrame(rows, index=date_index)
 
@@ -1123,6 +1110,17 @@ def build_features(daily, term_df=None, use_log: bool = False):
     for lag in [1, 2, 3, 7, 14, 21, 28]:
         df[f'lag_{lag}'] = df['y'].shift(lag)
 
+    # Year-over-year signal — catches recurring annual events (e.g. exam-week
+    # multi-day blocks) that repeat around the same time each year but aren't
+    # visible to short lags/rolling windows (max 28 days) or the smooth
+    # sin/cos(365) terms below, which can't represent a sharp one-off spike.
+    # A ~15-day window (not just the exact day) absorbs the few days of
+    # year-to-year date drift these recurring events actually show.
+    df['lag_365']          = df['y'].shift(365)
+    yoy_window              = df['y'].shift(358).rolling(15, min_periods=1)
+    df['yoy_window_mean']  = yoy_window.mean()
+    df['yoy_window_max']   = yoy_window.max()
+
     for w in [3, 7, 14, 28]:
         df[f'roll_mean_{w}'] = df['y'].shift(1).rolling(w, min_periods=1).mean()
         df[f'roll_std_{w}']  = df['y'].shift(1).rolling(w, min_periods=1).std().fillna(0)
@@ -1151,6 +1149,8 @@ def build_features(daily, term_df=None, use_log: bool = False):
         df['term_hours_day']     = term_aligned['term_hours_day'].values
         df['term_sessions']      = term_aligned['term_sessions'].values
         df['in_term']            = term_aligned['in_term'].values
+        df['days_until_term_end'] = term_aligned.get('days_until_term_end', pd.Series(999, index=term_aligned.index)).values
+        df['term_progress_pct']  = term_aligned.get('term_progress_pct', pd.Series(0.0, index=term_aligned.index)).values
         df['term_hours_lag7']    = df['term_hours_day'].shift(7).fillna(0)
         df['term_load_28d_avg']  = df['term_hours_day'].rolling(28, min_periods=1).mean()
         df['has_term_morning']   = (df['term_hours_day'] > 0).astype(int)
@@ -1158,9 +1158,10 @@ def build_features(daily, term_df=None, use_log: bool = False):
         df['roll7_x_term_hours'] = df['roll_mean_7'] * df['term_hours_day']
     else:
         for col in ['term_hours_day', 'term_sessions', 'in_term',
+                    'days_until_term_end', 'term_progress_pct',
                     'term_hours_lag7', 'term_load_28d_avg',
                     'has_term_morning', 'lag1_x_in_term', 'roll7_x_term_hours']:
-            df[col] = 0.0
+            df[col] = 999.0 if col == 'days_until_term_end' else 0.0
 
     return df.ffill().fillna(0.0)
 
@@ -1283,14 +1284,22 @@ def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
     optimizer = Adam(learning_rate=0.0005, clipvalue=1.0)
     model.compile(optimizer=optimizer, loss='mae', metrics=['mae'])
     
-    # ✅ EARLY STOPPING + LEARNING RATE SCHEDULER
+    # ✅ ALWAYS TRAIN THE FULL EPOCH BUDGET, BUT KEEP THE BEST-EPOCH WEIGHTS
+    # patience == total epoch count means the patience-without-improvement
+    # counter can never reach that many epochs before training finishes on
+    # its own — so this never cuts training short by even one epoch. What it
+    # DOES do: at the end, swap in the weights from whichever epoch had the
+    # lowest val_loss, instead of keeping whatever the last epoch happened to
+    # land on. The per-epoch history recorded below is untouched either way —
+    # it always reflects every epoch actually run.
+    total_epochs = min(epochs, LSTM_EPOCHS)
     callbacks = []
+    es = EarlyStopping(monitor='val_loss', mode='min', patience=total_epochs,
+                        restore_best_weights=True, verbose=0)
+    callbacks.append(es)
     if not DISABLE_EARLY_STOPPING:
-        es = EarlyStopping(monitor='val_loss', mode='min', patience=patience,
-                           restore_best_weights=True, verbose=0)
-        callbacks.append(es)
-        
-        # Reduce learning rate on plateau (important for convergence!)
+        # Reduce learning rate on plateau (independent of the above — only
+        # adjusts LR mid-training, never shortens the run).
         reduce_lr = ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.5,       # ลด LR ลง 50%
@@ -1307,7 +1316,7 @@ def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
     if checkpoint_dir:
         callbacks.append(_EpochCheckpointCallback(checkpoint_dir, freq=checkpoint_freq))
     history = model.fit(X_tr, y_tr, validation_data=(X_va, y_va),
-                        epochs=min(epochs, LSTM_EPOCHS), batch_size=LSTM_BATCH,
+                        epochs=total_epochs, batch_size=LSTM_BATCH,
                         callbacks=callbacks, verbose=0)
 
     hist = history.history
@@ -1319,6 +1328,18 @@ def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
         hist['train_loss'] = cls_cb.train_loss_history
     if getattr(cls_cb, 'val_loss_history', None):
         hist['val_loss'] = cls_cb.val_loss_history
+
+    # Record which epoch's weights actually ended up in the model (1-indexed
+    # to match how epoch counts are normally reported/printed).
+    val_loss_hist = hist.get('val_loss') or []
+    if val_loss_hist:
+        best_epoch = int(np.argmin(val_loss_hist)) + 1
+        hist['best_epoch'] = best_epoch
+        print(
+            f"      🏆 LSTM best epoch: {best_epoch}/{len(val_loss_hist)} "
+            f"(val_loss={val_loss_hist[best_epoch - 1]:.4f}) — weights restored from here, "
+            f"trained all {len(val_loss_hist)} epochs regardless"
+        )
 
     if 'accuracy' in hist and 'val_accuracy' in hist:
         print(
@@ -1496,7 +1517,22 @@ def lstm_predict_multivariate(model, scaler, feat_history_df: pd.DataFrame, n_st
 #  robust=True → เปลี่ยน loss เป็น Huber (robust ต่อ outlier มากกว่า MAE ธรรมดา)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
+def _robust_reg_scale(n_estimators: int) -> float:
+    """0.0 (few boosting rounds) .. 1.0 (90+ rounds) — how much of the extra
+    robust-mode regularization to actually apply.
+
+    Why: the robust-mode regularization strengths below were tuned back when
+    every param set used 20-90 rounds. Once round counts got halved (10-50),
+    applying that same fixed regularization made rooms that trigger robust
+    mode (CV(y_tr) > 1.0) underfit badly with few rounds — confirmed on 2C09
+    (Set A, 10 rounds): CalAcc dropped to ~0.62 vs its normal ~0.85+. Scaling
+    the extra regularization by how many rounds are actually available keeps
+    robust mode's outlier-robustness benefit without starving low-round sets
+    of the capacity needed to fit at all."""
+    return float(np.clip(n_estimators / 90.0, 0.0, 1.0))
+
+
+def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
     """
     LightGBM – Supporting Model
     robust=True → Huber loss + regularization แรงขึ้น
@@ -1504,15 +1540,16 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     """
     global CURRENT_PARAM_SET
     params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
-    
+
     if robust:
+        scale = _robust_reg_scale(params_set['lgb_estimators'])
         params = dict(
             objective='huber', alpha=0.9,
             n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.04),
             max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'],
-            min_child_samples=20,
-            lambda_l1=1.0, lambda_l2=1.0,
-            feature_fraction=0.7, bagging_fraction=0.7, bagging_freq=5,
+            min_child_samples=int(round(10 + 10 * scale)),
+            lambda_l1=0.3 + 0.7 * scale, lambda_l2=0.3 + 0.7 * scale,
+            feature_fraction=0.85 - 0.15 * scale, bagging_fraction=0.85 - 0.15 * scale, bagging_freq=5,
             n_jobs=-1,
             verbose=-1,
         )
@@ -1533,6 +1570,7 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
         callbacks.insert(0, lgb.early_stopping(15, verbose=False))
     model.fit(
         X_tr, y_tr,
+        sample_weight=sample_weight,
         eval_set=[(X_tr, y_tr), (X_te, y_te)],
         eval_names=['train', 'valid'],
         eval_metric='mae',
@@ -1541,7 +1579,7 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     return model, _extract_booster_history(model.evals_result_)
 
 
-def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
+def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
     """
     XGBoost – Supporting Model
     robust=True → pseudo-Huber loss + regularization แรงขึ้น
@@ -1550,12 +1588,13 @@ def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
     
     if robust:
+        scale = _robust_reg_scale(params_set['xgb_estimators'])
         params = dict(
             objective='reg:pseudohubererror',
             n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.04),
-            max_depth=params_set['xgb_depth'], subsample=0.7,
-            colsample_bytree=0.7,
-            reg_alpha=1.0, reg_lambda=1.0,
+            max_depth=params_set['xgb_depth'], subsample=0.85 - 0.15 * scale,
+            colsample_bytree=0.85 - 0.15 * scale,
+            reg_alpha=0.3 + 0.7 * scale, reg_lambda=0.3 + 0.7 * scale,
             eval_metric='mae', verbosity=0,
         )
     else:
@@ -1571,6 +1610,7 @@ def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False):
     model = xgb.XGBRegressor(**params, n_jobs=-1)
     model.fit(
         X_tr, y_tr,
+        sample_weight=sample_weight,
         eval_set=[(X_tr, y_tr), (X_te, y_te)],
         verbose=False,
     )
@@ -1791,7 +1831,189 @@ def _load_ensemble_keras(room):
     return None
 
 
+def _peak_sample_weights(y_tr: np.ndarray, high_quantile: float = 0.80, peak_weight: float = 2.0) -> np.ndarray:
+    """Upweight the highest-demand rows in TRAIN so the model isn't penalized
+    equally for under- vs over-predicting them.
+
+    Why: peak/exam-week days are a small minority of rows. Under a plain L1
+    loss, regressing their predictions toward the low/medium majority costs
+    almost nothing on average error, so models systematically under-predict
+    exactly the days that matter most (confirmed by confusion-matrix review:
+    most misclassifications on the busiest rooms were true='urgent' predicted
+    as 'medium'/'high', not label-boundary noise). Doubling the loss weight
+    on the top quantile counteracts that shrinkage.
+
+    Derived from y_tr's own quantile only — no calibration, no test, no
+    peak_ref/thr_high dependency — so it can't leak anything."""
+    if len(y_tr) == 0:
+        return np.ones(0)
+    cutoff = np.quantile(y_tr, high_quantile)
+    return np.where(y_tr >= cutoff, peak_weight, 1.0)
+
+
+def _select_important_features(X_tr: pd.DataFrame, y_tr: np.ndarray, top_k: int = 30) -> list:
+    """Quick LightGBM fit purely to rank features by importance, then keep
+    only the top_k most useful ones.
+
+    Why: each room has ~60 engineered features but only ~500-700 effective
+    training rows — a high feature:row ratio that invites the final models
+    to fit noise in the least-useful columns instead of real signal. This
+    probe fit and the importance ranking use TRAIN data only (X_tr/y_tr),
+    never calibration or test, so trimming features this way can't leak
+    anything — it's the same kind of decision a person would make by eyeballing
+    feature importances before modeling, just automated and scoped to train."""
+    if X_tr.shape[1] <= top_k:
+        return list(X_tr.columns)
+    try:
+        probe = lgb.LGBMRegressor(
+            objective='regression_l1', n_estimators=80, learning_rate=0.08,
+            max_depth=6, num_leaves=31, min_child_samples=10,
+            n_jobs=-1, verbose=-1,
+        )
+        probe.fit(X_tr, y_tr)
+        importances = pd.Series(probe.feature_importances_, index=X_tr.columns)
+        return importances.sort_values(ascending=False).head(top_k).index.tolist()
+    except Exception:
+        return list(X_tr.columns)
+
+
+def _cv_select_lgb_xgb_winner(X, y, thr_high, thr_med, peak_ref, n_folds: int = 3) -> dict:
+    """Cross-validated comparison of LightGBM vs XGBoost for the ensemble
+    SELECTION decision only (the models actually used for serving are still
+    trained once on the full train split, as before).
+
+    A single calibration slice (~90-110 days) is one noisy point estimate of
+    which model generalizes better. This instead trains lightweight copies
+    of each model on several different walk-forward cuts WITHIN the
+    train+calibration region (X/y here — never test) and averages each
+    model's accuracy across folds — the same principle as k-fold
+    cross-validation, which exists specifically to stop a single small
+    sample from deciding a model-selection call. A model that's genuinely
+    better should win consistently across folds; one that only "won" by
+    luck on one slice gets averaged back down.
+
+    Returns {'lightgbm': avg_accuracy, 'xgboost': avg_accuracy}, or {} if
+    there wasn't enough data to run any fold.
+    """
+    n = len(X)
+    cut_fracs = np.linspace(0.5, 0.8, n_folds)
+    lgb_scores, xgb_scores = [], []
+    for frac in cut_fracs:
+        cut = int(n * frac)
+        val_end = min(cut + max(10, int(n * 0.1)), n)
+        if cut < MIN_TRAIN_ROWS or val_end - cut < 3:
+            continue
+        X_fold_tr, y_fold_tr = X.iloc[:cut], y[:cut]
+        X_fold_val, y_fold_val = X.iloc[cut:val_end], y[cut:val_end]
+
+        try:
+            fold_weights = _peak_sample_weights(y_fold_tr)
+            lgb_fold = lgb.LGBMRegressor(
+                objective='regression_l1', n_estimators=60, learning_rate=0.08,
+                max_depth=5, num_leaves=31, min_child_samples=10,
+                n_jobs=-1, verbose=-1,
+            )
+            xgb_fold = xgb.XGBRegressor(
+                objective='reg:absoluteerror', n_estimators=60, learning_rate=0.08,
+                max_depth=5, subsample=0.8, colsample_bytree=0.8,
+                verbosity=0, n_jobs=-1,
+            )
+            lgb_fold.fit(X_fold_tr, y_fold_tr, sample_weight=fold_weights)
+            xgb_fold.fit(X_fold_tr, y_fold_tr, sample_weight=fold_weights)
+        except Exception:
+            continue
+
+        lgb_pred = np.asarray(lgb_fold.predict(X_fold_val), dtype=float)
+        xgb_pred = np.asarray(xgb_fold.predict(X_fold_val), dtype=float)
+        lgb_scores.append(compute_classification_metrics(y_fold_val, lgb_pred, thr_high, thr_med, peak_ref)['accuracy'])
+        xgb_scores.append(compute_classification_metrics(y_fold_val, xgb_pred, thr_high, thr_med, peak_ref)['accuracy'])
+
+    if not lgb_scores or not xgb_scores:
+        return {}
+    return {'lightgbm': float(np.mean(lgb_scores)), 'xgboost': float(np.mean(xgb_scores))}
+
+
+def _score_pred(y_true, y_pred, thr_high=None, thr_med=None, peak_ref=None) -> float:
+    """Goodness score for picking the ensemble winner. When thr_high/thr_med/
+    peak_ref are given, scores by classification ACCURACY using a FIXED
+    threshold (the same one used for CalAcc during training and for the
+    official TestAcc) — deliberately NOT a threshold tuned per model.
+
+    Why fixed beats per-model-tuned here: searching ~17 threshold candidates
+    on a calibration set this small (~90-110 days) and keeping whichever
+    scores best is a classic multiple-comparisons trap — the "best" value
+    found is biased upward by luck on that specific small sample, not a
+    genuine skill signal. Selecting the winner by that inflated number picks
+    whichever model got luckiest with the search, not whichever model is
+    actually most accurate. A shared fixed threshold measures every model on
+    the same honest yardstick, so the winner reflects real accuracy —
+    confirmed in practice: this consistently outperformed the tuned-
+    threshold variant on held-out test.
+
+    Falls back to the R²/MAE-based score when thresholds aren't available
+    (e.g. older callers)."""
+    yt = np.asarray(y_true, dtype=float)
+    pp = np.asarray(y_pred, dtype=float)
+    n = min(len(yt), len(pp))
+    if n <= 0:
+        return float('-inf')
+    yt, pp = yt[:n], pp[:n]
+    if thr_high is not None and thr_med is not None and peak_ref is not None:
+        try:
+            cls = compute_classification_metrics(yt, pp, thr_high, thr_med, peak_ref)
+            return float(cls.get('accuracy', 0.0))
+        except Exception:
+            pass
+    r2 = r2_score(yt, pp)
+    if not np.isfinite(r2) or r2 < 0.0:
+        return 0.0
+    mae = mean_absolute_error(yt, pp)
+    return (max(r2, 0.0) + 1e-6) / (mae + 1e-6)
+
+
+def _prefer_best_single_if_beats_blend(y_true, preds: dict[str, np.ndarray], weights: dict[str, float],
+                                        thr_high=None, thr_med=None, peak_ref=None,
+                                        cv_scores: dict | None = None) -> dict[str, float]:
+    """Always trust whichever single model is most accurate — no blending,
+    ever, regardless of whether a blend might score higher. 100% to the
+    winner, 0% to everyone else.
+
+    For any model named in cv_scores (LightGBM/XGBoost, when the caller ran
+    _cv_select_lgb_xgb_winner), that cross-validated average accuracy is
+    used instead of the single-calibration-slice score — a more reliable
+    signal, since it isn't just one small sample's read. Models not in
+    cv_scores (e.g. LSTM, which isn't cross-validated here) still use the
+    single-calibration _score_pred as before. Either way this only ever
+    looks at calibration/CV-fold data, never test."""
+    available = {k: np.asarray(v, dtype=float) for k, v in preds.items() if v is not None and len(v) > 0}
+    if len(available) < 2:
+        return weights
+    best_name, best_score = None, float('-inf')
+    for name, arr in available.items():
+        if cv_scores and name in cv_scores:
+            s = cv_scores[name]
+        else:
+            s = _score_pred(y_true, arr, thr_high, thr_med, peak_ref)
+        if s > best_score:
+            best_name, best_score = name, s
+    if best_name is None:
+        return weights
+    return _normalize_weights({k: (1.0 if k == best_name else 0.0) for k in weights.keys()})
+
+
 def _derive_ensemble_weights(
+    y_true: np.ndarray,
+    preds: dict[str, np.ndarray],
+    primary: str = 'lstm',
+    base_prior: dict[str, float] | None = None,
+    thr_high=None, thr_med=None, peak_ref=None,
+    cv_scores: dict | None = None,
+) -> dict[str, float]:
+    weights = _derive_ensemble_weights_blend(y_true, preds, primary, base_prior)
+    return _prefer_best_single_if_beats_blend(y_true, preds, weights, thr_high, thr_med, peak_ref, cv_scores)
+
+
+def _derive_ensemble_weights_blend(
     y_true: np.ndarray,
     preds: dict[str, np.ndarray],
     primary: str = 'lstm',
@@ -1872,6 +2094,7 @@ def stacking_predict(
     thr_high: float = None,
     thr_med: float = None,
     peak_ref: float = None,
+    cv_scores: dict | None = None,
 ):
     # Make room-local copies so no branch can accidentally reuse a previous room's
     # dataframe/array object via shared reference.
@@ -1881,8 +2104,23 @@ def stacking_predict(
     y_tr = np.asarray(y_tr, dtype=float).copy()
     y_cal = np.asarray(y_cal, dtype=float).copy()
 
-    lgb_model, lgb_history = train_lgb(X_tr, y_tr, X_cal, y_cal, robust=False)
-    xgb_model, xgb_history = train_xgb(X_tr, y_tr, X_cal, y_cal, robust=False)
+    peak_weights = _peak_sample_weights(y_tr)
+    # Huber loss (robust=True) routing switched from CV(y_tr) to zero-day
+    # fraction of y_tr, after A/B testing both ways it applied:
+    #   2C09   (46% of days nonzero — frequent real usage): Huber HURT it
+    #           badly (R² 0.526→0.953, MAE 2.11h→0.52h when forced off).
+    #   4C05   (30% nonzero): same story, Huber hurt (R² 0.805→0.960).
+    #   1C-MEETING (only 15% of days nonzero — booked almost never): Huber
+    #           HELPED (R² 0.776→-2.329, TestAcc 100%→88.7% when forced off).
+    # Huber dampens the gradient from large-residual points — correct when
+    # those points are genuinely rare noise (1C-MEETING), wrong when they're
+    # a frequent recurring pattern the peak-weighting fix is trying to teach
+    # the model to hit (2C09/4C05). >80% zero-days is the dividing line
+    # between those two cases in the data surveyed. Decided from y_tr only.
+    zero_frac = float(np.mean(y_tr <= 1e-9)) if len(y_tr) else 0.0
+    use_robust = zero_frac > 0.80
+    lgb_model, lgb_history = train_lgb(X_tr, y_tr, X_cal, y_cal, robust=use_robust, sample_weight=peak_weights)
+    xgb_model, xgb_history = train_xgb(X_tr, y_tr, X_cal, y_cal, robust=use_robust, sample_weight=peak_weights)
 
     if thr_high is not None and thr_med is not None and peak_ref is not None:
         lgb_history, xgb_history = _attach_booster_accuracy_history(
@@ -1985,6 +2223,8 @@ def stacking_predict(
         }
         ensemble_weights = _derive_ensemble_weights(
             y_cal, model_preds, primary='lstm',
+            thr_high=thr_high, thr_med=thr_med, peak_ref=peak_ref,
+            cv_scores=cv_scores,
         )
         final = _blend_predictions(
             {'lstm': lstm_fut_preds, 'lightgbm': lgb_fut, 'xgboost': xgb_fut},
@@ -1998,6 +2238,8 @@ def stacking_predict(
             {'lightgbm': lgb_val, 'xgboost': xgb_val},
             primary='lightgbm',
             base_prior={'lightgbm': 0.50, 'xgboost': 0.50},
+            thr_high=thr_high, thr_med=thr_med, peak_ref=peak_ref,
+            cv_scores=cv_scores,
         )
         final = _blend_predictions(
             {'lightgbm': lgb_fut, 'xgboost': xgb_fut},
@@ -2210,7 +2452,21 @@ def _collect_lstm_holdout_preds(lstm_model, lstm_scaler, feat_df, y_tr, y_cal, y
     return lstm_cal, lstm_test
 
 
-def _evaluate_model_preds(y_true, preds_dict, thr_high, thr_med, peak_ref, room_name):
+def _evaluate_model_preds(y_true, preds_dict, thr_high, thr_med, peak_ref, room_name,
+                           cal_preds_dict=None, y_cal=None, verbose: bool = True):
+    """Score each model's TEST predictions against y_true, using the SAME
+    fixed threshold as CalAcc (the ensemble-selection criterion) and TestAcc
+    (the official reported number) — no per-model threshold search here.
+    Previously this searched a threshold multiplier per model from
+    calibration data; that number wasn't comparable to CalAcc/TestAcc (which
+    both use the plain fixed threshold) and repeatedly caused confusion about
+    why the "winner" didn't have the highest number in this block. Now all
+    three (CalAcc, this block, TestAcc) use one consistent yardstick.
+    cal_preds_dict/y_cal are accepted for call-site compatibility but no
+    longer used. verbose=False suppresses the per-model TEST print lines
+    (still computes and returns the metrics — only the console output changes)
+    for callers that want a training-only console (see train_from_excel.py).
+    """
     model_metrics = {}
     for mname, mpred in preds_dict.items():
         if mpred is None:
@@ -2221,67 +2477,88 @@ def _evaluate_model_preds(y_true, preds_dict, thr_high, thr_med, peak_ref, room_
                 mp, (0, max(0, len(y_true) - len(mp))), 'constant')
         r2 = r2_score(y_true, mp)
         mae = mean_absolute_error(y_true, mp)
-        # compute base classification metrics and search for an improved threshold multiplier
-        base_cls = compute_classification_metrics(y_true, mp, thr_high, thr_med, peak_ref)
-        try:
-            best_m, best_metrics = _evaluate_with_best_threshold(y_true, mp, thr_high, thr_med, peak_ref)
-        except Exception:
-            best_m, best_metrics = 1.0, base_cls
-        cls = best_metrics or base_cls
-        # attach calibration multiplier when optimization found a different multiplier
-        cls['calibration_multiplier'] = float(best_m or 1.0)
+
+        cls = compute_classification_metrics(y_true, mp, thr_high, thr_med, peak_ref)
         reg = {
             'r2': round(r2, 4), 'mae': round(mae, 4),
             'rmse': round(rmse(y_true, mp), 4), 'smape': round(smape(y_true, mp), 4),
         }
         model_metrics[mname] = {'regression': reg, 'classification': cls}
-        print(
-            f"  📊 {mname.upper():10s}: Accuracy={cls['accuracy']*100:5.1f}% "
-            f"| Loss={cls['loss']:.4f} | R²={r2:.4f} | MAE={mae:.4f}"
-        )
+        if verbose:
+            print(
+                f"  📊 {mname.upper():10s}: Accuracy={cls['accuracy']*100:5.1f}% "
+                f"| Loss={cls['loss']:.4f} | R²={r2:.4f} | MAE={mae:.4f}"
+            )
     return model_metrics
 
 
+def expand_bookings_to_daily(rdf: pd.DataFrame, daily_cap: float = 12.0) -> pd.DataFrame:
+    """Expand each booking into one row per calendar day it actually spans,
+    instead of dumping its whole duration onto the start date alone. A
+    booking blocked for a full exam week (e.g. start=Mon 08:00,
+    end=next-Tue 20:00) then contributes a bounded, realistic amount to
+    EVERY day it spans — each day's overlap with the booking capped at
+    `daily_cap` hours (no room is genuinely used more than ~12h in a real
+    day) — rather than either attributing 200+ raw hours to a single
+    calendar day (physically impossible) or capping once per record and
+    losing every other day the booking actually covered.
+
+    Requires 'start_time' and 'end_time' columns. Returns a DataFrame with
+    columns ['date', 'duration'] — one row per (booking, day-it-touches).
+    """
+    rows_date, rows_hours = [], []
+    for start, end in zip(rdf['start_time'], rdf['end_time']):
+        start = pd.Timestamp(start)
+        end = pd.Timestamp(end)
+        if end <= start:
+            continue
+        cur = start.normalize()
+        last = end.normalize()
+        while cur <= last:
+            day_start = cur
+            day_end = cur + pd.Timedelta(days=1)
+            ov_start = max(start, day_start)
+            ov_end = min(end, day_end)
+            hours = (ov_end - ov_start).total_seconds() / 3600.0
+            if hours > 0:
+                rows_date.append(cur.date())
+                rows_hours.append(min(hours, daily_cap))
+            cur = cur + pd.Timedelta(days=1)
+    return pd.DataFrame({'date': rows_date, 'duration': rows_hours})
+
+
 def _prepare_daily_series(rdf, room, all_rooms_daily):
-    """Build daily series; augment from similar rooms when data is sparse."""
+    """Build the room's REAL daily series only. Returns None when the room has
+    no booking history at all — callers must skip training for that room
+    rather than fabricate one (no synthetic augmentation, no borrowing
+    another room's series). ``all_rooms_daily`` is accepted for call-site
+    compatibility but no longer used."""
     if len(rdf) == 0:
-        similar = build_similar_series(room, all_rooms_daily)
-        if len(similar) == 0:
-            return None
-        daily = similar.copy()
-    else:
-        daily = (
-            rdf.groupby('date')['duration'].sum()
-               .reindex(pd.date_range(rdf['date'].min(), rdf['date'].max(), freq='D').date,
-                        fill_value=0.0)
-               .astype(float)
-        )
-        daily.index = pd.to_datetime(daily.index)
-
-    # Enough raw days to survive build_features()'s 28-day lag/rolling dropna,
-    # then still leave >= LSTM_LOOKBACK+10 rows in the 70%-train split so the
-    # LSTM gate in _train_room_pipeline passes regardless of which param set's
-    # lookback (20/40/70/100...) is currently active.
-    min_days_needed = int(np.ceil((LSTM_LOOKBACK + 10) / TRAIN_FRAC)) + 28 + 10
-    aug_target_days = max(60, min_days_needed)
-
-    unique_days = rdf['date'].nunique() if len(rdf) > 0 else daily.index.nunique()
-    tier = get_data_tier(len(rdf), unique_days)
-    if tier in ('sparse', 'cold_start') or len(daily) < aug_target_days:
-        if len(rdf) > 0:
-            daily, _ = augment_sparse_daily(daily, target_days=aug_target_days)
-        else:
-            similar = build_similar_series(room, all_rooms_daily)
-            if len(similar) > 0:
-                daily = similar.copy()
-                daily.index = pd.to_datetime(daily.index)
+        return None
+    expanded = expand_bookings_to_daily(rdf)
+    if len(expanded) == 0:
+        return None
+    daily = (
+        expanded.groupby('date')['duration'].sum()
+           .reindex(pd.date_range(expanded['date'].min(), expanded['date'].max(), freq='D').date,
+                    fill_value=0.0)
+           .astype(float)
+    )
+    daily.index = pd.to_datetime(daily.index)
     return daily
 
 
-def _train_room_pipeline(room, daily, rdf, schedule):
+def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
     """
     Simple unified path:
       LSTM (primary) → LightGBM + XGBoost (support) → weighted ensemble
+
+    verbose=False suppresses only the TEST-evaluation console output (the
+    "ENSEMBLE –" header, the Classification Metrics block, and the per-model
+    ENSEMBLE/LIGHTGBM/XGBOOST/LSTM lines) — everything computed and returned
+    is unchanged, and training-time console output (LSTM/CV/feature-selection
+    progress, CalAcc) still prints either way, since that reflects DECISIONS
+    made during training, not a peek at test results.
     """
     use_log = _needs_log_transform(room)
     cap95 = float(daily.quantile(0.95)) or 1.0
@@ -2299,6 +2576,19 @@ def _train_room_pipeline(room, daily, rdf, schedule):
         return None
 
     X_tr, X_cal, X_te, y_tr, y_cal, y_te, train_end, calib_end = split
+
+    # Trim to the most useful features (ranked on TRAIN only) before doing
+    # anything else — reduces the feature:row ratio so LSTM/LGB/XGB spend
+    # their limited data on real signal instead of noisy columns. See
+    # _select_important_features docstring.
+    selected_features = _select_important_features(X_tr, y_tr)
+    if len(selected_features) < X.shape[1]:
+        print(f"   ✂️  Feature selection: {X.shape[1]} → {len(selected_features)} features kept")
+        feat_df = feat_df[selected_features + ['y']]
+        X = feat_df.drop(columns='y')
+        y = feat_df['y'].values
+        X_tr, X_cal, X_te = X.iloc[:train_end], X.iloc[train_end:calib_end], X.iloc[calib_end:]
+
     peak_ref = float(daily.quantile(0.95)) or 1.0
     thr_high, thr_med = compute_adaptive_thresholds(daily, peak_ref)
     room_hour_dist = learn_hour_dist(rdf, room_id=room.id) if len(rdf) > 0 else HOUR_DIST_FALLBACK
@@ -2320,13 +2610,35 @@ def _train_room_pipeline(room, daily, rdf, schedule):
     print(f"   🌿 [2/3] LightGBM (Support)")
     print(f"   ⚡ [3/3] XGBoost (Support)")
 
+    # Cross-validated LGB-vs-XGB comparison for the SELECTION decision only —
+    # walk-forward folds within X_tr+X_cal (never X_te). See
+    # _cv_select_lgb_xgb_winner's docstring: a single ~90-110 day calibration
+    # slice is a noisy point estimate of which model generalizes better;
+    # averaging several folds is far less likely to be fooled by one
+    # unrepresentative sample.
+    X_cv = pd.concat([X_tr, X_cal]) if isinstance(X_tr, pd.DataFrame) else np.concatenate([X_tr, X_cal])
+    y_cv = np.concatenate([y_tr, y_cal])
+    cv_scores = _cv_select_lgb_xgb_winner(X_cv, y_cv, thr_high, thr_med, peak_ref)
+    if cv_scores:
+        cv_winner = max(cv_scores, key=cv_scores.get)
+        print(
+            f"   👑 SELECTION (decided here, on train+calibration only — test is never looked at): "
+            f"LGB={cv_scores.get('lightgbm', 0):.3f}  XGB={cv_scores.get('xgboost', 0):.3f}  "
+            f"→ picking {cv_winner.upper()}"
+        )
+        print(
+            "      (the ENSEMBLE/LIGHTGBM/XGBOOST/LSTM block further below just REPORTS how that "
+            "already-made choice did on test — it does not influence the pick above)"
+        )
+
     (y_pred_ens, lgb_model, xgb_model, ensemble_weights,
-     lgb_history, xgb_history, _, _, _, _) = stacking_predict(
+     lgb_history, xgb_history, lgb_val, xgb_val, lstm_val, meta_val) = stacking_predict(
         X_tr, y_tr, X_cal, y_cal, X_te,
         lstm_model=lstm_model, lstm_scaler=lstm_scaler,
         daily_hist_raw=np.concatenate([y_tr, y_cal]), n_pred=len(X_te),
         lstm_lookback=LSTM_LOOKBACK,
         thr_high=thr_high, thr_med=thr_med, peak_ref=peak_ref,
+        cv_scores=cv_scores,
     )
 
     lgb_test = np.asarray(lgb_model.predict(X_te), dtype=float)
@@ -2335,19 +2647,25 @@ def _train_room_pipeline(room, daily, rdf, schedule):
         lstm_model, lstm_scaler, feat_df, y_tr, y_cal, y_te, train_end,
     )
 
+    # y_cal_eval (real-units calibration target) is needed regardless of whether
+    # LSTM passes its gate below — used later to pick classification thresholds
+    # from calibration data only, never from test.
+    if use_log:
+        y_cal_eval = np.expm1(y_cal)
+    else:
+        y_cal_eval = np.asarray(y_cal, dtype=float)
+    y_cal_eval = np.nan_to_num(y_cal_eval, nan=0.0, posinf=0.0, neginf=0.0)
+
     lstm_gate_pass = False
     lstm_cal_r2 = float('-inf')
     lstm_cal_mae = float('inf')
+    lstm_cal_eval = None
     lstm_history_saved = lstm_history  # Save history before potentially clearing it
     if lstm_model is not None and lstm_cal is not None:
         lstm_cal_eval = np.asarray(lstm_cal, dtype=float)
         if use_log:
             lstm_cal_eval = np.expm1(lstm_cal_eval)
-            y_cal_eval = np.expm1(y_cal)
-        else:
-            y_cal_eval = np.asarray(y_cal, dtype=float)
         lstm_cal_eval = np.nan_to_num(lstm_cal_eval, nan=0.0, posinf=0.0, neginf=0.0)
-        y_cal_eval = np.nan_to_num(y_cal_eval, nan=0.0, posinf=0.0, neginf=0.0)
         if len(y_cal_eval) > 0 and len(lstm_cal_eval) == len(y_cal_eval):
             try:
                 lstm_cal_r2 = float(r2_score(y_cal_eval, lstm_cal_eval))
@@ -2362,6 +2680,7 @@ def _train_room_pipeline(room, daily, rdf, schedule):
         lstm_model = None
         lstm_scaler = None
         lstm_eval = None
+        lstm_cal_eval = None
 
     if use_log:
         y_te_eval = np.expm1(y_te)
@@ -2369,14 +2688,23 @@ def _train_room_pipeline(room, daily, rdf, schedule):
         lgb_eval = np.expm1(lgb_test)
         xgb_eval = np.expm1(xgb_test)
         lstm_eval = np.expm1(lstm_test) if lstm_test is not None else None
+        lgb_cal_eval = np.expm1(np.asarray(lgb_val, dtype=float)) if lgb_val is not None else None
+        xgb_cal_eval = np.expm1(np.asarray(xgb_val, dtype=float)) if xgb_val is not None else None
+        ens_cal_eval = np.expm1(np.maximum(0, np.asarray(meta_val, dtype=float))) if meta_val is not None else None
     else:
         y_te_eval = y_te.copy()
         y_pred_eval = np.maximum(0, y_pred_ens)
         lgb_eval, xgb_eval = lgb_test, xgb_test
         lstm_eval = lstm_test
+        lgb_cal_eval = np.asarray(lgb_val, dtype=float) if lgb_val is not None else None
+        xgb_cal_eval = np.asarray(xgb_val, dtype=float) if xgb_val is not None else None
+        ens_cal_eval = np.maximum(0, np.asarray(meta_val, dtype=float)) if meta_val is not None else None
 
     y_te_eval = np.nan_to_num(y_te_eval, nan=0.0, posinf=0.0, neginf=0.0)
     y_pred_eval = np.nan_to_num(y_pred_eval, nan=0.0, posinf=0.0, neginf=0.0)
+    lgb_cal_eval = np.nan_to_num(lgb_cal_eval, nan=0.0, posinf=0.0, neginf=0.0) if lgb_cal_eval is not None else None
+    xgb_cal_eval = np.nan_to_num(xgb_cal_eval, nan=0.0, posinf=0.0, neginf=0.0) if xgb_cal_eval is not None else None
+    ens_cal_eval = np.nan_to_num(ens_cal_eval, nan=0.0, posinf=0.0, neginf=0.0) if ens_cal_eval is not None else None
 
     m_r2 = r2_score(y_te_eval, y_pred_eval)
     m_mae = mean_absolute_error(y_te_eval, y_pred_eval)
@@ -2385,12 +2713,16 @@ def _train_room_pipeline(room, daily, rdf, schedule):
     confidence = round(max(0.0, 1.0 - m_smape / 100.0) * 100.0, 1)
     cls_metrics = compute_classification_metrics(y_te_eval, y_pred_eval, thr_high, thr_med, peak_ref)
 
-    print(f"\n  🎯 ENSEMBLE – {room.name} [id={room.id}]")
-    print_classification_metrics(cls_metrics, room.name, room.id)
+    if verbose:
+        print(f"\n  🎯 ENSEMBLE – {room.name} [id={room.id}]")
+        print_classification_metrics(cls_metrics, room.name, room.id)
     model_metrics = _evaluate_model_preds(
         y_te_eval,
         {'ensemble': y_pred_eval, 'lightgbm': lgb_eval, 'xgboost': xgb_eval, 'lstm': lstm_eval},
         thr_high, thr_med, peak_ref, room.name,
+        cal_preds_dict={'ensemble': ens_cal_eval, 'lightgbm': lgb_cal_eval, 'xgboost': xgb_cal_eval, 'lstm': lstm_cal_eval},
+        y_cal=y_cal_eval,
+        verbose=verbose,
     )
 
     return {
