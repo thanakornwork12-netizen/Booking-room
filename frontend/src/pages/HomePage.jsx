@@ -145,9 +145,9 @@ function TutorialModal({ onClose, userId }) {
   )
 }
 
-function StatCard({ label, value, color, bg, icon: Icon }) {
+function StatCard({ label, value, color, bg, accent, icon: Icon }) {
   return (
-    <div className="bg-white border border-slate-100 rounded-2xl px-3 py-3.5 sm:px-4 sm:py-4 flex flex-col items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:border-blue-100 hover:-translate-y-0.5 transition-all cursor-default text-center">
+    <div className={`bg-white border-t-[3px] ${accent} border-x border-b border-slate-100 rounded-2xl px-3 py-3.5 sm:px-4 sm:py-4 flex flex-col items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-default text-center`}>
       {Icon && (
         <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center ${bg}`}>
           <Icon size={17} className={color} />
@@ -650,11 +650,11 @@ export default function HomePage() {
           </div>
 
           <div className="lg:col-span-8 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
-            <StatCard label="จองทั้งหมด" value={bookings.length} color="text-blue-600" bg="bg-blue-50" icon={History} />
-            <StatCard label="กำลังจอง" value={activeBookings.length} color="text-emerald-600" bg="bg-emerald-50" icon={CheckCircle2} />
-            <StatCard label="ยกเลิกแล้ว" value={cancelledBookings.length} color="text-red-500" bg="bg-red-50" icon={XCircle} />
-            <StatCard label="No-Show" value={noShowBookings.length} color="text-orange-500" bg="bg-orange-50" icon={AlertCircle} />
-            <StatCard label="รายเทอม" value={termBookings.length} color="text-purple-600" bg="bg-purple-50" icon={BookOpen} />
+            <StatCard label="จองทั้งหมด" value={bookings.length} color="text-blue-600" bg="bg-blue-50" accent="border-t-blue-500" icon={History} />
+            <StatCard label="กำลังจอง" value={activeBookings.length} color="text-emerald-600" bg="bg-emerald-50" accent="border-t-emerald-500" icon={CheckCircle2} />
+            <StatCard label="ยกเลิกแล้ว" value={cancelledBookings.length} color="text-red-500" bg="bg-red-50" accent="border-t-red-400" icon={XCircle} />
+            <StatCard label="No-Show" value={noShowBookings.length} color="text-orange-500" bg="bg-orange-50" accent="border-t-orange-400" icon={AlertCircle} />
+            <StatCard label="รายเทอม" value={termBookings.length} color="text-purple-600" bg="bg-purple-50" accent="border-t-purple-500" icon={BookOpen} />
           </div>
         </section>
 
@@ -705,7 +705,7 @@ export default function HomePage() {
 
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
           <div className="flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex items-center gap-2 border-b border-purple-100 bg-purple-50 px-4 py-3">
               <BookOpen size={16} className="text-purple-600" />
               <span className="text-sm font-bold text-slate-800">วิชาที่จอง (รายเทอม)</span>
             </div>
@@ -740,7 +740,7 @@ export default function HomePage() {
           </div>
 
           <div className="lg:col-span-2 flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex items-center justify-between gap-2 border-b border-blue-100 bg-blue-50 px-4 py-3">
               <div className="flex min-w-0 items-center gap-2">
                 <CalendarDays size={16} className="shrink-0 text-blue-600" />
                 <span className="truncate text-sm font-bold text-slate-800">การจองของฉัน (รายวัน)</span>
