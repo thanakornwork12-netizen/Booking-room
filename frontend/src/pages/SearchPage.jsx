@@ -1301,6 +1301,11 @@ export default function SearchPage({ embedded = false }) {
       let filtered = roomsData.filter(r => r.capacity >= attendees && r.capacity <= attendees + CAPACITY_BUFFER)
       if (bookingType === 'term') filtered = filtered.filter(r => isClassroomType(r))
       if (selectedEquipments.length > 0) filtered = filtered.filter(r => roomHasEquipments(r, selectedEquipments, equipmentPresets))
+      // building_code from the backend is only a soft ordering hint (preferred
+      // building first, then every other room) — the chip UI looks/behaves
+      // like the equipment filter above, which does hard-exclude, so users
+      // pick a building expecting only that building's rooms. Make it match.
+      if (building) filtered = filtered.filter(r => r.building_code === building)
 
       filtered = filtered
         .map(room => ({ ...room, suitability_score: scoreFallbackRoom(room, { attendees, building, bookingType, selectedEquipments, equipmentPresets }).score }))
