@@ -688,7 +688,12 @@ export default function HomePage() {
                   </div>
                   <p className="mt-1.5 truncate text-sm font-bold text-slate-900">{room.name}</p>
                   <p className="mt-0.5 truncate text-xs text-slate-500">{room.building_name}</p>
-                  <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400">
+                  {room.available_from && room.available_until && (
+                    <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+                      <Clock size={11} /> {room.available_from}–{room.available_until} น.
+                    </p>
+                  )}
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
                     <Users size={11} /> รองรับ {room.capacity} คน
                   </p>
                 </button>

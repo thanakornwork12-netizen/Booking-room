@@ -587,7 +587,13 @@ class RoomViewSet(viewsets.ModelViewSet):
             .prefetch_related('room_facilities__facility', 'forecasts')
             .order_by('capacity')[:5]
         )
-        return Response(self._enrich_rooms(rooms, today, now_time, window_end, 'dynamic', request))
+        enriched = self._enrich_rooms(rooms, today, now_time, window_end, 'dynamic', request)
+        # _enrich_rooms ใช้ start_time/end_time แค่กรอง forecast ข้างในเฉยๆ ไม่
+        # ได้แนบกลับมาในผลลัพธ์ — ฟีดนี้ต้องโชว์ช่วงเวลาที่ว่างจริงในการ์ดด้วย
+        for item in enriched:
+            item['available_from'] = now_time.strftime('%H:%M')
+            item['available_until'] = window_end.strftime('%H:%M')
+        return Response(enriched)
 
     @action(detail=False, methods=['post'], url_path='dynamic-recommend')
     def dynamic_recommend(self, request):
