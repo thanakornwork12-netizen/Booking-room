@@ -143,13 +143,13 @@ def send_welcome_email(user):
     plain_text = f'''
 สวัสดีคุณ {display_name}
 
-สมัครสมาชิกระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี สำเร็จแล้ว 🎉
+สมัครสมาชิกระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี สำเร็จแล้ว 🎉
 
 ชื่อผู้ใช้: {user.username}
 
 เข้าสู่ระบบได้ที่: {login_url}
 
-ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
 
     html_message = f'''
@@ -161,7 +161,7 @@ def send_welcome_email(user):
     <!-- Header -->
     <div style="background:#1d4ed8;padding:28px 32px;">
       <h1 style="color:white;margin:0;font-size:22px;">🎉 ยินดีต้อนรับ</h1>
-      <p style="color:#bfdbfe;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+      <p style="color:#bfdbfe;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
 
     <!-- Yellow accent -->
@@ -194,7 +194,7 @@ def send_welcome_email(user):
     <!-- Footer -->
     <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
       <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-        ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
       </p>
     </div>
 
@@ -213,7 +213,7 @@ def send_welcome_email(user):
             getattr(settings, 'EMAIL_BACKEND', None),
         )
         send_mail(
-            subject='🎉 ยินดีต้อนรับสู่ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี',
+            subject='🎉 ยินดีต้อนรับสู่ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
             message=plain_text,
             from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
             recipient_list=[user_email],
@@ -256,7 +256,7 @@ def send_booking_confirmation_email(instance):
 ✅ กด Check-in (ได้ก่อนเวลา 15 นาที): {checkin_url}
 ❌ ยกเลิกการจอง: {cancel_url}
 
-ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
 
     html_message = f'''
@@ -268,7 +268,7 @@ def send_booking_confirmation_email(instance):
     <!-- Header -->
     <div style="background:#1d4ed8;padding:28px 32px;">
       <h1 style="color:white;margin:0;font-size:22px;">✅ ยืนยันการจองห้องสำเร็จ</h1>
-      <p style="color:#bfdbfe;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+      <p style="color:#bfdbfe;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
 
     <!-- Yellow accent -->
@@ -345,7 +345,7 @@ def send_booking_confirmation_email(instance):
     <!-- Footer -->
     <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
       <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-        ลิงก์ใช้ได้ครั้งเดียว • ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+        ลิงก์ใช้ได้ครั้งเดียว • ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
       </p>
     </div>
 
@@ -399,7 +399,7 @@ def send_term_booking_confirmation_email(instance):
 ผู้เข้าร่วม: {instance.attendees} คน
 ─────────────────────────
 
-ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
 
     html_message = f'''
@@ -409,7 +409,7 @@ def send_term_booking_confirmation_email(instance):
   <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
     <div style="background:#4338ca;padding:28px 32px;">
       <h1 style="color:white;margin:0;font-size:22px;">ยืนยันการจองห้องทั้งเทอมสำเร็จ</h1>
-      <p style="color:#c7d2fe;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+      <p style="color:#c7d2fe;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
     <div style="padding:28px 32px;">
@@ -477,7 +477,7 @@ def send_booking_cancelled_email(instance):
 
 หากต้องการจองใหม่ สามารถเข้าระบบได้เลย
 
-ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
 
     html_message = f'''
@@ -489,7 +489,7 @@ def send_booking_cancelled_email(instance):
     <!-- Header -->
     <div style="background:#dc2626;padding:28px 32px;">
       <h1 style="color:white;margin:0;font-size:22px;">❌ การจองถูกยกเลิกแล้ว</h1>
-      <p style="color:#fecaca;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+      <p style="color:#fecaca;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
 
     <!-- Yellow accent -->
@@ -539,7 +539,7 @@ def send_booking_cancelled_email(instance):
     <!-- Footer -->
     <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
       <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-        ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
       </p>
     </div>
 

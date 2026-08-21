@@ -1419,7 +1419,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         ✅ ยืนยัน ยกเลิกการจอง
       </button>
     </form>
-    <p style="color:#9ca3af;font-size:13px;margin-top:8px;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+    <p style="color:#9ca3af;font-size:13px;margin-top:8px;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
   </div>
 </body>
 </html>''')
@@ -1449,7 +1449,7 @@ class BookingViewSet(viewsets.ModelViewSet):
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);border-radius:4px;margin-bottom:20px;"></div>
     <h1 style="color:{color};margin:0 0 12px;font-size:24px;">{title}</h1>
     <p style="color:#6b7280;font-size:16px;line-height:1.6;">{detail}</p>
-    <p style="color:#9ca3af;font-size:13px;margin-top:32px;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+    <p style="color:#9ca3af;font-size:13px;margin-top:32px;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
   </div>
 </body>
 </html>'''

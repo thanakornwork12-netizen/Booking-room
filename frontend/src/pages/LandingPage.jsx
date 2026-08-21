@@ -8,7 +8,7 @@ const supportInfo = {
   phone: '045-353102',
   email: 'ocn@ubu.ac.th',
   facebook: 'https://www.facebook.com/odlfanpage',
-  copyright: `สงวนลิขสิทธิ์ © ${new Date().getFullYear()} มหาวิทยาลัยอุบลราชธานี`,
+  copyright: `สงวนลิขสิทธิ์ © ${new Date().getFullYear()} สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี`,
 }
 
 const FEATURES = [
@@ -122,7 +122,7 @@ export default function LandingPage() {
           <h1 className="mt-5 text-3xl font-extrabold leading-tight sm:text-4xl lg:text-5xl">
             <span className="block text-slate-900">ระบบจองห้องอัจฉริยะ</span>
             <span className="mt-1 block bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              มหาวิทยาลัยอุบลราชธานี
+              สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
             </span>
           </h1>
 

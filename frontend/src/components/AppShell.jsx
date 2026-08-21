@@ -879,7 +879,7 @@ function AppShell({ children }) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-lg font-extrabold leading-tight text-slate-900">ระบบจองห้องประชุม</p>
-              <p className="truncate text-sm font-semibold text-slate-500">มหาวิทยาลัยอุบลราชธานี</p>
+              <p className="truncate text-sm font-semibold text-slate-500">สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
             </div>
           </div>
 

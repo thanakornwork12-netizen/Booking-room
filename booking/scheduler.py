@@ -52,7 +52,7 @@ def send_checkin_reminders():
 
     <div style="background:#d97706;padding:28px 32px;">
       <h1 style="color:white;margin:0;font-size:22px;">⏰ อีก 15 นาที ก็ถึงเวลาแล้ว!</h1>
-      <p style="color:#fef3c7;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+      <p style="color:#fef3c7;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
 
@@ -96,7 +96,7 @@ def send_checkin_reminders():
 
     <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
       <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-        ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
       </p>
     </div>
   </div>
@@ -167,7 +167,7 @@ def mark_no_show():
 
     <div style="background:#7c3aed;padding:28px 32px;">
       <h1 style="color:white;margin:0;font-size:22px;">⚠️ บันทึกการไม่มาใช้งาน</h1>
-      <p style="color:#ede9fe;margin:8px 0 0;">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+      <p style="color:#ede9fe;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
 
@@ -223,7 +223,7 @@ def mark_no_show():
 
     <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
       <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-        ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
       </p>
     </div>
   </div>

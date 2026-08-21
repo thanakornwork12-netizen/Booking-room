@@ -115,7 +115,7 @@ function TutorialModal({ onClose, userId }) {
             <BookOpen size={16} color="#fff" />
             <span className="text-white text-xs font-bold uppercase tracking-widest">คู่มือใช้งาน</span>
           </div>
-          <p className="text-blue-100 text-xs">ระบบจองห้องประชุม มหาวิทยาลัยอุบลราชธานี</p>
+          <p className="text-blue-100 text-xs">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
         </div>
         <div className="flex gap-1.5 px-6 pt-4">
           {TUTORIAL_STEPS.map((_,i) => (
