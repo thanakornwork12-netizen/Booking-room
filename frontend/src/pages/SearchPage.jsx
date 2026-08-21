@@ -14,9 +14,11 @@ const TIME_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:
 const DURATIONS  = [{ label: '1 ชม.', hours: 1 },{ label: '2 ชม.', hours: 2 },{ label: '3 ชม.', hours: 3 }]
 // ห้องที่มีข้อมูล AI จริง (ดู AI_FORECAST_ROOM_IDS ฝั่ง backend) ตอนนี้เป็นห้อง
 // Lab คอมพิวเตอร์ขนาดใหญ่ล้วน (ความจุ 31-61 คน) ไม่มีห้องเล็ก — ปรับค่าเริ่มต้น/
-// ขั้นต่ำผู้เข้าร่วมเป็น 20 คน ให้ตรงกับห้องที่มีจริง กันค้นหากลุ่มเล็กแล้วไม่เจอห้องเลย
-const MIN_ATTENDEES     = 20
-const ATTENDEES_PRESETS = [20, 30, 40, 50, 60]
+// มีห้องเล็กสุดจุแค่ 5 คนอยู่จริงในระบบ (ก่อนหน้านี้ล็อกขั้นต่ำไว้ที่ 20 คน
+// ทำให้ค้นหากลุ่มเล็กแล้วไม่เจอห้องพวกนี้เลย) — ค่าเริ่มต้นยังคง 20 ไว้เหมือนเดิม
+const MIN_ATTENDEES     = 1
+const DEFAULT_ATTENDEES = 20
+const ATTENDEES_PRESETS = [5, 10, 15, 20, 30, 40, 50, 60]
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'จ.',  full: 'วันจันทร์' },
@@ -1156,7 +1158,7 @@ export default function SearchPage({ embedded = false }) {
   const searchState = location.state || {}
   const [step, setStep] = useState(1)
   const [bookingType, setBookingType] = useState('daily')
-  const [attendees, setAttendees] = useState(MIN_ATTENDEES)
+  const [attendees, setAttendees] = useState(DEFAULT_ATTENDEES)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [dayOfWeek, setDayOfWeek] = useState(null)
   const [startTime, setStartTime] = useState('')
