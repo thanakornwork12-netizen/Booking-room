@@ -1883,18 +1883,31 @@ def _cv_select_lgb_xgb_winner(X, y, thr_high, thr_med, peak_ref, n_folds: int = 
     trained once on the full train split, as before).
 
     A single calibration slice (~90-110 days) is one noisy point estimate of
-    which model generalizes better. This instead trains lightweight copies
-    of each model on several different walk-forward cuts WITHIN the
-    train+calibration region (X/y here — never test) and averages each
-    model's accuracy across folds — the same principle as k-fold
-    cross-validation, which exists specifically to stop a single small
-    sample from deciding a model-selection call. A model that's genuinely
-    better should win consistently across folds; one that only "won" by
-    luck on one slice gets averaged back down.
+    which model generalizes better. This instead trains copies of each model
+    on several different walk-forward cuts WITHIN the train+calibration
+    region (X/y here — never test) and averages each model's accuracy across
+    folds — the same principle as k-fold cross-validation, which exists
+    specifically to stop a single small sample from deciding a
+    model-selection call. A model that's genuinely better should win
+    consistently across folds; one that only "won" by luck on one slice gets
+    averaged back down.
+
+    The fold probes use the ACTIVE param set's real hyperparameters
+    (PARAM_SETS[CURRENT_PARAM_SET]) — this used to be a fixed lightweight
+    config (60 estimators/depth 5) regardless of which set was training,
+    which meant the selection never actually depended on the set being
+    evaluated: it compared the same two fixed probes to the same room data
+    every time, so the winner was a pure property of the room, never of the
+    hyperparameters under test. Now a genuinely different config can
+    genuinely produce a different winner, like the rest of the A-E
+    comparison is supposed to measure.
 
     Returns {'lightgbm': avg_accuracy, 'xgboost': avg_accuracy}, or {} if
     there wasn't enough data to run any fold.
     """
+    global CURRENT_PARAM_SET
+    params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+
     n = len(X)
     cut_fracs = np.linspace(0.5, 0.8, n_folds)
     lgb_scores, xgb_scores = [], []
@@ -1909,13 +1922,15 @@ def _cv_select_lgb_xgb_winner(X, y, thr_high, thr_med, peak_ref, n_folds: int = 
         try:
             fold_weights = _peak_sample_weights(y_fold_tr)
             lgb_fold = lgb.LGBMRegressor(
-                objective='regression_l1', n_estimators=60, learning_rate=0.08,
-                max_depth=5, num_leaves=31, min_child_samples=10,
+                objective='regression_l1',
+                n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.08),
+                max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'], min_child_samples=10,
                 n_jobs=-1, verbose=-1,
             )
             xgb_fold = xgb.XGBRegressor(
-                objective='reg:absoluteerror', n_estimators=60, learning_rate=0.08,
-                max_depth=5, subsample=0.8, colsample_bytree=0.8,
+                objective='reg:absoluteerror',
+                n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.08),
+                max_depth=params_set['xgb_depth'], subsample=0.8, colsample_bytree=0.8,
                 verbosity=0, n_jobs=-1,
             )
             lgb_fold.fit(X_fold_tr, y_fold_tr, sample_weight=fold_weights)
