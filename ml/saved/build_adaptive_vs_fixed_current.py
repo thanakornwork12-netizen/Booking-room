@@ -76,7 +76,7 @@ def process_set(set_name, test_df):
 
 def plot_table(df: pd.DataFrame, png_path: str):
     headers = [
-        'Set', 'Rooms', 'Train Acc\n(winner model)', 'Test Acc\n(Adaptive)',
+        'Set', 'Train Acc\n(winner model)', 'Test Acc\n(Adaptive)',
         'Gap\n(pp)', 'Weight Split Found by System\n(LSTM / LGB / XGB)',
     ]
     table_data = [headers]
@@ -88,7 +88,7 @@ def plot_table(df: pd.DataFrame, png_path: str):
         )
         gap_pp = (row['Train Accuracy'] - row['Test Accuracy (Adaptive)']) * 100
         table_data.append([
-            str(row['Set']), str(int(row['Rooms'])),
+            str(row['Set']),
             f"{row['Train Accuracy']:.4f}",
             f"{row['Test Accuracy (Adaptive)']:.4f}",
             f"{gap_pp:.1f}",
@@ -102,7 +102,7 @@ def plot_table(df: pd.DataFrame, png_path: str):
         ax = fig.add_subplot(111)
         ax.axis('off')
 
-        col_widths = [0.08, 0.07, 0.15, 0.15, 0.1, 0.25]
+        col_widths = [0.08, 0.16, 0.16, 0.1, 0.28]
         table = ax.table(cellText=table_data, cellLoc='center', loc='center', colWidths=col_widths)
         table.auto_set_font_size(False)
         table.set_fontsize(9.5)
@@ -122,7 +122,7 @@ def plot_table(df: pd.DataFrame, png_path: str):
                 cell.set_facecolor(row_tints.get(s, '#ffffff'))
                 cell.set_edgecolor('#cccccc')
                 cell.set_linewidth(1)
-                if j in (2, 3):
+                if j in (1, 2):
                     cell.set_text_props(weight='bold')
 
         fig.text(
