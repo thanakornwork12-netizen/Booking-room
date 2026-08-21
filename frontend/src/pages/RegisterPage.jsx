@@ -115,7 +115,7 @@ export default function RegisterPage() {
           </div>
           <h1 className="mt-5 text-3xl font-extrabold leading-tight text-slate-900">
             สมัครสมาชิก
-            <span className="mt-1 block text-blue-700">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</span>
+            <span className="mt-1 block text-blue-700">ระบบจองห้องเรียน/ประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</span>
           </h1>
           <div className="mt-3 h-1 w-14 rounded-full bg-blue-600" />
           <p className="mt-3 text-sm leading-6 text-slate-500">

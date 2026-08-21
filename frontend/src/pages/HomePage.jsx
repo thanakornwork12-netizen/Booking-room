@@ -92,7 +92,7 @@ const extractErrorMessage = (err, fallback) => {
 }
 
 const TUTORIAL_STEPS = [
-  { icon: <Search size={24} className="shrink-0" color="#1d4ed8" />, title: 'ค้นหาห้องว่าง', desc: 'กดปุ่ม "จองห้องประชุม" เลือกวันที่ เวลา และจำนวนผู้เข้าร่วม ระบบ AI จะแนะนำห้องที่เหมาะสม' },
+  { icon: <Search size={24} className="shrink-0" color="#1d4ed8" />, title: 'ค้นหาห้องว่าง', desc: 'กดปุ่ม "จองห้องเรียน/ประชุม" เลือกวันที่ เวลา และจำนวนผู้เข้าร่วม ระบบ AI จะแนะนำห้องที่เหมาะสม' },
   { icon: <Zap size={24} className="shrink-0" color="#f59e0b" />, title: 'ดูการคาดการณ์ AI', desc: '"จองได้เลย" = ห้องว่าง | "ควรจองตอนนี้" = เริ่มมีคนสนใจ | "รีบจองด่วน!" = ใกล้เต็ม' },
   { icon: <CheckCircle2 size={24} className="shrink-0" color="#10b981" />, title: 'มาใช้งานห้องได้เลย', desc: 'ไม่ต้องเช็คอินหรือสแกนอะไร แค่มาใช้งานห้องตามเวลาที่จองไว้ได้เลย' },
   { icon: <AlertCircle size={24} className="shrink-0" color="#ef4444" />, title: 'ยกเลิกได้ทันทีถ้ามาไม่ได้', desc: 'หากมีเหตุไม่สามารถมาใช้งานได้ กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยันการจอง เพื่อให้ผู้อื่นใช้บริการต่อได้' },
@@ -115,7 +115,7 @@ function TutorialModal({ onClose, userId }) {
             <BookOpen size={16} color="#fff" />
             <span className="text-white text-xs font-bold uppercase tracking-widest">คู่มือใช้งาน</span>
           </div>
-          <p className="text-blue-100 text-xs">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
+          <p className="text-blue-100 text-xs">ระบบจองห้องเรียน/ประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
         </div>
         <div className="flex gap-1.5 px-6 pt-4">
           {TUTORIAL_STEPS.map((_,i) => (
@@ -618,7 +618,7 @@ export default function HomePage() {
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-100">Welcome back</p>
                 <h1 className="mt-2 break-words text-2xl font-extrabold leading-tight sm:text-3xl lg:text-2xl">สวัสดี {displayName}</h1>
-                <p className="mt-2 text-sm text-blue-50/90">{user?.faculty || 'ระบบจองห้องประชุม'}</p>
+                <p className="mt-2 text-sm text-blue-50/90">{user?.faculty || 'ระบบจองห้องเรียน/ประชุม'}</p>
               </div>
               <button
                 onClick={() => navigate('/search')}
@@ -632,7 +632,7 @@ export default function HomePage() {
                 onClick={() => navigate('/search')}
                 className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-transform hover:-translate-y-0.5"
               >
-                จองห้องประชุม
+                จองห้องเรียน/ประชุม
               </button>
               {user?.role && ['admin','staff'].includes(user.role) && (
                 <button
@@ -748,7 +748,7 @@ export default function HomePage() {
                 <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-50">
                   <CalendarDays size={32} className="text-blue-300" />
                 </div>
-                <p className="mb-4 text-sm font-medium text-slate-500">ยังไม่มีการจองห้องประชุม</p>
+                <p className="mb-4 text-sm font-medium text-slate-500">ยังไม่มีการจองห้องเรียน/ประชุม</p>
                 <button
                   onClick={() => navigate('/search')}
                   className="rounded-full bg-blue-700 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"

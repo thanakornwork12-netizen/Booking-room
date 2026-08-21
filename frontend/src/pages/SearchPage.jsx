@@ -656,8 +656,8 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                     <Building2 size={20} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-base font-bold leading-tight truncate">จองห้องประชุม</p>
-                    <p className="text-xs text-slate-500 truncate">ระบบจองห้องประชุมออนไลน์</p>
+                    <p className="text-base font-bold leading-tight truncate">จองห้องเรียน/ประชุม</p>
+                    <p className="text-xs text-slate-500 truncate">ระบบจองห้องเรียน/ประชุมออนไลน์</p>
                   </div>
                 </div>
 

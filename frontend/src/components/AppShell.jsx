@@ -28,7 +28,7 @@ import api, { changePassword, deleteAccount, logout, getAccessToken, WS_BASE_URL
 
 const navItems = [
   { to: '/home', label: 'หน้าหลัก', icon: Home, exact: true },
-  { to: '/search', label: 'จองห้องประชุม', icon: Search },
+  { to: '/search', label: 'จองห้องเรียน/ประชุม', icon: Search },
   { to: '/admin/dashboard', label: 'แดชบอร์ด', icon: LayoutDashboard },
 ]
 
@@ -483,7 +483,7 @@ function GuideModal({ open, onClose, onGoBooking }) {
     },
     {
       title: 'เลือกวัน เวลา และจำนวนผู้เข้าร่วม',
-      desc: 'จากหน้า จองห้องประชุม ให้กำหนดเงื่อนไขหลักก่อนกดค้นหา ระบบจะคัดห้องที่เหมาะสมให้ทันที',
+      desc: 'จากหน้า จองห้องเรียน/ประชุม ให้กำหนดเงื่อนไขหลักก่อนกดค้นหา ระบบจะคัดห้องที่เหมาะสมให้ทันที',
     },
     {
       title: 'ดูคำแนะนำจาก AI',
@@ -551,7 +551,7 @@ function GuideModal({ open, onClose, onGoBooking }) {
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-800"
             >
               <BookOpen size={16} />
-              ไปหน้าจองห้องประชุม
+              ไปหน้าจองห้องเรียน/ประชุม
             </button>
             <button
               type="button"
@@ -772,9 +772,9 @@ function AppShell({ children }) {
   const visibleNavItems = navItems.filter(item => item.to !== '/admin/dashboard' || isAdminOrStaff)
   const sectionLabel = useMemo(() => {
     if (location.pathname === '/home') return 'หน้าหลัก'
-    if (location.pathname.startsWith('/search')) return 'จองห้องประชุม'
+    if (location.pathname.startsWith('/search')) return 'จองห้องเรียน/ประชุม'
     if (location.pathname.startsWith('/admin/dashboard')) return 'รายงาน'
-    return 'ระบบจองห้องประชุม'
+    return 'ระบบจองห้องเรียน/ประชุม'
   }, [location.pathname])
 
   const quickLinks = [
@@ -878,7 +878,7 @@ function AppShell({ children }) {
               <Building2 size={24} />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-lg font-extrabold leading-tight text-slate-900">ระบบจองห้องประชุม</p>
+              <p className="truncate text-lg font-extrabold leading-tight text-slate-900">ระบบจองห้องเรียน/ประชุม</p>
               <p className="truncate text-sm font-semibold text-slate-500">สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
             </div>
           </div>
@@ -1119,7 +1119,7 @@ function AppShell({ children }) {
             <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.2fr_0.9fr_0.9fr]">
               <div className="space-y-3">
                 <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-blue-700">
-                  ระบบจองห้องประชุม
+                  ระบบจองห้องเรียน/ประชุม
                 </div>
                 <div>
                   <p className="text-sm font-extrabold text-slate-900">{supportInfo.organization}</p>
