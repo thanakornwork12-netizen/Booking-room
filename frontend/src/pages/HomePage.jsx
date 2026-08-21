@@ -95,7 +95,7 @@ const TUTORIAL_STEPS = [
   { icon: <Search size={24} className="shrink-0" color="#1d4ed8" />, title: 'ค้นหาห้องว่าง', desc: 'กดปุ่ม "จองห้องประชุม" เลือกวันที่ เวลา และจำนวนผู้เข้าร่วม ระบบ AI จะแนะนำห้องที่เหมาะสม' },
   { icon: <Zap size={24} className="shrink-0" color="#f59e0b" />, title: 'ดูการคาดการณ์ AI', desc: '"จองได้เลย" = ห้องว่าง | "ควรจองตอนนี้" = เริ่มมีคนสนใจ | "รีบจองด่วน!" = ใกล้เต็ม' },
   { icon: <CheckCircle2 size={24} className="shrink-0" color="#10b981" />, title: 'มาใช้งานห้องได้เลย', desc: 'ไม่ต้องเช็คอินหรือสแกนอะไร แค่มาใช้งานห้องตามเวลาที่จองไว้ได้เลย' },
-  { icon: <AlertCircle size={24} className="shrink-0" color="#ef4444" />, title: 'หลีกเลี่ยง No-Show', desc: 'หากมาไม่ได้กรุณากดยกเลิกทันทีผ่านลิงก์ในอีเมลยืนยันการจอง ไม่เช่นนั้นสิทธิ์จองอาจถูกระงับเมื่อ no-show เกิน 3 ครั้ง' },
+  { icon: <AlertCircle size={24} className="shrink-0" color="#ef4444" />, title: 'ยกเลิกได้ทันทีถ้ามาไม่ได้', desc: 'หากมีเหตุไม่สามารถมาใช้งานได้ กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยันการจอง เพื่อให้ผู้อื่นใช้บริการต่อได้' },
 ]
 
 // --- Components ---
@@ -163,11 +163,10 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
   const isActive = b.status === 'approved'
   const isFinished = isActive && isPast(b.end_time)
   const isCancelled = b.status === 'cancelled'
-  const isNoShow = b.status === 'no_show'
   const showCI = isActive && !isFinished && canCheckIn(b.start_time) && !b.checked_in
 
-  const dotColor = isFinished ? '#94a3b8' : (isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1')
-  const opacityClass = isCancelled || isNoShow || isFinished ? 'opacity-60' : ''
+  const dotColor = isFinished ? '#94a3b8' : (isActive ? '#10b981' : '#cbd5e1')
+  const opacityClass = isCancelled || isFinished ? 'opacity-60' : ''
 
   return (
     <div onClick={onClick} className={`group px-4 sm:px-5 py-3.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60 transition-colors border-b border-slate-50 last:border-0 ${opacityClass}`}>
@@ -176,7 +175,6 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <p className="text-sm font-bold text-slate-800 truncate max-w-full">{b.room_name || `ห้อง #${b.room}`}</p>
           {showCI && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold pulse shrink-0 whitespace-nowrap">Check-in</span>}
-          {isNoShow && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold border border-orange-200 shrink-0 whitespace-nowrap">No-Show</span>}
           {isFinished && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold border border-slate-200 shrink-0 whitespace-nowrap">เสร็จสิ้น</span>}
         </div>
         <p className="text-xs text-slate-500 truncate mb-1.5">{b.title}</p>
@@ -239,11 +237,10 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
   const isActive = booking.status === 'approved'
   const isFinished = isActive && isPast(booking.end_time)
   const isCancelled = booking.status === 'cancelled'
-  const isNoShow = booking.status === 'no_show'
   const showCheckIn = isActive && !isFinished && canCheckIn(booking.start_time) && !booking.checked_in
   const until = isActive && !isFinished && !booking.checked_in ? timeUntil(booking.start_time) : null
-  const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : isNoShow ? '#f97316' : '#cbd5e1')
-  const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'กำลังจอง' : isNoShow ? 'ไม่มาใช้งาน' : 'ยกเลิกแล้ว')
+  const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : '#cbd5e1')
+  const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'กำลังจอง' : 'ยกเลิกแล้ว')
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -305,9 +302,9 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
                 <XCircle size={16} /> ยกเลิกการจองนี้
               </button>
             )}
-            {(isCancelled || isNoShow || isFinished) && (
-              <div className={`rounded-xl px-4 py-3 text-center text-xs font-semibold border ${isNoShow ? 'bg-orange-50 border-orange-200 text-orange-700' : isFinished ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-blue-50 border-blue-100 text-slate-500'}`}>
-                {isNoShow ? '⚠️ บันทึกว่า ไม่มาใช้งาน (No-Show)' : isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : 'การจองนี้ถูกยกเลิกแล้ว'}
+            {(isCancelled || isFinished) && (
+              <div className={`rounded-xl px-4 py-3 text-center text-xs font-semibold border ${isFinished ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-blue-50 border-blue-100 text-slate-500'}`}>
+                {isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : 'การจองนี้ถูกยกเลิกแล้ว'}
               </div>
             )}
             <button onClick={() => onRebook(booking)} className="w-full border-2 border-blue-100 text-blue-700 hover:bg-blue-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
@@ -560,7 +557,6 @@ export default function HomePage() {
 
   const activeBookings = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledBookings = bookings.filter(b => b.status === 'cancelled')
-  const noShowBookings = bookings.filter(b => b.status === 'no_show')
   const displayName = normalizeDisplayName(
     [
       user?.display_name,
@@ -649,11 +645,10 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="lg:col-span-8 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="lg:col-span-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-4">
             <StatCard label="จองทั้งหมด" value={bookings.length} color="text-blue-600" bg="bg-blue-50" accent="border-t-blue-500" icon={History} />
             <StatCard label="กำลังจอง" value={activeBookings.length} color="text-emerald-600" bg="bg-emerald-50" accent="border-t-emerald-500" icon={CheckCircle2} />
             <StatCard label="ยกเลิกแล้ว" value={cancelledBookings.length} color="text-red-500" bg="bg-red-50" accent="border-t-red-400" icon={XCircle} />
-            <StatCard label="No-Show" value={noShowBookings.length} color="text-orange-500" bg="bg-orange-50" accent="border-t-orange-400" icon={AlertCircle} />
             <StatCard label="รายเทอม" value={termBookings.length} color="text-purple-600" bg="bg-purple-50" accent="border-t-purple-500" icon={BookOpen} />
           </div>
         </section>

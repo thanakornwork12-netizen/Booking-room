@@ -204,7 +204,6 @@ class Booking(models.Model):
         ('rejected',   'ปฏิเสธ'),
         ('cancelled',  'ยกเลิก'),
         ('completed',  'เสร็จสิ้น'),
-        ('no_show',    'ไม่มาใช้งาน'),
         ('checked_in', 'เช็คอินแล้ว'),  # ✅ เพิ่ม
     ]
 

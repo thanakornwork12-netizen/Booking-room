@@ -119,10 +119,7 @@ const STATUS_CFG = {
   term_active: { label:'ชั่วโมงเรียน', bg:'bg-purple-50', text:'text-purple-700', dot:'#9333ea' },
   term_today:  { label:'มีตารางสอน',   bg:'bg-violet-50', text:'text-violet-700', dot:'#7c3aed' },
 }
-const getS = s => {
-  if (s === 'no_show') return STATUS_CFG.cancelled
-  return STATUS_CFG[s] || { label:s, bg:'bg-slate-100', text:'text-slate-500', dot:'#94a3b8' }
-}
+const getS = s => STATUS_CFG[s] || { label:s, bg:'bg-slate-100', text:'text-slate-500', dot:'#94a3b8' }
 
 const getEffectiveS = (b) => {
   if (b.status === 'approved') {
@@ -1232,7 +1229,7 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-black text-slate-900">ห้องที่ควรตรวจสอบ</h3>
-                  <p className="text-xs text-slate-500">รวมสัญญาณ no-show, คิวรอ, เทอม, และ AI forecast</p>
+                  <p className="text-xs text-slate-500">รวมสัญญาณคิวรอ, เทอม, และ AI forecast</p>
                 </div>
                 <span className="text-xs bg-rose-50 text-rose-700 border border-rose-100 px-3 py-1.5 rounded-full font-semibold">
                   เฝ้าระวัง
