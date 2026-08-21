@@ -1287,9 +1287,11 @@ export default function SearchPage({ embedded = false }) {
     return () => { active = false }
   }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime])
 
-  // "ดูทั้งหมด" จากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ฟีดนั้นจำกัดแค่ 5 ห้อง
-  // (today_feed backend) ส่วนนี้ค้นหาจริงตามเวลาปัจจุบันแล้วโชว์ผลลัพธ์ทั้งหมด
-  // ทันที (ข้าม step 1 ฟอร์มค้นหาไปเลย) แทนที่จะพาไปหน้าฟอร์มเปล่าๆ
+  // "ดูทั้งหมด" จากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ฟีดนั้นจำกัดแค่ 5 ห้องเป็น
+  // ค่า default (today-feed backend) ส่วนนี้เรียก endpoint เดียวกันแบบไม่จำกัด
+  // (limit=0) แล้วกระโดดไปหน้าผลลัพธ์ทันที (ข้าม step 1 ฟอร์มค้นหา) แทนที่จะพา
+  // ไปหน้าฟอร์มเปล่าๆ — แต่ละห้องโชว์เวลาที่ว่างจริงของตัวเอง ไม่ได้เหมาว่าทุก
+  // ห้องว่างแค่ 1 ชม.เท่ากันหมด (backend คำนวณ available_until จริงต่อห้องแล้ว)
   useEffect(() => {
     if (!searchState.quickAvailableNow) return
     let active = true
@@ -1298,16 +1300,13 @@ export default function SearchPage({ embedded = false }) {
       const now = new Date()
       const nowStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const todayStr = now.toISOString().split('T')[0]
-      const nowEndTime = addHours(nowStr, 1)
 
       setDate(todayStr)
       setStartTime(nowStr)
       setAttendees(1)
       setLoading(true)
       try {
-        const res = await api.post('/rooms/search/', {
-          attendees: 1, start_time: nowStr, end_time: nowEndTime, date: todayStr, booking_type: 'dynamic',
-        })
+        const res = await api.get('/rooms/today-feed/', { params: { limit: 0 } })
         if (!active) return
         setRooms(Array.isArray(res.data) ? res.data : [])
         setSimilarRooms([])

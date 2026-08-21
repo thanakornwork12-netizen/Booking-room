@@ -566,33 +566,83 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         return enriched + day_suggestions
 
+    def _room_free_until(self, room_id, target_date, now_time):
+        """เวลาที่ห้องนี้ 'ว่างไปจนถึง' จริงๆ นับจากตอนนี้ — เวลาเริ่มของงานถัดไป
+        (จอง/ซ่อมบำรุง/ล็อกทั้งเทอม) ที่ใกล้ที่สุดวันนี้ หรือ 23:59 ถ้าไม่มีอะไรเหลือแล้ว
+        แต่ละห้องว่างไม่เท่ากัน ไม่ควรเหมาว่าทุกห้องว่างแค่ 1 ชม.เท่ากันหมด"""
+        from datetime import time as time_type
+
+        day_end = time_type(23, 59)
+        candidates = []
+
+        next_booking_start = Booking.objects.filter(
+            room_id=room_id, status__in=['pending', 'approved', 'checked_in'],
+            start_time__date=target_date, start_time__time__gt=now_time,
+        ).order_by('start_time').values_list('start_time', flat=True).first()
+        if next_booking_start:
+            candidates.append(timezone.localtime(next_booking_start).time())
+
+        next_maint_start = MaintenanceBlock.objects.filter(
+            room_id=room_id, status__in=['scheduled', 'active'],
+            start_time__date=target_date, start_time__time__gt=now_time,
+        ).order_by('start_time').values_list('start_time', flat=True).first()
+        if next_maint_start:
+            candidates.append(timezone.localtime(next_maint_start).time())
+
+        target_dow = target_date.weekday()
+        next_term_start = TermBooking.objects.filter(
+            room_id=room_id, day_of_week=target_dow, status='active',
+            term_start__lte=target_date, term_end__gte=target_date,
+            start_time__gt=now_time,
+        ).order_by('start_time').values_list('start_time', flat=True).first()
+        if next_term_start:
+            candidates.append(next_term_start)
+
+        return min(candidates) if candidates else day_end
+
     @action(detail=False, methods=['get'], url_path='today-feed')
     def today_feed(self, request):
         """ห้องว่าง ณ ตอนนี้ สำหรับฟีดแนะนำในหน้าแรก — จำกัดแค่ห้องที่มีข้อมูล AI
-        จริงเหมือนเส้นทางจองอื่นๆ (ดู AI_FORECAST_ROOM_IDS)"""
-        from datetime import time as time_type
+        จริงเหมือนเส้นทางจองอื่นๆ (ดู AI_FORECAST_ROOM_IDS)
 
+        แต่ละห้องโชว์เวลาที่ว่างจริงของตัวเอง (ไม่ใช่ล็อกไว้ 1 ชม.เท่ากันหมด) — บาง
+        ห้องว่างแค่ 20 นาที บางห้องว่างยาว 3 ชม. ก็ควรเห็นต่างกัน กันคนเข้าใจผิดว่า
+        ห้องที่จริงว่างนานกว่านั้นมาก ดันโชว์แค่ 1 ชม.
+
+        ?limit=N (default 5) — หน้าแรกใช้ค่า default โชว์ตัวอย่างสั้นๆ ส่วน "ดูทั้งหมด"
+        ส่ง limit สูงๆ มาแทน (หรือ 0 = ไม่จำกัด) เพื่อเห็นห้องว่างตอนนี้ทั้งหมดจริง
+        """
         now = timezone.localtime()
         today = now.date()
         now_time = now.time()
-        window_end = (datetime.combine(today, now_time) + timedelta(hours=1)).time()
-        if window_end < now_time:
-            window_end = time_type(23, 59)
 
-        blocked = self._blocked_room_ids(today, now_time, window_end)
-        rooms = list(
+        try:
+            limit = int(request.query_params.get('limit', 5))
+        except (TypeError, ValueError):
+            limit = 5
+
+        # เช็คว่างเฉพาะ ณ ตอนนี้ (หน้าต่างแคบๆ 1 นาที) ไม่บังคับว่าต้องว่างยาวเป็น
+        # ชม. — ระยะที่ว่างจริงของแต่ละห้องคำนวณแยกด้านล่างด้วย _room_free_until
+        instant_end = (datetime.combine(today, now_time) + timedelta(minutes=1)).time()
+        blocked = self._blocked_room_ids(today, now_time, instant_end)
+        qs = (
             Room.objects.filter(
                 is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
             ).exclude(id__in=blocked).select_related('building')
             .prefetch_related('room_facilities__facility', 'forecasts')
-            .order_by('capacity')[:5]
+            .order_by('capacity')
         )
-        enriched = self._enrich_rooms(rooms, today, now_time, window_end, 'dynamic', request)
-        # _enrich_rooms ใช้ start_time/end_time แค่กรอง forecast ข้างในเฉยๆ ไม่
-        # ได้แนบกลับมาในผลลัพธ์ — ฟีดนี้ต้องโชว์ช่วงเวลาที่ว่างจริงในการ์ดด้วย
+        rooms = list(qs) if limit <= 0 else list(qs[:limit])
+
+        enriched = self._enrich_rooms(rooms, today, now_time, instant_end, 'dynamic', request)
+        # _enrich_rooms ใช้ start_time/end_time แค่กรอง forecast ข้างในเฉยๆ ไม่ได้
+        # แนบกลับมาในผลลัพธ์ — ฟีดนี้ต้องโชว์ช่วงเวลาที่ว่างจริงในการ์ดด้วย
+        # (จับคู่ด้วย room id เพราะ _enrich_rooms เรียง result ใหม่ตาม demand
+        # level ไม่ใช่ลำดับเดิมของ rooms อีกแล้ว)
         for item in enriched:
+            free_until = self._room_free_until(item['id'], today, now_time)
             item['available_from'] = now_time.strftime('%H:%M')
-            item['available_until'] = window_end.strftime('%H:%M')
+            item['available_until'] = free_until.strftime('%H:%M')
         return Response(enriched)
 
     @action(detail=False, methods=['post'], url_path='dynamic-recommend')
