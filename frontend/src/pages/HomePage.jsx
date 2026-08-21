@@ -94,8 +94,8 @@ const extractErrorMessage = (err, fallback) => {
 const TUTORIAL_STEPS = [
   { icon: <Search size={24} className="shrink-0" color="#1d4ed8" />, title: 'ค้นหาห้องว่าง', desc: 'กดปุ่ม "จองห้องประชุม" เลือกวันที่ เวลา และจำนวนผู้เข้าร่วม ระบบ AI จะแนะนำห้องที่เหมาะสม' },
   { icon: <Zap size={24} className="shrink-0" color="#f59e0b" />, title: 'ดูการคาดการณ์ AI', desc: '"จองได้เลย" = ห้องว่าง | "ควรจองตอนนี้" = เริ่มมีคนสนใจ | "รีบจองด่วน!" = ใกล้เต็ม' },
-  { icon: <CheckCircle2 size={24} className="shrink-0" color="#10b981" />, title: 'Check-in ก่อนถึงเวลา', desc: 'กรุณา Check-in ภายใน 15 นาที มิฉะนั้นระบบจะยกเลิกอัตโนมัติ เพื่อให้ผู้อื่นใช้บริการต่อได้' },
-  { icon: <AlertCircle size={24} className="shrink-0" color="#ef4444" />, title: 'หลีกเลี่ยง No-Show', desc: 'หากมาไม่ได้กรุณายกเลิกก่อน ไม่เช่นนั้นสิทธิ์จองอาจถูกระงับเมื่อ no-show เกิน 3 ครั้ง' },
+  { icon: <CheckCircle2 size={24} className="shrink-0" color="#10b981" />, title: 'มาใช้งานห้องได้เลย', desc: 'ไม่ต้องเช็คอินหรือสแกนอะไร แค่มาใช้งานห้องตามเวลาที่จองไว้ได้เลย' },
+  { icon: <AlertCircle size={24} className="shrink-0" color="#ef4444" />, title: 'หลีกเลี่ยง No-Show', desc: 'หากมาไม่ได้กรุณากดยกเลิกทันทีผ่านลิงก์ในอีเมลยืนยันการจอง ไม่เช่นนั้นสิทธิ์จองอาจถูกระงับเมื่อ no-show เกิน 3 ครั้ง' },
 ]
 
 // --- Components ---
@@ -273,7 +273,7 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 flex items-start gap-3">
               <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-800 leading-relaxed break-words">
-                {showCheckIn ? 'กรุณา Check-in ภายใน 15 นาที มิฉะนั้นระบบจะยกเลิกอัตโนมัติ' : `อีก ${until} จะเริ่มใช้งาน หากไม่สะดวกกรุณายกเลิกล่วงหน้าเพื่อให้ผู้อื่นใช้บริการต่อ`}
+                {showCheckIn ? 'ถึงเวลาใช้งานแล้ว มาที่ห้องได้เลย หากมาไม่ได้กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยัน' : `อีก ${until} จะเริ่มใช้งาน หากไม่สะดวกกรุณายกเลิกล่วงหน้าเพื่อให้ผู้อื่นใช้บริการต่อ`}
               </p>
             </div>
           )}

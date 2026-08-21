@@ -8,11 +8,10 @@ const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 p
   focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
 
 // การ์ดตัวอย่างฝั่งขวา — ข้อมูลตกแต่งเฉยๆ ไม่ใช่ข้อมูลจริงจาก API
-// หมายเหตุ: เช็คอินจริงในระบบเป็นการกดปุ่มยืนยันในเว็บ ไม่มีการสแกน QR
 const FEATURES = [
   { icon: Brain, title: 'แนะนำห้องด้วย AI', desc: 'ระบบแนะนำห้องอัจฉริยะตามความต้องการของคุณ' },
   { icon: CalendarClock, title: 'เช็คสถานะห้องว่างแบบเรียลไทม์', desc: 'ตรวจสอบสถานะห้องว่างแบบเรียลไทม์' },
-  { icon: CheckCircle2, title: 'เช็คอินง่ายในระบบ', desc: 'กดยืนยันเช็คอินในระบบ ไม่ต้องสแกนอะไรเพิ่ม' },
+  { icon: CheckCircle2, title: 'ยกเลิกได้ทันทีผ่านอีเมล', desc: 'มาไม่ได้กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยัน ไม่ต้องเข้าระบบ' },
 ]
 
 export default function LoginPage() {
