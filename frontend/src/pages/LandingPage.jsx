@@ -47,10 +47,8 @@ const STEPS = [
 ]
 
 const STATS = [
-  { value: '69', label: 'ห้องในระบบ' },
-  { value: '16', label: 'อาคาร' },
+  { value: '7,252', label: 'ประวัติการจองทั้งหมด' },
   { value: '>90%', label: 'ความแม่นยำ AI (ห้องที่มีข้อมูลเพียงพอ)' },
-  { value: '4', label: 'บทบาทที่รองรับ' },
 ]
 
 // เอฟเฟกต์เบามาก — floating dot 2 จุดในฉากหลัง Hero เท่านั้น ไม่ใช้ที่อื่น
@@ -244,12 +242,12 @@ export default function LandingPage() {
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-700 to-indigo-800 py-14">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
           <h2 className="text-center text-2xl font-extrabold text-white">ตัวเลขที่น่าเชื่อถือ</h2>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mx-auto mt-8 grid max-w-xl grid-cols-2 gap-6">
             {STATS.map((s, i) => (
               <Reveal key={s.label} delay={i * 100}>
-                <div className="rounded-2xl border border-white/10 bg-white/10 p-5 text-center backdrop-blur-sm">
-                  <p className="text-3xl font-extrabold text-white">{s.value}</p>
-                  <p className="mt-1 text-xs font-semibold text-blue-100">{s.label}</p>
+                <div className="rounded-2xl border border-white/10 bg-white/10 p-8 text-center backdrop-blur-sm">
+                  <p className="text-4xl font-extrabold text-white">{s.value}</p>
+                  <p className="mt-2 text-sm font-semibold text-blue-100">{s.label}</p>
                 </div>
               </Reveal>
             ))}
