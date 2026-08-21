@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sparkles, Bot, Search, CalendarDays, CheckCircle2, ArrowRight } from 'lucide-react'
 
@@ -58,6 +59,39 @@ const FLOAT_ANIM = `
 .float-soft { animation: float-soft 5s ease-in-out infinite; }
 .float-soft-delay { animation: float-soft 5s ease-in-out infinite; animation-delay: 1.2s; }
 `
+
+// เลื่อนจอมาเจอกล่องไหนค่อย fade+เลื่อนขึ้นทีละกล่อง — ใช้ IntersectionObserver
+// ล้วนๆ ไม่พึ่ง library เพิ่ม เข้าเงื่อนไขครั้งเดียวแล้วเลิกสังเกต (ไม่เล่นซ้ำตอนเลื่อนกลับ)
+function Reveal({ children, delay = 0, className = '' }) {
+  const ref = useRef(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -60px 0px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      className={`transition-all duration-700 ease-out ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'} ${className}`}
+      style={{ transitionDelay: visible ? `${delay}ms` : '0ms' }}
+    >
+      {children}
+    </div>
+  )
+}
 
 function HeroBackdrop() {
   return (
@@ -164,23 +198,22 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-10 grid gap-5 sm:grid-cols-2">
-            {FEATURES.map(f => (
-              <div
-                key={f.title}
-                className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg"
-              >
-                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${f.gradient} text-white shadow-sm transition-transform duration-300 group-hover:scale-110`}>
-                  <f.icon size={22} />
-                </div>
-                <p className="mt-4 text-base font-bold text-slate-900">{f.title}</p>
-                <p className="mt-1.5 text-sm leading-6 text-slate-500">{f.desc}</p>
+            {FEATURES.map((f, i) => (
+              <Reveal key={f.title} delay={i * 100}>
+                <div className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${f.gradient} text-white shadow-sm transition-transform duration-300 group-hover:scale-110`}>
+                    <f.icon size={22} />
+                  </div>
+                  <p className="mt-4 text-base font-bold text-slate-900">{f.title}</p>
+                  <p className="mt-1.5 text-sm leading-6 text-slate-500">{f.desc}</p>
 
-                <ArrowRight
-                  size={16}
-                  className="absolute bottom-5 right-6 text-slate-300 transition-all duration-300 group-hover:translate-x-1 group-hover:text-blue-600"
-                />
-                <div className={`absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r ${f.gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-100`} />
-              </div>
+                  <ArrowRight
+                    size={16}
+                    className="absolute bottom-5 right-6 text-slate-300 transition-all duration-300 group-hover:translate-x-1 group-hover:text-blue-600"
+                  />
+                  <div className={`absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r ${f.gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-100`} />
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
@@ -192,14 +225,16 @@ export default function LandingPage() {
           <h2 className="text-center text-2xl font-extrabold text-slate-900">วิธีใช้งานง่ายๆ 4 ขั้นตอน</h2>
           <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((s, i) => (
-              <div key={s.title} className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-xl text-white shadow-sm shadow-blue-500/20">
-                  {s.emoji}
+              <Reveal key={s.title} delay={i * 100}>
+                <div className="text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-xl text-white shadow-sm shadow-blue-500/20">
+                    {s.emoji}
+                  </div>
+                  <p className="mt-3 text-xs font-bold text-blue-700">ขั้นที่ {i + 1}</p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">{s.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{s.desc}</p>
                 </div>
-                <p className="mt-3 text-xs font-bold text-blue-700">ขั้นที่ {i + 1}</p>
-                <p className="mt-1 text-sm font-bold text-slate-900">{s.title}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{s.desc}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </div>
@@ -210,11 +245,13 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
           <h2 className="text-center text-2xl font-extrabold text-white">ตัวเลขที่น่าเชื่อถือ</h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {STATS.map(s => (
-              <div key={s.label} className="rounded-2xl border border-white/10 bg-white/10 p-5 text-center backdrop-blur-sm">
-                <p className="text-3xl font-extrabold text-white">{s.value}</p>
-                <p className="mt-1 text-xs font-semibold text-blue-100">{s.label}</p>
-              </div>
+            {STATS.map((s, i) => (
+              <Reveal key={s.label} delay={i * 100}>
+                <div className="rounded-2xl border border-white/10 bg-white/10 p-5 text-center backdrop-blur-sm">
+                  <p className="text-3xl font-extrabold text-white">{s.value}</p>
+                  <p className="mt-1 text-xs font-semibold text-blue-100">{s.label}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
