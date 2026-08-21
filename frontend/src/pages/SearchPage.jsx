@@ -132,6 +132,18 @@ const addHours = (time, hours) => {
   const [h, m] = time.split(':').map(Number)
   return `${String(h + hours).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
+// จำนวนชั่วโมงกำหนดเอง — ต้องเป็นจำนวนเต็มบวก และเวลาสิ้นสุดต้องไม่เกิน 23:xx
+// (addHours ข้างบนไม่รองรับการข้ามเที่ยงคืน)
+const validateCustomDuration = (rawValue, startTime) => {
+  const hours = Number(rawValue)
+  if (rawValue === '' || Number.isNaN(hours)) return 'กรุณาระบุจำนวนชั่วโมง'
+  if (!Number.isInteger(hours) || hours < 1) return 'จำนวนชั่วโมงต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'
+  if (startTime) {
+    const [h] = startTime.split(':').map(Number)
+    if (h + hours > 23) return `เวลาสิ้นสุดเกิน 23:00 น. กรุณาลดจำนวนชั่วโมงหรือเลือกเวลาเริ่มที่เร็วขึ้น`
+  }
+  return ''
+}
 const formatDate = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const formatDateShort = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 const getDemandLevel = room => {
@@ -558,6 +570,16 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error,
     dayOfWeek, setDayOfWeek, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings,
   } = formProps
+
+  const [customDurationMode, setCustomDurationMode] = useState(!DURATIONS.some(d => d.hours === duration))
+  const [customDurationInput, setCustomDurationInput] = useState(String(duration))
+  const durationError = customDurationMode ? validateCustomDuration(customDurationInput, startTime) : ''
+
+  const handleCustomDurationChange = (val) => {
+    setCustomDurationInput(val)
+    const err = validateCustomDuration(val, startTime)
+    if (!err) setDuration(Number(val))
+  }
   const { rooms, setSelectedRoom, setSplitPlan, similarRooms } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit } = confirmProps
 
@@ -812,13 +834,38 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                             {DURATIONS.map(d => (
                               <button
                                 key={d.hours}
-                                onClick={() => setDuration(d.hours)}
-                                className={`rounded-lg border py-1.5 text-xs font-semibold transition-all ${duration === d.hours ? 'bg-slate-900 border-slate-900 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                                onClick={() => { setCustomDurationMode(false); setDuration(d.hours) }}
+                                className={`rounded-lg border py-1.5 text-xs font-semibold transition-all ${!customDurationMode && duration === d.hours ? 'bg-slate-900 border-slate-900 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
                               >
                                 {d.label}
                               </button>
                             ))}
+                            <button
+                              onClick={() => { setCustomDurationMode(true); setCustomDurationInput(String(duration)) }}
+                              className={`rounded-lg border py-1.5 text-xs font-semibold transition-all ${customDurationMode ? 'bg-slate-900 border-slate-900 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}
+                            >
+                              กำหนดเอง
+                            </button>
                           </div>
+                          {customDurationMode && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={customDurationInput}
+                                  onChange={e => handleCustomDurationChange(e.target.value)}
+                                  placeholder="จำนวนชั่วโมง"
+                                  className={`w-full rounded-lg border px-3 py-1.5 text-xs font-semibold outline-none transition-all ${durationError ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-700 focus:border-blue-400'}`}
+                                />
+                                <span className="text-xs text-slate-500 whitespace-nowrap">ชั่วโมง</span>
+                              </div>
+                              {durationError && (
+                                <p className="mt-1 text-[11px] text-red-600">{durationError}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </section>
@@ -875,7 +922,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                         <div className="mt-2 space-y-1.5">
                           <button
                             onClick={handleSearch}
-                            disabled={loading}
+                            disabled={loading || !!durationError}
                             className={`w-full rounded-xl bg-gradient-to-r ${accentBg} px-3 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-200 transition-all ${accentHov} disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none flex items-center justify-center gap-2`}
                           >
                             {loading ? <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> กำลังค้นหา...</> : <><Search size={15} /> ค้นหาห้องว่าง</>}
