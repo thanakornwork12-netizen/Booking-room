@@ -94,7 +94,7 @@ export default function LandingPage() {
       {/* สไตล์เดียวกับ header ของ AppShell (หน้า Home/ค้นหา/คู่มือ) — การ์ดขาวมี
           แถบ gradient บนสุด ลอยอยู่บนพื้นหลังไล่สีฟ้าอ่อน ให้ดูเป็นเว็บชุดเดียวกัน */}
       <header className="sticky top-0 z-30 border-b border-blue-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] shadow-[0_10px_34px_rgba(37,99,235,0.10)]">
-        <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:px-8">
           <div className="overflow-hidden rounded-[26px] border border-blue-100 bg-white shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
             <div className="h-1.5 bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-600" />
             <div className="flex items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
@@ -121,7 +121,7 @@ export default function LandingPage() {
 
           <h1 className="mt-5 text-3xl font-extrabold leading-tight sm:text-4xl lg:text-5xl">
             <span className="block text-slate-900">ระบบจองห้องอัจฉริยะ</span>
-            <span className="mt-1 block bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="mt-1 block bg-gradient-to-r from-blue-700 via-blue-500 to-indigo-500 bg-clip-text text-transparent">
               สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
             </span>
           </h1>
