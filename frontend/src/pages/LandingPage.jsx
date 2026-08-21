@@ -153,9 +153,9 @@ export default function LandingPage() {
             <Sparkles size={12} /> ระบบจองห้องอัจฉริยะ
           </span>
 
-          <h1 className="mt-5 text-3xl font-extrabold leading-tight sm:text-4xl lg:text-5xl">
+          <h1 className="mt-5 text-3xl font-extrabold leading-snug sm:text-4xl lg:text-5xl">
             <span className="block text-slate-900">ระบบจองห้องอัจฉริยะ</span>
-            <span className="mt-1 block bg-gradient-to-r from-blue-700 via-blue-500 to-indigo-500 bg-clip-text text-transparent">
+            <span className="mt-2 block bg-gradient-to-r from-blue-700 via-blue-500 to-indigo-500 bg-clip-text text-transparent">
               สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
             </span>
           </h1>
