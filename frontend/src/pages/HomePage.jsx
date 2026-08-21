@@ -661,7 +661,7 @@ export default function HomePage() {
                 <span className="text-sm font-bold text-slate-800">ห้องว่างตอนนี้</span>
               </div>
               <button
-                onClick={() => navigate('/search')}
+                onClick={() => navigate('/search', { state: { quickAvailableNow: true } })}
                 className="text-xs font-semibold text-blue-700 hover:underline"
               >
                 ดูทั้งหมด

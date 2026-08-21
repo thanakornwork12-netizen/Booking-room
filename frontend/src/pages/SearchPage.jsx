@@ -1287,6 +1287,43 @@ export default function SearchPage({ embedded = false }) {
     return () => { active = false }
   }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime])
 
+  // "ดูทั้งหมด" จากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ฟีดนั้นจำกัดแค่ 5 ห้อง
+  // (today_feed backend) ส่วนนี้ค้นหาจริงตามเวลาปัจจุบันแล้วโชว์ผลลัพธ์ทั้งหมด
+  // ทันที (ข้าม step 1 ฟอร์มค้นหาไปเลย) แทนที่จะพาไปหน้าฟอร์มเปล่าๆ
+  useEffect(() => {
+    if (!searchState.quickAvailableNow) return
+    let active = true
+
+    const runQuickAvailableNow = async () => {
+      const now = new Date()
+      const nowStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+      const todayStr = now.toISOString().split('T')[0]
+      const nowEndTime = addHours(nowStr, 1)
+
+      setDate(todayStr)
+      setStartTime(nowStr)
+      setAttendees(1)
+      setLoading(true)
+      try {
+        const res = await api.post('/rooms/search/', {
+          attendees: 1, start_time: nowStr, end_time: nowEndTime, date: todayStr, booking_type: 'dynamic',
+        })
+        if (!active) return
+        setRooms(Array.isArray(res.data) ? res.data : [])
+        setSimilarRooms([])
+        setSplitPlan(null)
+        setStep(2)
+      } catch {
+        if (active) setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    runQuickAvailableNow()
+    return () => { active = false }
+  }, [searchState.quickAvailableNow])
+
   const endTime = startTime ? addHours(startTime, duration) : ''
 
   const applyAcademicTerm = (yearBE, termNum) => {
