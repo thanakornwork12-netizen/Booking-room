@@ -866,14 +866,6 @@ function AppShell({ children }) {
             <div className="h-1.5 bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-600" />
             <div className="flex h-20 w-full items-center gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsMobileNavOpen(true)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700 lg:hidden"
-              aria-label="Open navigation"
-            >
-              <Menu size={19} />
-            </button>
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-blue-700 shadow-[0_12px_28px_rgba(37,99,235,0.18)]">
               <Building2 size={24} />
             </div>
@@ -1009,7 +1001,7 @@ function AppShell({ children }) {
         </aside>
 
         <div className="min-w-0 flex-1">
-          <main className="min-h-[calc(100dvh-7.5rem)] px-0 py-0">
+          <main className="min-h-[calc(100dvh-7.5rem)] px-0 py-0 pb-20 lg:pb-0">
             {children}
           </main>
         </div>
@@ -1017,6 +1009,45 @@ function AppShell({ children }) {
 
       <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} />
       <SupportModal open={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+
+      {/* ── Mobile bottom tab bar ──────────────────────── */}
+      {/* แทนที่ปุ่ม hamburger มุมซ้ายบนเดิม — ปลายนิ้วเอื้อมถึงง่ายกว่าบนจอมือถือ
+          ปุ่ม "เมนู" ท้ายแถวเปิด drawer เดิม (คู่มือ/ตั้งค่า/ติดต่อ/ออกจากระบบ) */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-blue-100 bg-white/95 shadow-[0_-8px_28px_rgba(15,23,42,0.10)] backdrop-blur-lg lg:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className={`mx-auto grid max-w-lg ${isAdminOrStaff ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          {visibleNavItems.map(item => {
+            const Icon = item.icon
+            const active = isActive(item.to, item.exact)
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={`flex flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-semibold transition-colors ${
+                  active ? 'text-blue-700' : 'text-slate-500'
+                }`}
+              >
+                <span className={`flex h-8 w-8 items-center justify-center rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
+                  <Icon size={19} />
+                </span>
+                <span className="w-full truncate text-center leading-tight">{item.label}</span>
+              </NavLink>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => setIsMobileNavOpen(true)}
+            className="flex flex-col items-center gap-1 py-2.5 text-[11px] font-semibold text-slate-500 transition-colors"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-2xl">
+              <Menu size={19} />
+            </span>
+            เมนู
+          </button>
+        </div>
+      </nav>
 
       {isMobileNavOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -1094,7 +1125,7 @@ function AppShell({ children }) {
         </div>
       )}
 
-      <footer className="border-t border-blue-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] text-slate-700 shadow-[0_-10px_34px_rgba(37,99,235,0.10)]">
+      <footer className="border-t border-blue-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] pb-20 text-slate-700 shadow-[0_-10px_34px_rgba(37,99,235,0.10)] lg:pb-0">
         {/* มือถือ: การ์ดย่อ 2 บรรทัด + ปุ่มเปิด modal ติดต่อ (ใช้ SupportModal เดิม) แทน
             การ stack 3 คอลัมน์เต็มที่กินพื้นที่จอสูงมากบนจอแคบ */}
         <div className="mx-auto w-full max-w-[1600px] px-4 py-3 sm:hidden">
