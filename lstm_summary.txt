@@ -1,0 +1,74 @@
+สรุปการตั้งค่า LSTM ในระบบพยากรณ์ความต้องการห้อง (AI Forecast)
+================================================================
+
+1. สถาปัตยกรรมโมเดล (Architecture)
+-----------------------------------
+LSTM(48 units, return_sequences=False)
+  -> Dropout(0.2)
+  -> Dense(16, activation='relu')
+  -> Dense(1)
+
+- เดิมเคยใช้ 3 ชั้น 128 units แต่ overfit/แกว่งบนข้อมูลรายห้องที่มีแค่ไม่กี่ร้อยแถว
+  จึงลดเหลือ LSTM ชั้นเดียว ให้ converge นิ่งกว่าบนข้อมูลขนาดเล็ก
+- Input เป็น multivariate (หลาย feature ต่อ timestep ไม่ใช่แค่ y ตัวเดียว)
+- Optimizer: Adam, learning_rate=0.0005, clipvalue=1.0
+- Loss: MAE (mean absolute error)
+- Scaling: MinMaxScaler แยก 2 ตัว — ตัวหนึ่ง scale input features (X)
+  อีกตัว scale ค่าที่จะทำนาย (y) โดย fit scaler จากข้อมูล train เท่านั้น
+  กัน data leakage จาก validation/test เข้ามาปนตอน fit scaler
+
+2. การเทรน (Training)
+-----------------------
+- EarlyStopping: monitor val_loss, patience = จำนวน epoch เต็มของ set นั้น
+  (ตั้งแบบนี้เพื่อให้เทรนครบทุก epoch เสมอ ไม่ตัดจบก่อน แต่พอจบแล้วจะสลับกลับไปใช้
+  น้ำหนักจาก epoch ที่ val_loss ต่ำสุด ไม่ใช่ epoch สุดท้าย)
+- ReduceLROnPlateau: ลด learning rate อัตโนมัติเมื่อ val_loss หยุดดีขึ้น
+- Checkpoint ระหว่างเทรนได้ (checkpoint_dir/checkpoint_freq)
+
+3. Hyperparameter ต่อชุด (Param Sets A-E)
+-------------------------------------------
+ชุด | epochs | batch | lookback (ย้อนหลังกี่วัน)
+A   | 10     | 16    | 20   (Fast/Baseline)
+B   | 20     | 8     | 40   (Balanced)
+C   | 30     | 8     | 60   (High Quality)
+D   | 40     | 8     | 70   (Extra Deep — experimental)
+E   | 50     | 8     | 90   (Maximum Depth — experimental)
+
+- LGB/XGB ก็ปรับ depth/estimators/learning_rate คู่กันไปในทิศทางเดียวกัน
+  (ยิ่งชุดหลังยิ่งเทรนหนักขึ้น เพื่อทดสอบว่าเทรนหนักขึ้นแล้วดีขึ้นจริงไหม หรือถึงจุดอิ่มตัว)
+
+4. ผลลัพธ์จากการทดลอง (Train vs Test Accuracy)
+-------------------------------------------------
+ชุด | Train Acc | Test Acc | ส่วนต่าง (overfitting gap)
+A   | 95.45%    | 91.14%   | 4.3 จุด   <- gap แคบสุด บาลานซ์ที่สุด
+B   | 96.63%    | 90.06%   | 6.6 จุด
+C   | 97.64%    | 91.06%   | 6.6 จุด
+D   | 98.01%    | 91.26%   | 6.8 จุด   <- test acc สูงสุด
+E   | 97.95%    | 90.92%   | 7.0 จุด   <- gap กว้างสุด
+
+สรุป: Test accuracy ของทุกชุดใกล้กันมาก (90-91.3%) แต่ยิ่งเทรนหนักขึ้น (C/D/E)
+gap ระหว่าง train กับ test ยิ่งกว้างขึ้น แปลว่าโมเดล "จำ" ข้อมูลเทรนเก่งขึ้น
+แต่ไม่ได้ generalize ดีขึ้นตามจริง ถ้าเน้นความเสถียร ชุด A บาลานซ์สุด
+ถ้าเน้น test accuracy สูงสุดเพียงอย่างเดียว ชุด D ให้ผลดีสุด
+
+5. การรวมโมเดล (Ensemble: LSTM + LightGBM + XGBoost)
+-------------------------------------------------------
+- ระบบมี 3 โมเดลต่อห้อง: LSTM, LightGBM, XGBoost
+- Prior เริ่มต้น (ก่อนปรับตามข้อมูลจริง): LSTM 30% / LightGBM 45% / XGBoost 25%
+- น้ำหนักจริงที่ใช้ต่อห้อง คำนวณจากคะแนนจริงบนข้อมูล calibration
+  (คะแนน = R² และ MAE ของแต่ละโมเดล) ไม่ใช่ค่าคงที่ที่ตั้งตายตัว
+- เป็นระบบ "winner-take-all" ต่อห้อง คือถ้าโมเดลใดโมเดลหนึ่งชนะชัดเจน
+  จะให้น้ำหนัก 100% กับตัวนั้นเลย ไม่ใช่ผสมเฉลี่ยเสมอไป
+- ในทางปฏิบัติจากผลทดสอบจริง: LSTM แทบไม่เคยชนะเลย (น้ำหนักเฉลี่ยออกมา
+  0% ทุกชุด A-E) — LightGBM กับ XGBoost แย่งกันชนะแทน สัดส่วนแตกต่างกันไปตามชุด
+  เช่น ชุด A ~62% LGB / 38% XGB, ชุด E ~12% LGB / 88% XGB
+  สาเหตุที่เป็นไปได้: ข้อมูลรายห้องมีขนาดเล็ก (แค่ไม่กี่ร้อยแถว) ซึ่งเหมาะกับ
+  โมเดล tree-based (LGB/XGB) มากกว่า deep learning ที่ต้องการข้อมูลเยอะกว่านี้
+  ถึงจะแสดงศักยภาพได้เต็มที่
+
+6. ไฟล์ที่เกี่ยวข้อง
+----------------------
+- ml/saved/forecast.py        : โค้ดหลัก build/train LSTM + LGB/XGB + ensemble logic
+- ml/saved/param_sets.py      : ค่า hyperparameter ของแต่ละชุด A-E
+- ml/saved/saved_meta_*_excel_split/  : meta.pkl ต่อห้องต่อชุด (เก็บ training history, ensemble_weights)
+- ml/saved/metrics_plots/train_vs_test_acc_by_set.png : กราฟเปรียบเทียบ train/test accuracy
