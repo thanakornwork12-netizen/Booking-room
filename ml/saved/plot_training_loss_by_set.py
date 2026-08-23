@@ -52,33 +52,26 @@ plt.rcParams.update({
     'legend.fontsize': 9.5,
 })
 
-fig, (ax_tr, ax_va) = plt.subplots(1, 2, figsize=(14, 5.5), dpi=300)
+fig, ax = plt.subplots(figsize=(9, 6), dpi=300)
 
 for set_name in SETS:
     if set_name not in curves:
         continue
     c = COLORS[set_name]
-    label = f'{set_name} ({SET_NAMES[set_name]})'
     tr = curves[set_name]['train_mean']
     va = curves[set_name]['valid_mean']
-    ax_tr.plot(range(1, len(tr) + 1), tr, color=c, marker='o', markersize=3, linewidth=2, label=label)
-    ax_va.plot(range(1, len(va) + 1), va, color=c, marker='o', markersize=3, linewidth=2, label=label)
+    ax.plot(range(1, len(tr) + 1), tr, color=c, marker='o', markersize=3, linewidth=2,
+             linestyle='-', label=f'{set_name} ({SET_NAMES[set_name]}) — Train')
+    ax.plot(range(1, len(va) + 1), va, color=c, marker='o', markersize=3, linewidth=1.5,
+             linestyle='--', alpha=0.7, label=f'{set_name} ({SET_NAMES[set_name]}) — Cal')
 
-ax_tr.set_title('Train Loss per Round (avg. across 8 rooms)', fontweight='bold')
-ax_tr.set_xlabel('Boosting Round')
-ax_tr.set_ylabel('Loss (MAE)')
-ax_tr.legend(loc='upper right')
-ax_tr.spines['top'].set_visible(False)
-ax_tr.spines['right'].set_visible(False)
-ax_tr.grid(alpha=0.25)
-
-ax_va.set_title('Calibration Loss per Round (avg. across 8 rooms)', fontweight='bold')
-ax_va.set_xlabel('Boosting Round')
-ax_va.set_ylabel('Loss (MAE)')
-ax_va.legend(loc='upper right')
-ax_va.spines['top'].set_visible(False)
-ax_va.spines['right'].set_visible(False)
-ax_va.grid(alpha=0.25)
+ax.set_title('Train Loss vs Calibration Loss per Round (avg. across 8 rooms)\nsolid = Train, dashed = Calibration', fontweight='bold')
+ax.set_xlabel('Boosting Round')
+ax.set_ylabel('Loss (MAE)')
+ax.legend(loc='upper right', fontsize=8, ncol=2)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.grid(alpha=0.25)
 
 fig.suptitle('Training Loss Curves by Param Set — Winning Model per Room', fontweight='bold', fontsize=14)
 fig.tight_layout()
