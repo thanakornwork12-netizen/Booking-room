@@ -26,10 +26,20 @@ class RegisterSerializer(serializers.ModelSerializer):
     password2  = serializers.CharField(write_only=True)
     student_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
+    # ห้ามสมัครเองแล้วได้สิทธิ์ 'admin' — สิทธิ์แอดมินตั้งใน backend เท่านั้น
+    # (User.ROLE_CHOICES อนุญาต 'admin' อยู่ด้วย ถ้าไม่กันตรงนี้ ModelSerializer
+    # จะ validate role ผ่านหมด เพราะมันเป็น choice ที่ถูกต้องของ model)
+    SELF_REGISTERABLE_ROLES = {'student', 'lecturer', 'staff'}
+
     class Meta:
         model  = User
         fields = ['username', 'first_name', 'last_name', 'email',
                   'password', 'password2', 'role', 'faculty', 'phone', 'student_id']
+
+    def validate_role(self, value):
+        if value not in self.SELF_REGISTERABLE_ROLES:
+            raise serializers.ValidationError('สถานะไม่ถูกต้อง')
+        return value
 
     def validate(self, data):
         if data['password'] != data['password2']:

@@ -13,6 +13,14 @@ const FACULTIES = [
   'เกษตรศาสตร์','ศิลปศาสตร์','สาธารณสุขศาสตร์','เภสัชศาสตร์',
 ]
 
+// ตัวเลือกสถานะตอนสมัคร — ไม่มี "ผู้ดูแลระบบ" ให้เลือกเอง สิทธิ์แอดมินตั้งใน
+// backend เท่านั้น กันคนสมัครแล้วได้สิทธิ์แอดมินเอง
+const ROLE_OPTIONS = [
+  { value: 'student', label: 'นักศึกษา' },
+  { value: 'lecturer', label: 'อาจารย์' },
+  { value: 'staff', label: 'เจ้าหน้าที่' },
+]
+
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes rot{to{transform:rotate(360deg)}}
@@ -242,6 +250,25 @@ export default function RegisterPage() {
                     </div>
                   </div>
                   <div className="au2">
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">สถานะ</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {ROLE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => set('role', opt.value)}
+                          className={`rounded-2xl border py-2.5 text-sm font-semibold transition-all ${
+                            form.role === opt.value
+                              ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                              : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="au2">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ชื่อผู้ใช้</label>
                     <div className="relative">
                       <AtSign size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -265,7 +292,7 @@ export default function RegisterPage() {
                       <input
                         type="text"
                         inputMode="numeric"
-                        placeholder="เช่น 66114640275 (อาจารย์ไม่ต้องกรอก)"
+                        placeholder={form.role === 'student' ? 'เช่น 66114640275' : 'ไม่ต้องกรอก'}
                         className={inputCls}
                         value={form.student_id}
                         onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
