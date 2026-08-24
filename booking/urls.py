@@ -7,6 +7,7 @@ from .serializers import LDAPTokenObtainPairSerializer
 from .views import (
     RegisterView, ProfileView,
     ChangePasswordView, DeleteAccountView,
+    ForgotPasswordView, ResetPasswordConfirmView,
     BuildingViewSet, RoomViewSet,
     TermBookingViewSet, BookingViewSet,
     NotificationViewSet, DemandForecastViewSet,
@@ -43,6 +44,8 @@ urlpatterns = [
     path('auth/profile/',  ProfileView.as_view(),             name='profile'),
     path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('auth/delete-account/',   DeleteAccountView.as_view(),  name='delete_account'),
+    path('auth/forgot-password/',  ForgotPasswordView.as_view(),        name='forgot_password'),
+    path('auth/reset-password-confirm/', ResetPasswordConfirmView.as_view(), name='reset_password_confirm'),
 
     # Dashboard + Export
     path('dashboard/',     DashboardView.as_view(),           name='dashboard'),

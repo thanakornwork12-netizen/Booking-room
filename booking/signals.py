@@ -224,6 +224,87 @@ def send_welcome_email(user):
         log_email_error('ส่งอีเมลต้อนรับไม่สำเร็จ', e)
 
 
+def send_password_reset_email(user, uidb64, token):
+    """ส่งลิงก์รีเซ็ตรหัสผ่าน — เฉพาะบัญชีที่สมัครเองในระบบ (มีรหัสผ่านจริงในนี้)
+    บัญชี LDAP ของมหาวิทยาลัยไม่ได้ใช้ path นี้ เพราะรหัสผ่านอยู่ที่ LDAP ไม่ใช่ที่นี่"""
+    user_email = get_recipient_email(user)
+    if not user_email:
+        logger.warning('ไม่ส่งอีเมลรีเซ็ตรหัสผ่าน เพราะ user %s ไม่มี email', user.id)
+        return
+
+    display_name = user.get_full_name() or user.username
+    reset_url = f'{FRONTEND_URL}/reset-password/{uidb64}/{token}'
+
+    plain_text = f'''
+สวัสดีคุณ {display_name}
+
+มีการขอรีเซ็ตรหัสผ่านสำหรับบัญชี {user.username} ในระบบจองห้องประชุม
+สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+
+ตั้งรหัสผ่านใหม่ได้ที่: {reset_url}
+(ลิงก์นี้ใช้ได้ครั้งเดียว และหมดอายุใน 3 วัน หากไม่ได้เป็นคนขอ กรุณาเพิกเฉยอีเมลนี้)
+
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+    '''
+
+    html_message = f'''
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
+  <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+    <div style="background:#1d4ed8;padding:28px 32px;">
+      <h1 style="color:white;margin:0;font-size:22px;">🔑 รีเซ็ตรหัสผ่าน</h1>
+      <p style="color:#bfdbfe;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
+    </div>
+    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
+
+    <div style="padding:28px 32px;">
+      <p style="font-size:16px;color:#374151;">
+        สวัสดีคุณ <b>{display_name}</b>
+      </p>
+      <p style="color:#6b7280;">
+        มีการขอรีเซ็ตรหัสผ่านสำหรับบัญชี <b>{user.username}</b> กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่
+      </p>
+
+      <div style="text-align:center;margin:24px 0;">
+        <a href="{reset_url}"
+           style="display:inline-block;background:#1d4ed8;color:white;
+                  padding:14px 36px;text-decoration:none;border-radius:8px;
+                  font-size:16px;font-weight:bold;">
+          ตั้งรหัสผ่านใหม่
+        </a>
+      </div>
+
+      <p style="font-size:12px;color:#9ca3af;">
+        ลิงก์นี้ใช้ได้ครั้งเดียว และหมดอายุใน 3 วัน หากไม่ได้เป็นคนขอ กรุณาเพิกเฉยอีเมลนี้
+      </p>
+    </div>
+
+    <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
+    '''
+
+    try:
+        send_mail(
+            subject='🔑 รีเซ็ตรหัสผ่าน — ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
+            message=plain_text,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            recipient_list=[user_email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+    except Exception as e:
+        log_email_error('ส่งอีเมลรีเซ็ตรหัสผ่านไม่สำเร็จ', e)
+
+
 def send_booking_confirmation_email(instance):
     """ส่งอีเมลยืนยันเมื่อจองสำเร็จ พร้อมปุ่ม Check-in และ ยกเลิก"""
     user_email = get_recipient_email(instance.user)

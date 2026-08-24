@@ -15,6 +15,10 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.contrib.auth import login
 from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from functools import partial
 from django.shortcuts import redirect, render
 from .ldap_auth import authenticate_ldap
 from .models import (
@@ -66,6 +70,77 @@ class ChangePasswordView(APIView):
         user.save(update_fields=['password'])
 
         return Response({'detail': 'เปลี่ยนรหัสผ่านสำเร็จ'})
+
+
+class ForgotPasswordView(APIView):
+    """ขอลิงก์รีเซ็ตรหัสผ่าน — ใช้ได้เฉพาะบัญชีที่สมัครเองในระบบ (มีรหัสผ่านจริง
+    เก็บไว้ในนี้) บัญชี LDAP ของมหาวิทยาลัยไม่มีรหัสผ่านเก็บในระบบนี้เลย
+    (user.password ว่างเปล่าเสมอ — ล็อกอินผ่าน LDAP โดยตรง) จึงรีเซ็ตจากที่นี่
+    ไม่ได้ ต้องแจ้งให้ติดต่อ IT แทน"""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        identifier = (request.data.get('email') or request.data.get('username') or '').strip()
+        if not identifier:
+            return Response({'error': 'กรุณากรอกอีเมลหรือชื่อผู้ใช้'}, status=400)
+
+        user = (
+            User.objects.filter(email__iexact=identifier).first()
+            or User.objects.filter(username=identifier).first()
+        )
+
+        if user and not user.password:
+            return Response({
+                'detail': (
+                    'บัญชีนี้เข้าสู่ระบบด้วยรหัสนักศึกษา/รหัสผ่านของมหาวิทยาลัย (LDAP) '
+                    'ไม่สามารถรีเซ็ตรหัสผ่านผ่านหน้านี้ได้ กรุณาติดต่อสำนักคอมพิวเตอร์และเครือข่าย '
+                    'โทร. 045-353102 เพื่อรีเซ็ตรหัสผ่าน'
+                ),
+                'ldap_account': True,
+            })
+
+        if user and user.email:
+            from .signals import send_email_after_commit, send_password_reset_email
+            token = default_token_generator.make_token(user)
+            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+            send_email_after_commit(partial(send_password_reset_email, uidb64=uidb64, token=token), user)
+
+        # ข้อความเดียวกันไม่ว่าจะเจอบัญชีหรือไม่ กันคนสุ่มเช็คว่าอีเมล/ชื่อผู้ใช้นี้
+        # มีอยู่ในระบบไหม
+        return Response({
+            'detail': 'หากอีเมลหรือชื่อผู้ใช้นี้มีอยู่ในระบบ เราได้ส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมลแล้ว กรุณาตรวจสอบกล่องอีเมลของคุณ',
+        })
+
+
+class ResetPasswordConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uidb64 = request.data.get('uid', '')
+        token = request.data.get('token', '')
+        password = request.data.get('password', '')
+        password2 = request.data.get('password2', '')
+
+        if not password or password != password2:
+            return Response({'error': 'รหัสผ่านไม่ตรงกัน'}, status=400)
+        if len(password) < 6:
+            return Response({'error': 'รหัสผ่านต้องมีอย่างน้อย 6 ตัว'}, status=400)
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({'error': 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว'}, status=400)
+
+        if not user.password:
+            return Response({'error': 'บัญชีนี้ไม่รองรับการรีเซ็ตรหัสผ่านในระบบนี้'}, status=400)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({'error': 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว'}, status=400)
+
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        return Response({'detail': 'ตั้งรหัสผ่านใหม่สำเร็จ กรุณาเข้าสู่ระบบอีกครั้ง'})
 
 
 class DeleteAccountView(APIView):

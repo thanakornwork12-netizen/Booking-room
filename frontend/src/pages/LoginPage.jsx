@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff, ArrowRight, UserRound, Lock, Brain, CalendarClock, CheckCircle2 } from 'lucide-react'
-import { loginWithLDAP } from '../api/axios'
+import api, { loginWithLDAP } from '../api/axios'
 
 const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-3 text-sm
   text-slate-800 outline-none transition-all placeholder:text-slate-400
@@ -21,7 +21,10 @@ export default function LoginPage() {
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
   const [showPass, setShowPass] = useState(false)
-  const [forgotNote, setForgotNote] = useState(false)
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotIdentifier, setForgotIdentifier] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotMessage, setForgotMessage] = useState('')
   // ล็อกแบบ sync ด้วย ref กันยิงซ้ำ — ต่างจาก loading (state) ที่ต้องรอ
   // re-render ก่อนถึงจะมีผล ถ้ากด Enter สองครั้งหรือ Enter+คลิกไล่ๆ กัน
   // ในช่วงที่ยังไม่ re-render ก็ยังหลุดผ่าน guard เดิมได้
@@ -50,6 +53,20 @@ export default function LoginPage() {
     } finally {
       isSubmittingRef.current = false
       setLoading(false)
+    }
+  }
+
+  const onForgotSubmit = async () => {
+    if (!forgotIdentifier.trim() || forgotLoading) return
+    setForgotLoading(true)
+    setForgotMessage('')
+    try {
+      const res = await api.post('/auth/forgot-password/', { email: forgotIdentifier.trim(), username: forgotIdentifier.trim() })
+      setForgotMessage(res.data?.detail || 'ส่งคำขอเรียบร้อยแล้ว')
+    } catch {
+      setForgotMessage('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setForgotLoading(false)
     }
   }
 
@@ -122,16 +139,40 @@ export default function LoginPage() {
             </label>
             <button
               type="button"
-              onClick={() => setForgotNote(true)}
+              onClick={() => setShowForgot(v => !v)}
               className="text-sm font-semibold text-blue-700 hover:underline"
             >
               ลืมรหัสผ่าน?
             </button>
           </div>
-          {forgotNote && (
-            <p className="mt-2 text-xs text-slate-500">
-              กรุณาติดต่อสำนักคอมพิวเตอร์และเครือข่าย โทร. 045-353102 เพื่อรีเซ็ตรหัสผ่าน
-            </p>
+          {showForgot && (
+            <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3.5">
+              <p className="text-xs text-slate-600">
+                กรอกอีเมลหรือชื่อผู้ใช้ที่ใช้สมัครสมาชิก — ใช้ได้เฉพาะบัญชีที่สมัครเองในระบบเท่านั้น
+                (บัญชี LDAP ของมหาวิทยาลัยต้องติดต่อสำนักคอมพิวเตอร์และเครือข่าย)
+              </p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="อีเมลหรือชื่อผู้ใช้"
+                  value={forgotIdentifier}
+                  onChange={e => setForgotIdentifier(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && onForgotSubmit()}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                />
+                <button
+                  type="button"
+                  onClick={onForgotSubmit}
+                  disabled={forgotLoading}
+                  className="shrink-0 rounded-xl bg-blue-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {forgotLoading ? 'กำลังส่ง...' : 'ส่งลิงก์รีเซ็ต'}
+                </button>
+              </div>
+              {forgotMessage && (
+                <p className="mt-2 text-xs font-semibold text-slate-700">{forgotMessage}</p>
+              )}
+            </div>
           )}
 
           <button
