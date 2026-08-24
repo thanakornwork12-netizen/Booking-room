@@ -5,14 +5,17 @@ services:
     buildCommand: pip install -r requirements.txt && python manage.py migrate
     startCommand: daphne -p $PORT -b 0.0.0.0 room_booking.asgi:application
     envVars:
+      # DB is Neon, not a Render-provisioned Postgres — set manually in the
+      # Render dashboard, not synced from this blueprint (the free Render
+      # Postgres this used to point to was cancelled long ago).
       - key: DATABASE_URL
-        fromDatabase:
-          name: room-booking-db
-          property: connectionString
+        sync: false
+      # Brevo API key for outbound email (see room_booking/email_backend.py —
+      # Render blocks outbound SMTP port 587, so email goes through Brevo's
+      # HTTPS API instead). Also set manually in the dashboard.
+      - key: BREVO_API_KEY
+        sync: false
       - key: DEBUG
         value: "False"
       - key: SECRET_KEY
         generateValue: true
-databases:
-  - name: room-booking-db
-    plan: free
