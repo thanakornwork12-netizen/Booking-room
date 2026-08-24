@@ -19,7 +19,7 @@ from .views import (
 class LDAPTokenObtainPairView(TokenObtainPairView):
     """
     POST /api/auth/login/
-    Body: { "username": "66114640275", "password": "..." }
+    Body: { "username": "6512345678", "password": "..." }
     ตรวจสอบกับ LDAP มหาวิทยาลัย แทน database
     """
     serializer_class = LDAPTokenObtainPairSerializer

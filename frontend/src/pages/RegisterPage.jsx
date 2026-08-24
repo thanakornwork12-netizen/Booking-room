@@ -292,7 +292,7 @@ export default function RegisterPage() {
                       <input
                         type="text"
                         inputMode="numeric"
-                        placeholder={form.role === 'student' ? 'เช่น 66114640275' : 'ไม่ต้องกรอก'}
+                        placeholder={form.role === 'student' ? 'เช่น 6512345678' : 'ไม่ต้องกรอก'}
                         className={inputCls}
                         value={form.student_id}
                         onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
