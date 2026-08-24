@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, ArrowRight, UserRound, Lock, Brain, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight, ArrowLeft, UserRound, Lock, Brain, CalendarClock, CheckCircle2 } from 'lucide-react'
 import api, { loginWithLDAP } from '../api/axios'
 
 const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-3 text-sm
@@ -76,6 +76,13 @@ export default function LoginPage() {
       {/* ── ฝั่งซ้าย: ฟอร์มล็อกอิน ─────────────────────── */}
       <div className="flex w-full flex-1 items-center justify-center px-6 py-10 sm:px-10 lg:px-16">
         <div className="w-full max-w-md">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition-colors hover:text-blue-700"
+          >
+            <ArrowLeft size={15} /> กลับ
+          </button>
           <p className="text-2xl font-extrabold text-blue-700">🏢 UBU Smart Booking</p>
           <p className="mt-2 text-sm text-slate-500">เข้าสู่ระบบเพื่อจัดการการจองห้องอัจฉริยะ</p>
 
