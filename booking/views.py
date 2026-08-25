@@ -1212,10 +1212,10 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
         try:
             dow = int(data['day_of_week'])
-            st = datetime.strptime(str(data['start_time']), '%H:%M').time() \
+            start_t = datetime.strptime(str(data['start_time']), '%H:%M').time() \
                 if len(str(data['start_time'])) <= 5 \
                 else datetime.strptime(str(data['start_time']), '%H:%M:%S').time()
-            et = datetime.strptime(str(data['end_time']), '%H:%M').time() \
+            end_t = datetime.strptime(str(data['end_time']), '%H:%M').time() \
                 if len(str(data['end_time'])) <= 5 \
                 else datetime.strptime(str(data['end_time']), '%H:%M:%S').time()
             f_start = date_type.fromisoformat(str(data['first_term_start']))
@@ -1225,7 +1225,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         except (ValueError, TypeError) as e:
             return Response({'error': f'รูปแบบวันที่/เวลาไม่ถูกต้อง: {e}'}, status=400)
 
-        if st >= et or f_start >= f_end or s_start >= s_end:
+        if start_t >= end_t or f_start >= f_end or s_start >= s_end:
             return Response({'error': 'ช่วงวันที่หรือเวลาไม่ถูกต้อง'}, status=400)
         if f_end >= s_start:
             return Response({'error': 'ช่วงเทอมแรกและเทอมหลังต้องไม่ซ้อนกัน'}, status=400)
@@ -1242,8 +1242,8 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             'subject_code': subject_code,
             'attendees': attendees,
             'day_of_week': dow,
-            'start_time': st,
-            'end_time': et,
+            'start_time': start_t,
+            'end_time': end_t,
             'term_name': term_name,
             'status': 'active',
         }
@@ -1255,7 +1255,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                 status='active',
                 term_start__lte=t_end,
                 term_end__gte=t_start,
-            ).exclude(start_time__gte=et).exclude(end_time__lte=st).exists()
+            ).exclude(start_time__gte=end_t).exclude(end_time__lte=start_t).exists()
 
         if check_overlap(data['first_room_id'], f_start, f_end):
             return Response({'error': 'ห้องเทอมแรกมีการจองซ้อนในช่วงเวลานี้แล้ว'}, status=400)
