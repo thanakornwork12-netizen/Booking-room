@@ -269,6 +269,16 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         if not q:
             picked = rooms[:limit]
+        elif q.isdigit():
+            # พิมพ์ตัวเลขล้วนๆ (เช่น "40") หมายถึงจำนวนคน ไม่ใช่ชื่อห้อง — แนะนำ
+            # ห้องที่จุพอ เรียงจากพอดีที่สุดไปหาใหญ่กว่า ถ้าไม่มีห้องไหนจุพอเลย
+            # ก็แนะนำห้องที่จุได้มากที่สุดแทน ดีกว่าไม่ขึ้นอะไรเลย
+            target_capacity = int(q)
+            fitting = sorted(
+                (r for r in rooms if r.capacity >= target_capacity),
+                key=lambda r: (r.capacity - target_capacity, r.name),
+            )
+            picked = fitting[:limit] if fitting else sorted(rooms, key=lambda r: -r.capacity)[:limit]
         else:
             scored = []
             for room in rooms:

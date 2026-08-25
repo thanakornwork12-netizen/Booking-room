@@ -777,6 +777,8 @@ function AppShell({ children }) {
   const [searchSuggestions, setSearchSuggestions] = useState([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestPos, setSuggestPos] = useState(null)
+  const searchWrapRef = useRef(null)
 
   const user = useMemo(() => getUser(), [location.pathname])
   const displayName = normalizeDisplayName(
@@ -831,12 +833,21 @@ function AppShell({ children }) {
     window.scrollTo(0, 0)
   }, [location.pathname])
 
+  const updateSuggestPos = () => {
+    if (!searchWrapRef.current) return
+    const rect = searchWrapRef.current.getBoundingClientRect()
+    setSuggestPos({ top: rect.bottom + 8, left: rect.left, width: rect.width })
+  }
+
   useEffect(() => {
     if (!searchText.trim()) {
       setSearchSuggestions([])
       setSearchLoading(false)
+      setShowSuggestions(false)
       return
     }
+    updateSuggestPos()
+    setShowSuggestions(true)
 
     const timer = setTimeout(async () => {
       setSearchLoading(true)
@@ -883,6 +894,11 @@ function AppShell({ children }) {
     setShowSuggestions(false)
   }
 
+  const selectSuggestion = (room) => {
+    navigate('/search', { state: { quickRoom: room, quickSearch: searchText.trim() } })
+    setShowSuggestions(false)
+  }
+
   return (
     <div className="min-h-screen w-full bg-[linear-gradient(180deg,#f8fbff_0%,#f5f8fc_100%)] text-slate-900">
       <header className="sticky top-0 z-50 border-b border-blue-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] shadow-[0_10px_34px_rgba(37,99,235,0.10)]">
@@ -901,16 +917,19 @@ function AppShell({ children }) {
           </div>
 
           <div className="hidden flex-1 justify-center md:flex">
-            <div className="relative w-full max-w-[420px]">
+            <div ref={searchWrapRef} className="relative w-full max-w-[420px]">
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
+                onFocus={() => { if (searchText.trim()) { updateSuggestPos(); setShowSuggestions(true) } }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') runGlobalSearch()
+                  if (e.key === 'Escape') setShowSuggestions(false)
                 }}
-                placeholder="ค้นหาห้องประชุม, รายการจอง..."
+                placeholder="ค้นหาห้องประชุม, รายการจอง... เช่น 40 คน"
                 className="h-12 w-full rounded-full border border-slate-200 bg-slate-50/90 px-12 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
               />
               <button
@@ -922,6 +941,45 @@ function AppShell({ children }) {
               </button>
             </div>
           </div>
+
+          {/* กล่องแนะนำห้องขณะพิมพ์ — วาดผ่าน portal ออกจากกรอบ header ที่มี
+              overflow-hidden (กันมุมโค้ง/แถบไล่สีด้านบน) ไม่งั้น dropdown จะ
+              โดนตัดมองไม่เห็นทั้งที่จริงๆ อยู่ใน DOM ถูกต้อง */}
+          {suggestPos && createPortal(
+            <div
+              className={`fixed z-50 origin-top overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl transition-all duration-150 ease-out ${
+                showSuggestions && searchText.trim()
+                  ? 'translate-y-0 opacity-100'
+                  : 'pointer-events-none -translate-y-1 opacity-0'
+              }`}
+              style={{ top: suggestPos.top, left: suggestPos.left, width: suggestPos.width }}
+            >
+              {searchLoading ? (
+                <div className="px-4 py-3 text-xs text-slate-400">กำลังค้นหา...</div>
+              ) : searchSuggestions.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-slate-400">ไม่พบห้องที่ตรงกับ "{searchText}"</div>
+              ) : (
+                <div className="max-h-80 overflow-y-auto py-1.5">
+                  {searchSuggestions.map(room => (
+                    <button
+                      key={room.id}
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => selectSuggestion(room)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-blue-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-800">{room.name}</span>
+                        <span className="block truncate text-xs text-slate-400">{room.building_name}</span>
+                      </span>
+                      <span className="shrink-0 text-xs font-semibold text-blue-600">{room.capacity} คน</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>,
+            document.body
+          )}
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <NotificationBell />
