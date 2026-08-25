@@ -606,8 +606,12 @@ function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [panelPos, setPanelPos] = useState(null)
+  const [animateIn, setAnimateIn] = useState(false)
+  const [pinged, setPinged] = useState(false)
   const wsRef = useRef(null)
   const buttonRef = useRef(null)
+  const closeTimerRef = useRef(null)
+  const pingTimerRef = useRef(null)
 
   const refetch = () => {
     api.get('/notifications/').then(res => {
@@ -634,11 +638,18 @@ function NotificationBell() {
           // WS push ไม่ส่ง id ของ Notification มาด้วย — ดึงรายการจริงจาก REST
           // ใหม่อีกที เพื่อให้ได้ id ที่ใช้กดอ่านทีหลังได้ถูกต้อง
           refetch()
+          setPinged(true)
+          if (pingTimerRef.current) clearTimeout(pingTimerRef.current)
+          pingTimerRef.current = setTimeout(() => setPinged(false), 900)
         }
       } catch { /* ข้อความไม่ตรงรูปแบบที่คาด ข้ามไป */ }
     }
 
-    return () => ws.close()
+    return () => {
+      ws.close()
+      if (pingTimerRef.current) clearTimeout(pingTimerRef.current)
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    }
   }, [])
 
   const markRead = async (n) => {
@@ -659,21 +670,32 @@ function NotificationBell() {
     } catch { /* เดี๋ยวรอบหน้าค่อยลองใหม่ */ }
   }
 
+  const closePanel = () => {
+    setAnimateIn(false)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(() => setOpen(false), 150)
+  }
+
   const toggleOpen = () => {
-    setOpen(o => {
-      const next = !o
-      if (next && buttonRef.current) {
-        const rect = buttonRef.current.getBoundingClientRect()
-        const panelWidth = Math.min(384, window.innerWidth - 32) // sm:w-96 = 384px, w-[calc(100vw-2rem)] มือถือ
-        const margin = 16
-        let left = rect.right - panelWidth
-        left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin))
-        setPanelPos({ top: rect.bottom + 8, left })
-        // เปิดดูแล้วถือว่าอ่านเลย ไม่ต้องรอกดทีละอันหรือกด "อ่านทั้งหมด" เอง
-        if (unreadCount > 0) markAllRead()
-      }
-      return next
-    })
+    if (open) {
+      closePanel()
+      return
+    }
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      const panelWidth = Math.min(384, window.innerWidth - 32) // sm:w-96 = 384px, w-[calc(100vw-2rem)] มือถือ
+      const margin = 16
+      let left = rect.right - panelWidth
+      left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin))
+      setPanelPos({ top: rect.bottom + 8, left })
+    }
+    setOpen(true)
+    // สองชั้น rAF กันเบราว์เซอร์รวบ paint แรก (scale-95/opacity-0) เข้ากับ paint
+    // ที่ทรานซิชันไปแล้ว (scale-100/opacity-100) ทำให้ไม่เห็นอนิเมชันเปิด
+    requestAnimationFrame(() => requestAnimationFrame(() => setAnimateIn(true)))
+    // เปิดดูแล้วถือว่าอ่านเลย ไม่ต้องรอกดทีละอันหรือกด "อ่านทั้งหมด" เอง
+    if (unreadCount > 0) markAllRead()
   }
 
   return (
@@ -682,22 +704,25 @@ function NotificationBell() {
         ref={buttonRef}
         type="button"
         onClick={toggleOpen}
-        className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
+        className={`relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition-all duration-300 hover:border-blue-200 hover:text-blue-700 ${pinged ? 'scale-110 border-blue-300 text-blue-700' : 'scale-100'}`}
         aria-label="การแจ้งเตือน"
       >
-        <Bell size={19} />
+        <Bell size={19} className={pinged ? 'animate-[wiggle_0.5s_ease-in-out]' : ''} />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
+          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center">
+            {pinged && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />}
+            <span className="relative flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
           </span>
         )}
       </button>
 
       {open && panelPos && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-40" onClick={closePanel} />
           <div
-            className="fixed z-50 max-h-[70vh] w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:w-96"
+            className={`fixed z-50 max-h-[70vh] w-[calc(100vw-2rem)] max-w-sm origin-top-right overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl transition-all duration-150 ease-out sm:w-96 ${animateIn ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
             style={{ top: panelPos.top, left: panelPos.left }}
           >
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
