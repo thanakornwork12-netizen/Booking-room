@@ -641,39 +641,45 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         return enriched + day_suggestions
 
-    def _room_free_until(self, room_id, target_date, now_time):
-        """เวลาที่ห้องนี้ 'ว่างไปจนถึง' จริงๆ นับจากตอนนี้ — เวลาเริ่มของงานถัดไป
+    def _rooms_free_until(self, room_ids, target_date, now_time):
+        """เวลาที่แต่ละห้อง 'ว่างไปจนถึง' จริงๆ นับจากตอนนี้ — เวลาเริ่มของงานถัดไป
         (จอง/ซ่อมบำรุง/ล็อกทั้งเทอม) ที่ใกล้ที่สุดวันนี้ หรือ 23:59 ถ้าไม่มีอะไรเหลือแล้ว
-        แต่ละห้องว่างไม่เท่ากัน ไม่ควรเหมาว่าทุกห้องว่างแค่ 1 ชม.เท่ากันหมด"""
+        แต่ละห้องว่างไม่เท่ากัน ไม่ควรเหมาว่าทุกห้องว่างแค่ 1 ชม.เท่ากันหมด
+
+        คำนวณทีเดียวหลายห้อง (3 query รวม แทนที่จะเป็น 3 query ต่อห้อง — กัน N+1
+        ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: time}"""
         from datetime import time as time_type
 
         day_end = time_type(23, 59)
-        candidates = []
+        result = {rid: day_end for rid in room_ids}
 
-        next_booking_start = Booking.objects.filter(
-            room_id=room_id, status__in=['pending', 'approved', 'checked_in'],
-            start_time__date=target_date, start_time__time__gt=now_time,
-        ).order_by('start_time').values_list('start_time', flat=True).first()
-        if next_booking_start:
-            candidates.append(timezone.localtime(next_booking_start).time())
+        def apply_earliest(rows, extract_time):
+            for room_id, start_time in rows:
+                t = extract_time(start_time)
+                if t < result[room_id]:
+                    result[room_id] = t
 
-        next_maint_start = MaintenanceBlock.objects.filter(
-            room_id=room_id, status__in=['scheduled', 'active'],
+        booking_rows = Booking.objects.filter(
+            room_id__in=room_ids, status__in=['pending', 'approved', 'checked_in'],
             start_time__date=target_date, start_time__time__gt=now_time,
-        ).order_by('start_time').values_list('start_time', flat=True).first()
-        if next_maint_start:
-            candidates.append(timezone.localtime(next_maint_start).time())
+        ).values_list('room_id', 'start_time')
+        apply_earliest(booking_rows, lambda dt: timezone.localtime(dt).time())
+
+        maint_rows = MaintenanceBlock.objects.filter(
+            room_id__in=room_ids, status__in=['scheduled', 'active'],
+            start_time__date=target_date, start_time__time__gt=now_time,
+        ).values_list('room_id', 'start_time')
+        apply_earliest(maint_rows, lambda dt: timezone.localtime(dt).time())
 
         target_dow = target_date.weekday()
-        next_term_start = TermBooking.objects.filter(
-            room_id=room_id, day_of_week=target_dow, status='active',
+        term_rows = TermBooking.objects.filter(
+            room_id__in=room_ids, day_of_week=target_dow, status='active',
             term_start__lte=target_date, term_end__gte=target_date,
             start_time__gt=now_time,
-        ).order_by('start_time').values_list('start_time', flat=True).first()
-        if next_term_start:
-            candidates.append(next_term_start)
+        ).values_list('room_id', 'start_time')
+        apply_earliest(term_rows, lambda dt: dt)
 
-        return min(candidates) if candidates else day_end
+        return result
 
     @action(detail=False, methods=['get'], url_path='today-feed')
     def today_feed(self, request):
@@ -714,10 +720,10 @@ class RoomViewSet(viewsets.ModelViewSet):
         # แนบกลับมาในผลลัพธ์ — ฟีดนี้ต้องโชว์ช่วงเวลาที่ว่างจริงในการ์ดด้วย
         # (จับคู่ด้วย room id เพราะ _enrich_rooms เรียง result ใหม่ตาม demand
         # level ไม่ใช่ลำดับเดิมของ rooms อีกแล้ว)
+        free_until_map = self._rooms_free_until([item['id'] for item in enriched], today, now_time)
         for item in enriched:
-            free_until = self._room_free_until(item['id'], today, now_time)
             item['available_from'] = now_time.strftime('%H:%M')
-            item['available_until'] = free_until.strftime('%H:%M')
+            item['available_until'] = free_until_map[item['id']].strftime('%H:%M')
         return Response(enriched)
 
     @action(detail=False, methods=['post'], url_path='dynamic-recommend')
