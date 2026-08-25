@@ -1053,9 +1053,9 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         try:
             t_start = date_type.fromisoformat(str(term_start))
             t_end   = date_type.fromisoformat(str(term_end))
-            st = datetime.strptime(str(start_time), '%H:%M').time() if len(str(start_time)) <= 5 \
+            start_t = datetime.strptime(str(start_time), '%H:%M').time() if len(str(start_time)) <= 5 \
                  else datetime.strptime(str(start_time), '%H:%M:%S').time()
-            et = datetime.strptime(str(end_time), '%H:%M').time() if len(str(end_time)) <= 5 \
+            end_t = datetime.strptime(str(end_time), '%H:%M').time() if len(str(end_time)) <= 5 \
                  else datetime.strptime(str(end_time), '%H:%M:%S').time()
             preferred_room_id = int(room_id) if room_id not in (None, '') else None
         except ValueError as e:
@@ -1078,7 +1078,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                 room=room_obj,
                 day_of_week=dow, status='active',
                 term_start__lte=period_end, term_end__gte=period_start,
-            ).exclude(start_time__gte=et).exclude(end_time__lte=st).exists()
+            ).exclude(start_time__gte=end_t).exclude(end_time__lte=start_t).exists()
 
         def room_score(room_obj, period_start, period_end):
             if is_room_blocked(room_obj, period_start, period_end):
