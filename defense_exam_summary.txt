@@ -208,9 +208,17 @@ Room 1-N TermBooking, Room 1-N DemandForecast, Room 1-N MaintenanceBlock
      บัญชีมหาวิทยาลัย) เมื่อ LDAP bind ไม่ผ่าน ระบบจะลองตรวจรหัสผ่านแบบ
      Django ปกติ (hashed password ในฐานข้อมูล) ต่อ
 
-  จุดสำคัญ: บัญชีที่ล็อกอินผ่าน LDAP จะมี password field ว่างเปล่าใน
-  Django (ไม่เก็บรหัสผ่านมหาวิทยาลัยไว้เอง) เพราะรหัสผ่านจริงตรวจกับ LDAP
-  server โดยตรงทุกครั้ง ไม่ได้ cache ไว้ในฐานข้อมูลตัวเอง — ปลอดภัยกว่า
+  จุดสำคัญ: บัญชีที่ล็อกอินผ่าน LDAP จะถูกเรียก `set_unusable_password()`
+  (ไม่เก็บรหัสผ่านมหาวิทยาลัยไว้เอง) เพราะรหัสผ่านจริงตรวจกับ LDAP server
+  โดยตรงทุกครั้ง ไม่ได้ cache ไว้ในฐานข้อมูลตัวเอง — ปลอดภัยกว่า
+
+  จุดที่มักเข้าใจผิด (และเคยเป็นบั๊กจริงในระบบนี้มาก่อน — ดูหัวข้อ 9.3):
+  `set_unusable_password()` ของ Django ไม่ได้ทำให้ `user.password` เป็น
+  ค่าว่างเปล่า แต่เก็บเป็นสตริงรูปแบบ `!<สุ่มอักขระ>` (ไม่ใช่ hash ที่ใช้
+  งานได้จริง แต่ก็ไม่ใช่ค่าว่าง) ดังนั้นการเช็คว่า "เป็นบัญชี LDAP หรือไม่"
+  ต้องเช็คด้วย `user.has_usable_password()` (คืน False สำหรับบัญชี LDAP)
+  เท่านั้น จะเช็คแบบ `not user.password` ตรงๆ ไม่ได้ เพราะสตริงที่ไม่ว่าง
+  จะถูกตีความว่าเป็น truthy เสมอ ไม่ว่าจะ "ใช้งานได้จริง" หรือไม่ก็ตาม
 
 4.2 JWT (JSON Web Token)
 --------------------------------------------
@@ -769,8 +777,9 @@ A: React escape ค่าที่ render ใน JSX โดยอัตโนม
 Q: รหัสผ่านเก็บยังไง ปลอดภัยแค่ไหน?
 A: บัญชี local ใช้ Django password hasher มาตรฐาน (PBKDF2 + salt แบบ
    built-in ของ Django ไม่ได้เก็บ plain text หรือ hash เปล่าไม่มี salt)
-   ส่วนบัญชี LDAP ไม่เก็บรหัสผ่านไว้ในระบบนี้เลย (password field ว่างเปล่า)
-   เพราะตรวจสอบผ่าน LDAP server ของมหาวิทยาลัยโดยตรงทุกครั้งที่ login
+   ส่วนบัญชี LDAP ไม่เก็บรหัสผ่านที่ใช้งานได้ในระบบนี้เลย (เรียก
+   set_unusable_password() ไว้) เพราะตรวจสอบผ่าน LDAP server ของ
+   มหาวิทยาลัยโดยตรงทุกครั้งที่ login
 
 Q: ลิงก์ยกเลิก/เช็คอินผ่านอีเมล (ไม่ต้องล็อกอิน) ปลอดภัยไหม ใครก็เดา URL
    แล้วยกเลิกจองคนอื่นได้ไหม?
@@ -781,13 +790,36 @@ A: ใช้ UUID สุ่ม (checkin_token) เป็นกุญแจใน
    การจองรายการเดียวนั้น ไม่กระทบบัญชีหรือข้อมูลอื่น
 
 Q: เคยเจอช่องโหว่จริงระหว่างพัฒนาไหม แก้ยังไง?
-A: เจอจริง — ฟอร์มสมัครสมาชิกเองแต่เดิมไม่ได้ validate ค่า role ที่ส่งมา
-   ทำให้ทดสอบยิง API ตรงพร้อมใส่ role="admin" ในตอน register แล้วได้สิทธิ์
-   admin ทันทีโดยไม่ต้องผ่านการอนุมัติจากใคร (privilege escalation) แก้โดย
-   เพิ่ม validate_role() ใน serializer จำกัดให้สมัครเองได้แค่ 3 role
-   (student/lecturer/staff) เท่านั้น role admin ต้องตั้งผ่าน backend/admin
-   panel โดยผู้ดูแลระบบเท่านั้น — ทดสอบยิง exploit เดิมซ้ำหลังแก้ยืนยันว่า
-   ถูกบล็อกจริง
+A: เจอจริง 2 ครั้ง:
+
+   ครั้งที่ 1 — Privilege Escalation ตอนสมัครสมาชิก: ฟอร์มสมัครสมาชิกเอง
+   แต่เดิมไม่ได้ validate ค่า role ที่ส่งมา ทำให้ทดสอบยิง API ตรงพร้อมใส่
+   role="admin" ในตอน register แล้วได้สิทธิ์ admin ทันทีโดยไม่ต้องผ่านการ
+   อนุมัติจากใคร แก้โดยเพิ่ม validate_role() ใน serializer จำกัดให้สมัครเอง
+   ได้แค่ 3 role (student/lecturer/staff) เท่านั้น role admin ต้องตั้งผ่าน
+   backend/admin panel โดยผู้ดูแลระบบเท่านั้น — ทดสอบยิง exploit เดิมซ้ำ
+   หลังแก้ยืนยันว่าถูกบล็อกจริง
+
+   ครั้งที่ 2 — LDAP account bypass ตอนลืมรหัสผ่าน: โค้ดเดิมเช็คว่า "เป็น
+   บัญชี LDAP หรือไม่" ด้วย `not user.password` (สมมติว่าฟิลด์นี้ว่างเปล่า
+   เสมอสำหรับบัญชี LDAP) แต่ทดสอบจริงกับบัญชี LDAP ในฐานข้อมูลพบว่า
+   `set_unusable_password()` ของ Django ไม่ได้ทำให้ฟิลด์นี้ว่างเปล่า แต่เก็บ
+   เป็นสตริง `!<สุ่มอักขระ>` ซึ่งเป็นค่า truthy เสมอ — แปลว่าเงื่อนไขนี้
+   `False` เสมอสำหรับบัญชี LDAP จริง ทำให้ระบบไหลผ่านไปส่งอีเมลรีเซ็ต
+   รหัสผ่านให้บัญชี LDAP ได้ (ทั้งที่ไม่ควรทำได้) และถ้าทำจนจบ ผู้ใช้จะตั้ง
+   รหัสผ่าน local จริงให้บัญชี LDAP ได้สำเร็จ กลายเป็นช่องทางเข้าระบบสำรอง
+   ที่ไม่ได้ตั้งใจให้มี (unintended backdoor) แก้โดยเปลี่ยนไปเช็คด้วย
+   `user.has_usable_password()` (API ที่ถูกต้องของ Django สำหรับกรณีนี้ —
+   ที่จริงมีใช้ถูกต้องอยู่แล้วในอีกจุดหนึ่งของโค้ด คือ
+   ChangePasswordSerializer แต่จุดนี้เขียนแยกกันคนละที่แล้วพลาดไม่ตรงกัน)
+   ทดสอบยิง API จริงกับบัญชี LDAP ในฐานข้อมูลซ้ำหลังแก้ ยืนยันว่าได้ข้อความ
+   "ติดต่อ IT" ที่ถูกต้องแล้ว ไม่ไหลผ่านไปส่งอีเมลอีกต่อไป
+
+   บทเรียนร่วมของทั้งสองครั้ง: ช่องโหว่ทั้งคู่ไม่ใช่เรื่องซับซ้อนทางเทคนิค
+   เลย แต่เกิดจาก "สมมติฐานที่ไม่ได้ตรวจสอบจริง" (ไม่ validate input /
+   ไม่ตรวจสอบพฤติกรรมจริงของ API ที่เรียกใช้) วิธีจับได้ทั้งสองครั้งคือ
+   ทดสอบยิง exploit จริง/ตรวจข้อมูลจริงในฐานข้อมูล ไม่ใช่แค่อ่านโค้ดแล้ว
+   คิดว่าน่าจะถูก
 
 Q: ป้องกัน CORS/CSRF ยังไง?
 A: ตั้ง CORS_ALLOWED_ORIGINS ระบุ origin ของ frontend ที่อนุญาตชัดเจน
@@ -1041,3 +1073,210 @@ A: (ตอบตามข้อเท็จจริงของตัวเอ�
   - ml/saved/test_from_excel.py  : สคริปต์ประเมินผลโมเดลจริงบนชุด Test
   - lstm_summary.txt             : สรุปย่อผลการทดลอง LSTM
   - render.yaml                  : ค่า config การ deploy บน Render
+
+
+================================================================================
+ภาคผนวก ค: เจาะโค้ดจริงทีละจุด (เปิดโชว์ได้ทันทีถ้ากรรมการอยากเห็นของจริง)
+================================================================================
+ทุกบล็อกด้านล่างคือโค้ดจริงในระบบ (ไม่ใช่ตัวอย่างสมมติ) พร้อมคำอธิบายทีละ
+บรรทัด/ทีละส่วน เตรียมไว้เผื่อกรรมการขอให้เปิดโค้ดจริงประกอบการอธิบาย
+
+--------------------------------------------------------------------------------
+ค.1 สถาปัตยกรรม LSTM (ml/saved/forecast.py)
+--------------------------------------------------------------------------------
+    model = Sequential([
+        LSTM(48, return_sequences=False, input_shape=(lookback, input_cols)),
+        Dropout(0.2),
+        Dense(16, activation='relu'),
+        Dense(1),
+    ])
+    optimizer = Adam(learning_rate=0.0005, clipvalue=1.0)
+    model.compile(optimizer=optimizer, loss='mae', metrics=['mae'])
+
+  อธิบายทีละส่วน:
+  - `LSTM(48, return_sequences=False, input_shape=(lookback, input_cols))`
+    รับ input เป็น 3 มิติ (batch, lookback, input_cols) คือ "ย้อนหลัง
+    กี่วัน" คูณ "กี่ feature ต่อวัน" — return_sequences=False แปลว่าเอา
+    output แค่ timestep สุดท้าย (สรุปทั้ง sequence เป็นเวกเตอร์เดียว)
+    ไม่ต้องส่ง sequence ต่อไปให้ LSTM ชั้นถัดไป (เพราะมีแค่ชั้นเดียว)
+  - `Dropout(0.2)` สุ่มปิด neuron 20% ระหว่างเทรนแต่ละรอบ (ไม่ใช่ตอน
+    inference จริง) เป็นเทคนิคป้องกัน overfitting มาตรฐาน
+  - `Dense(16, activation='relu')` แปลงเวกเตอร์จาก LSTM (48 มิติ) ให้เหลือ
+    16 มิติ ผ่าน non-linear activation (ReLU) ก่อนสรุปเป็นค่าเดียว
+  - `Dense(1)` ชั้นสุดท้าย ไม่มี activation (linear) เพราะเป็นงาน
+    regression (ทำนายตัวเลขต่อเนื่อง ไม่ใช่ classification ที่ต้องการ
+    sigmoid/softmax)
+  - `Adam(learning_rate=0.0005, clipvalue=1.0)` — Adam คือ optimizer ที่
+    ปรับ learning rate ให้แต่ละ parameter อัตโนมัติ (adaptive) เร็วและ
+    เสถียรกว่า plain SGD ในงานส่วนใหญ่ `clipvalue=1.0` จำกัดขนาด gradient
+    สูงสุดไม่ให้เกิน 1.0 (gradient clipping) ป้องกัน "exploding gradient"
+    ที่ทำให้การเทรนระเบิด/ไม่ลู่เข้า (unstable) ซึ่งเสี่ยงเกิดได้ง่ายกว่า
+    ปกติบนข้อมูลจำนวนน้อย
+  - `loss='mae'` ใช้ Mean Absolute Error แทน Mean Squared Error (ดูเหตุผล
+    ในหัวข้อ 9.1)
+
+--------------------------------------------------------------------------------
+ค.2 การป้องกันการจองซ้อน (booking/views.py, BookingViewSet.perform_create)
+--------------------------------------------------------------------------------
+    def perform_create(self, serializer):
+        room       = serializer.validated_data['room']
+        start_time = serializer.validated_data['start_time']
+        end_time   = serializer.validated_data['end_time']
+
+        with transaction.atomic():
+            Room.objects.select_for_update().get(pk=room.pk)
+
+            if Booking.objects.filter(
+                room=room,
+                status__in=['pending', 'approved', 'checked_in'],
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            ).exists():
+                raise ValidationError({'detail': 'ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว...'})
+            # (ตามด้วยเช็ค TermBooking และ MaintenanceBlock ทับซ้อนแบบเดียวกัน)
+            booking = serializer.save(user=self.request.user, status='approved')
+
+  อธิบายทีละส่วน:
+  - `transaction.atomic()` เปิด database transaction — ทุกคำสั่งข้างในนับ
+    เป็นหน่วยเดียว (all-or-nothing) ถ้ามี exception เกิดขึ้นระหว่างทาง
+    (เช่น ValidationError จาก conflict) การเปลี่ยนแปลงทั้งหมดใน block นี้
+    จะถูก rollback ทั้งหมด ไม่มีสถานะครึ่งๆ กลางๆ ค้างอยู่ในฐานข้อมูล
+  - `Room.objects.select_for_update().get(pk=room.pk)` คือหัวใจของการกัน
+    race condition — คำสั่งนี้สั่งฐานข้อมูลให้ "ล็อกแถวนี้ไว้" (SELECT ...
+    FOR UPDATE ในภาษา SQL) จนกว่า transaction นี้จะ commit หรือ rollback
+    ถ้ามีอีก request หนึ่งพยายาม select_for_update() แถวเดียวกันพร้อมกัน
+    request ที่สองจะ "ต้องรอ" จนกว่า request แรกจะจบ transaction ก่อน —
+    การ query เช็ค conflict (Booking.objects.filter(...).exists()) ที่ตาม
+    มาจึงการันตีว่าเห็นข้อมูลล่าสุดจริงเสมอ ไม่ใช่ข้อมูลที่อาจจะเก่าเพราะ
+    อีก request หนึ่งกำลังจะ commit การจองใหม่พร้อมกันอยู่
+  - ลำดับสำคัญมาก: ต้องล็อก (select_for_update) ก่อนเช็ค conflict เสมอ
+    ถ้าสลับลำดับ (เช็ค conflict ก่อนแล้วค่อยล็อก) จะไม่มีผลป้องกันอะไรเลย
+    เพราะช่วงเวลาระหว่างเช็คกับล็อกยังเป็นช่องให้ request อื่นแทรกได้อยู่ดี
+
+--------------------------------------------------------------------------------
+ค.3 การยืนยันตัวตน WebSocket ด้วย JWT ผ่าน Query String (room_booking/asgi.py)
+--------------------------------------------------------------------------------
+  ปัญหา: WebSocket connection จาก browser (JavaScript `new WebSocket(url)`)
+  ไม่สามารถแนบ custom HTTP header (เช่น `Authorization: Bearer <token>`)
+  แบบที่ทำกับ axios/fetch ปกติได้ตรงๆ (ข้อจำกัดของ WebSocket API มาตรฐาน)
+  จึงต้องหาวิธีอื่นส่ง JWT ไปให้ backend รู้ว่าใครกำลังเชื่อมต่ออยู่
+
+  วิธีแก้ในระบบนี้: ส่ง JWT ผ่าน query string ของ URL เอง
+      new WebSocket(`${WS_BASE_URL}notifications/?token=${accessToken}`)
+
+  แล้วฝั่ง backend มี Middleware คั่นกลางดักอ่านค่านี้ก่อนส่งต่อให้ Consumer:
+
+    class JWTAuthMiddleware(BaseMiddleware):
+        async def __call__(self, scope, receive, send):
+            query_string = scope.get('query_string', b'').decode()
+            params       = parse_qs(query_string)
+            token_list   = params.get('token', [])
+            if token_list:
+                user = await self.get_user_from_token(token_list[0])
+                scope['user'] = user
+            else:
+                scope['user'] = AnonymousUser()
+            return await super().__call__(scope, receive, send)
+
+  อธิบาย: Middleware นี้ถูกครอบ URLRouter ของ WebSocket ไว้ทั้งหมด (ดูใน
+  asgi.py: `'websocket': JWTAuthMiddleware(URLRouter(websocket_urlpatterns))`)
+  ทำงานเหมือน middleware ฝั่ง HTTP ปกติ คือดักทุก connection ก่อนถึง
+  consumer จริง ถอดรหัส JWT (`AccessToken(token)`) ดึง user_id ออกมา แล้ว
+  set `scope['user']` ให้ — Consumer (เช่น NotificationConsumer.connect())
+  จึงเรียก `self.scope.get('user')` แล้วรู้ทันทีว่าเป็น user คนไหน ใช้สร้าง
+  WebSocket group เฉพาะคน (`user_{id}_notifications`) ได้ถูกต้อง
+
+--------------------------------------------------------------------------------
+ค.4 กลไก Push แจ้งเตือนอัตโนมัติผ่าน Django Signal (booking/signals.py)
+--------------------------------------------------------------------------------
+    @receiver(post_save, sender=Notification)
+    def push_notification(sender, instance, created, **kwargs):
+        if not created:
+            return
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        async_to_sync(channel_layer.group_send)(
+            f'user_{instance.user.id}_notifications',
+            {
+                'type':       'notification_push',
+                'title':      instance.title,
+                'message':    instance.message,
+                'notif_type': instance.type,
+                'booking_id': instance.booking.id if instance.booking else None,
+            }
+        )
+
+  อธิบาย: `@receiver(post_save, sender=Notification)` คือ Django signal —
+  ฟังก์ชันนี้จะถูกเรียกอัตโนมัติทุกครั้งที่มีการ `.save()` ออบเจกต์
+  Notification ไม่ว่าจะมาจากที่ไหนในโค้ด (จุดที่สร้าง Notification เช่นตอน
+  อนุมัติการจอง ไม่ต้องเรียกฟังก์ชันส่ง WebSocket เองเลย — แค่สร้าง
+  Notification.objects.create(...) กลไกนี้ก็ทำงานให้อัตโนมัติ) ทำให้โค้ด
+  ส่วน business logic (เช่น perform_create ใน ค.2) ไม่ต้องรู้จัก/ผูกติดกับ
+  รายละเอียดของ WebSocket เลย (separation of concerns) — `if not created:
+  return` กันไม่ให้ signal นี้ทำงานซ้ำตอน Notification ถูก UPDATE (เช่น
+  ตอนกดอ่านแล้ว is_read=True ก็เป็นการ save() เหมือนกัน แต่ไม่ควร push ซ้ำ)
+  `async_to_sync(...)` จำเป็นเพราะ Django signal ทำงานแบบ synchronous
+  (เหมือนโค้ด Django ทั่วไป) แต่ channel_layer.group_send เป็นฟังก์ชันแบบ
+  async (asyncio) จึงต้องมีตัวแปลงเชื่อมสองโลกนี้เข้าด้วยกัน
+
+
+================================================================================
+ภาคผนวก ง: ตาราง API Endpoint ทั้งหมด
+================================================================================
+
+REST API (ทั้งหมดขึ้นต้นด้วย /api/):
+
+  Authentication
+    POST   auth/register/                  สมัครสมาชิก (บัญชี local เท่านั้น)
+    POST   auth/login/                     ล็อกอิน (LDAP ก่อน, fallback local)
+    POST   auth/refresh/                   ขอ access token ใหม่จาก refresh token
+    GET    auth/profile/                   ดูข้อมูลโปรไฟล์ตัวเอง
+    POST   auth/change-password/           เปลี่ยนรหัสผ่าน (บัญชี local เท่านั้น)
+    POST   auth/delete-account/            ลบบัญชีตัวเอง
+    POST   auth/forgot-password/           ขอลิงก์รีเซ็ตรหัสผ่าน
+    POST   auth/reset-password-confirm/    ยืนยันตั้งรหัสผ่านใหม่
+
+  ห้อง/อาคาร (ผ่าน DRF Router — CRUD มาตรฐาน + action พิเศษ)
+    GET    buildings/                      รายชื่ออาคาร
+    GET    rooms/                          รายชื่อห้อง (กรองตามสิทธิ์)
+    GET    rooms/suggestions/              แนะนำห้องขณะพิมพ์ค้นหา (fuzzy/capacity)
+    GET    rooms/today-feed/               ห้องว่างตอนนี้ (หน้าแรก)
+    POST   rooms/search/ (ผ่าน action)     ค้นหาห้องตามเงื่อนไข + AI ranking
+
+  การจอง
+    GET    bookings/                       รายการจองของตัวเอง (หรือทั้งหมดถ้า admin/staff)
+    POST   bookings/                       จองห้องรายวันใหม่
+    POST   bookings/{id}/cancel/           ยกเลิกการจอง
+    POST   bookings/{id}/check_in/         เช็คอิน
+    GET/POST bookings/{id}/cancel-email/{token}/  ยกเลิกผ่านลิงก์อีเมล ไม่ต้อง
+                                            ล็อกอิน (GET=หน้ายืนยัน,
+                                            POST=ยกเลิกจริง)
+    GET    bookings/{id}/logs/             ประวัติการเปลี่ยนสถานะ
+
+    GET    term-bookings/                  รายการจองทั้งเทอม
+    POST   term-bookings/                  จองทั้งเทอมใหม่
+    POST   term-bookings/split-recommend/  แนะนำแยกครึ่งเทอม (ถ้าห้องเดียวไม่ว่างตลอด)
+    POST   term-bookings/split-book/       ยืนยันจองแบบแยกครึ่งเทอม
+
+  แจ้งเตือน / พยากรณ์ / ซ่อมบำรุง
+    GET    notifications/                  รายการแจ้งเตือนของตัวเอง
+    POST   notifications/{id}/read/        อ่านแจ้งเตือน 1 รายการ
+    POST   notifications/read_all/         อ่านทั้งหมด
+    GET    forecasts/                      ผลพยากรณ์ demand
+    GET    maintenance-blocks/             ช่วงปิดซ่อมบำรุง
+    POST   maintenance-blocks/             ตั้งช่วงปิดซ่อมใหม่ (admin/staff)
+    GET    maintenance/slots/              ช่วงเวลาแนะนำปิดซ่อม (demand ต่ำสุด)
+
+  แอดมิน
+    GET    dashboard/                      สถิติภาพรวมสำหรับ Admin Dashboard
+    GET    export/excel/                   Export ข้อมูลเป็นไฟล์ Excel
+
+WebSocket (ทั้งหมดขึ้นต้นด้วย /ws/ — ต้องแนบ ?token=<JWT> ใน query string):
+
+  ws/rooms/            สถานะห้องแบบ real-time (ทุก client เห็นเหมือนกัน,
+                        broadcast กลุ่มเดียว 'room_status')
+  ws/notifications/    แจ้งเตือนเฉพาะบุคคล (กลุ่มแยกต่อ user
+                        'user_{id}_notifications')
+  ws/retrain/          ความคืบหน้าการ retrain โมเดล AI (เฉพาะ admin/staff
+                        เท่านั้นที่เชื่อมต่อได้ — เช็ค role ใน connect())
