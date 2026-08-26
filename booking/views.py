@@ -74,9 +74,11 @@ class ChangePasswordView(APIView):
 
 class ForgotPasswordView(APIView):
     """ขอลิงก์รีเซ็ตรหัสผ่าน — ใช้ได้เฉพาะบัญชีที่สมัครเองในระบบ (มีรหัสผ่านจริง
-    เก็บไว้ในนี้) บัญชี LDAP ของมหาวิทยาลัยไม่มีรหัสผ่านเก็บในระบบนี้เลย
-    (user.password ว่างเปล่าเสมอ — ล็อกอินผ่าน LDAP โดยตรง) จึงรีเซ็ตจากที่นี่
-    ไม่ได้ ต้องแจ้งให้ติดต่อ IT แทน"""
+    เก็บไว้ในนี้) บัญชี LDAP ของมหาวิทยาลัยไม่มีรหัสผ่านที่ใช้งานได้ในระบบนี้
+    (สร้างด้วย set_unusable_password() — has_usable_password() คืน False,
+    แต่ user.password เองไม่ใช่ค่าว่าง เป็นสตริง '!<random>' ที่ไม่ใช่ hash
+    จริง ต้องเช็คด้วย has_usable_password() ไม่ใช่ truthiness ของ password
+    ตรงๆ) จึงรีเซ็ตจากที่นี่ไม่ได้ ต้องแจ้งให้ติดต่อ IT แทน"""
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -89,7 +91,7 @@ class ForgotPasswordView(APIView):
             or User.objects.filter(username=identifier).first()
         )
 
-        if user and not user.password:
+        if user and not user.has_usable_password():
             return Response({
                 'detail': (
                     'บัญชีนี้เข้าสู่ระบบด้วยรหัสนักศึกษา/รหัสผ่านของมหาวิทยาลัย (LDAP) '
@@ -132,7 +134,7 @@ class ResetPasswordConfirmView(APIView):
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({'error': 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว'}, status=400)
 
-        if not user.password:
+        if not user.has_usable_password():
             return Response({'error': 'บัญชีนี้ไม่รองรับการรีเซ็ตรหัสผ่านในระบบนี้'}, status=400)
 
         if not default_token_generator.check_token(user, token):
