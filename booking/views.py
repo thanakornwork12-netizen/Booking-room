@@ -3,7 +3,7 @@ import re
 from difflib import SequenceMatcher
 from django.utils import timezone
 from django.db.models import Count, Q
-from datetime import datetime, date as date_type, timedelta
+from datetime import datetime, date as date_type, time as time_type, timedelta
 from django.http import HttpResponse, JsonResponse
 import io, threading, pytz
 from rest_framework.views import APIView
@@ -206,6 +206,11 @@ class BuildingViewSet(viewsets.ModelViewSet):
 # ยังไม่มีข้อมูลพอ เลยซ่อนจากการค้นหา/จองของผู้ใช้ทั่วไป จนกว่าจะมีข้อมูลสะสมพอ
 # staff/admin ยังเห็นห้องทั้งหมดตามปกติ เพื่อจัดการ inventory จริงของมหาวิทยาลัยได้ครบ
 AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
+
+# เวลาปิดทำการอาคาร ใช้เป็นเพดานสูงสุดของ "ห้องว่างถึงกี่โมง" ในฟีดหน้าแรก —
+# ไม่งั้นวันที่ไม่มีการจองอะไรต่อแล้ว ทุกห้องจะโชว์ "ว่างถึงเที่ยงคืน" เหมือน
+# กันหมด ดูไม่สมจริง (ดู RoomViewSet._rooms_free_until)
+BUILDING_CLOSING_TIME = time_type(21, 0)
 
 
 class RoomViewSet(viewsets.ModelViewSet):
@@ -655,14 +660,18 @@ class RoomViewSet(viewsets.ModelViewSet):
 
     def _rooms_free_until(self, room_ids, target_date, now_time):
         """เวลาที่แต่ละห้อง 'ว่างไปจนถึง' จริงๆ นับจากตอนนี้ — เวลาเริ่มของงานถัดไป
-        (จอง/ซ่อมบำรุง/ล็อกทั้งเทอม) ที่ใกล้ที่สุดวันนี้ หรือ 23:59 ถ้าไม่มีอะไรเหลือแล้ว
-        แต่ละห้องว่างไม่เท่ากัน ไม่ควรเหมาว่าทุกห้องว่างแค่ 1 ชม.เท่ากันหมด
+        (จอง/ซ่อมบำรุง/ล็อกทั้งเทอม) ที่ใกล้ที่สุดวันนี้ หรือเวลาปิดทำการอาคาร
+        ถ้าไม่มีอะไรเหลือแล้ว แต่ละห้องว่างไม่เท่ากัน ไม่ควรเหมาว่าทุกห้องว่าง
+        แค่ 1 ชม.เท่ากันหมด และไม่ควรโชว์ว่าว่างยาวไปถึงเที่ยงคืนทั้งที่อาคาร
+        ปิดไปนานแล้ว (ไม่สมจริง — ดูเหมือนสุ่มมาเพราะทุกห้องจะโชว์เวลาเดียวกัน
+        หมดในวันที่ไม่มีการจองอะไรต่อแล้ว)
 
         คำนวณทีเดียวหลายห้อง (3 query รวม แทนที่จะเป็น 3 query ต่อห้อง — กัน N+1
         ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: time}"""
-        from datetime import time as time_type
-
-        day_end = time_type(23, 59)
+        # ถ้าตอนนี้ก็ปาเข้าไปหลังเวลาปิดทำการแล้ว ไม่ควรโชว์ "ว่างถึง 21:00"
+        # ที่เป็นเวลาในอดีต (ก่อนหน้า now_time) จึงใช้เวลาไหนช้ากว่าระหว่าง
+        # now_time กับเวลาปิดทำการแทน (กลายเป็นช่วงว่าง 0 นาทีในกรณีนั้น)
+        day_end = max(BUILDING_CLOSING_TIME, now_time)
         result = {rid: day_end for rid in room_ids}
 
         def apply_earliest(rows, extract_time):
