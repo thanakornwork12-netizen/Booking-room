@@ -134,6 +134,19 @@ const addHours = (time, hours) => {
   const [h, m] = time.split(':').map(Number)
   return `${String(h + hours).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
+
+// ห้องว่างจากฟีด "ห้องว่างตอนนี้" มี available_until ติดมาด้วย (เวลาที่ห้อง
+// ว่างจริงถึง ไม่ใช่ทุกห้องว่างแค่ 1 ชม.เท่ากันหมด) — ถ้าเลือกจองห้องจากฟีดนี้
+// ค่า duration เริ่มต้นควรสอดคล้องกับที่การ์ดโฆษณาไว้ ไม่ใช่ค้างที่ 1 ชม.
+// (ค่า default ตายตัว) เสมอโดยไม่เกี่ยวอะไรกับเวลาที่ห้องว่างจริง
+const pickFittingDuration = (startTime, availableUntil) => {
+  if (!startTime || !availableUntil) return null
+  const [sh, sm] = startTime.split(':').map(Number)
+  const [uh, um] = availableUntil.split(':').map(Number)
+  const hoursFree = (uh * 60 + um - (sh * 60 + sm)) / 60
+  const fitting = DURATIONS.map(d => d.hours).filter(h => h <= hoursFree)
+  return fitting.length > 0 ? Math.max(...fitting) : Math.min(...DURATIONS.map(d => d.hours))
+}
 // จำนวนชั่วโมงกำหนดเอง — ต้องเป็นจำนวนเต็มบวก และเวลาสิ้นสุดต้องไม่เกิน 23:xx
 // (addHours ข้างบนไม่รองรับการข้ามเที่ยงคืน)
 const validateCustomDuration = (rawValue, startTime) => {
@@ -983,7 +996,15 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                             selectedEquipments={selectedEquipments}
                             equipmentPresets={equipmentPresets}
                             isBest={index === 0}
-                            onClick={() => { setSplitPlan(null); setSelectedRoom(room); setStep(3) }}
+                            onClick={() => {
+                              setSplitPlan(null); setSelectedRoom(room)
+                              // ห้องจากฟีด "ห้องว่างตอนนี้" (ดูทั้งหมด) มี available_until
+                              // ติดมาด้วย — ปรับ duration ให้สอดคล้องกับที่การ์ดโฆษณาไว้
+                              // (ห้องจากผลค้นหาปกติไม่มี field นี้ ฟังก์ชันจะ no-op เอง)
+                              const fitDuration = pickFittingDuration(startTime, room.available_until)
+                              if (fitDuration) { setCustomDurationMode(false); setDuration(fitDuration) }
+                              setStep(3)
+                            }}
                           />
                         ))
                       )}
@@ -1281,11 +1302,13 @@ export default function SearchPage({ embedded = false }) {
       // มาจากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ตั้งเวลาเริ่มให้ตรงกับตอนนี้แทนที่
       // จะปล่อยว่าง (ค่าเริ่มต้นของ startTime คือ '' ซึ่งจองต่อไม่ได้จนกว่าจะกรอกเอง)
       if (searchState.quickStartTime) setStartTime(searchState.quickStartTime)
+      const fitDuration = pickFittingDuration(searchState.quickStartTime, searchState.quickAvailableUntil)
+      if (fitDuration) setDuration(fitDuration)
     }
 
     applyQuickRoom()
     return () => { active = false }
-  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime])
+  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime, searchState.quickAvailableUntil])
 
   // "ดูทั้งหมด" จากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ฟีดนั้นจำกัดแค่ 5 ห้องเป็น
   // ค่า default (today-feed backend) ส่วนนี้เรียก endpoint เดียวกันแบบไม่จำกัด

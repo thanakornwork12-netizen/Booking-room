@@ -675,6 +675,11 @@ export default function HomePage() {
                     state: {
                       quickRoom: room,
                       quickStartTime: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+                      // การ์ดนี้โฆษณาว่าห้องว่างถึง room.available_until — ฟอร์ม
+                      // จองต้องตั้ง default duration ให้สอดคล้องกับที่โฆษณาไว้ด้วย
+                      // ไม่งั้นจะเห็นเวลาอีกค่าที่ไม่เกี่ยวกันเลย (ค่า default เดิม
+                      // ตายตัว 1 ชม. ไม่ได้อิงกับ available_until เลย)
+                      quickAvailableUntil: room.available_until,
                     },
                   })}
                   className="w-48 shrink-0 rounded-2xl border border-slate-100 bg-white p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
