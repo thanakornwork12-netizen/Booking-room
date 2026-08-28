@@ -6,6 +6,7 @@ import {
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
+import { addHours, pickFittingDuration } from '../utils/booking'
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -668,7 +669,14 @@ export default function HomePage() {
               </button>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
-              {todayFeed.map(room => (
+              {todayFeed.map(room => {
+                // การ์ดนี้ต้องบอกเวลาที่ "จะได้จริง" ถ้ากด ไม่ใช่แค่เวลาที่ห้อง
+                // ว่างสูงสุด (available_until) — ไม่งั้นการ์ดบอกว่างถึง 21:00
+                // แต่กดแล้วฟอร์มจองจริงให้แค่ 3 ชม. (10:51-13:51) ดูเหมือน
+                // การ์ดโกหก ต้องคำนวณ duration แบบเดียวกับตอนกดจริงตั้งแต่ตรงนี้
+                const fitHours = pickFittingDuration(room.available_from, room.available_until)
+                const bookUntil = fitHours ? addHours(room.available_from, fitHours) : room.available_until
+                return (
                 <button
                   key={room.id}
                   onClick={() => navigate('/search', {
@@ -689,16 +697,17 @@ export default function HomePage() {
                   </div>
                   <p className="mt-1.5 truncate text-sm font-bold text-slate-900">{room.name}</p>
                   <p className="mt-0.5 truncate text-xs text-slate-500">{room.building_name}</p>
-                  {room.available_from && room.available_until && (
+                  {room.available_from && bookUntil && (
                     <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600">
-                      <Clock size={11} /> {room.available_from}–{room.available_until} น.
+                      <Clock size={11} /> กดจองได้ถึง {bookUntil} น.
                     </p>
                   )}
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
                     <Users size={11} /> รองรับ {room.capacity} คน
                   </p>
                 </button>
-              ))}
+                )
+              })}
             </div>
           </section>
         )}

@@ -7,11 +7,11 @@ import {
   Sparkles, ArrowRight, Users, X, BookOpen, AlertTriangle,
 } from 'lucide-react'
 import api from '../api/axios'
+import { DURATIONS, addHours, pickFittingDuration } from '../utils/booking'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DEFAULT_BUILDINGS = [{ code: '', label: 'ทั้งหมด' }]
 const TIME_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00']
-const DURATIONS  = [{ label: '1 ชม.', hours: 1 },{ label: '2 ชม.', hours: 2 },{ label: '3 ชม.', hours: 3 }]
 // ห้องที่มีข้อมูล AI จริง (ดู AI_FORECAST_ROOM_IDS ฝั่ง backend) ตอนนี้เป็นห้อง
 // Lab คอมพิวเตอร์ขนาดใหญ่ล้วน (ความจุ 31-61 คน) ไม่มีห้องเล็ก — ปรับค่าเริ่มต้น/
 // มีห้องเล็กสุดจุแค่ 5 คนอยู่จริงในระบบ (ก่อนหน้านี้ล็อกขั้นต่ำไว้ที่ 20 คน
@@ -130,23 +130,9 @@ const getFacIcon = (name) => {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const addHours = (time, hours) => {
-  const [h, m] = time.split(':').map(Number)
-  return `${String(h + hours).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
-
-// ห้องว่างจากฟีด "ห้องว่างตอนนี้" มี available_until ติดมาด้วย (เวลาที่ห้อง
-// ว่างจริงถึง ไม่ใช่ทุกห้องว่างแค่ 1 ชม.เท่ากันหมด) — ถ้าเลือกจองห้องจากฟีดนี้
-// ค่า duration เริ่มต้นควรสอดคล้องกับที่การ์ดโฆษณาไว้ ไม่ใช่ค้างที่ 1 ชม.
-// (ค่า default ตายตัว) เสมอโดยไม่เกี่ยวอะไรกับเวลาที่ห้องว่างจริง
-const pickFittingDuration = (startTime, availableUntil) => {
-  if (!startTime || !availableUntil) return null
-  const [sh, sm] = startTime.split(':').map(Number)
-  const [uh, um] = availableUntil.split(':').map(Number)
-  const hoursFree = (uh * 60 + um - (sh * 60 + sm)) / 60
-  const fitting = DURATIONS.map(d => d.hours).filter(h => h <= hoursFree)
-  return fitting.length > 0 ? Math.max(...fitting) : Math.min(...DURATIONS.map(d => d.hours))
-}
+// addHours/pickFittingDuration ย้ายไป utils/booking.js เพื่อใช้ร่วมกับ
+// HomePage.jsx (การ์ด "ห้องว่างตอนนี้" ต้องคำนวณเวลาจองจริงแบบเดียวกัน กัน
+// การ์ดกับหน้ายืนยันโชว์เวลาคนละชุดกัน)
 // จำนวนชั่วโมงกำหนดเอง — ต้องเป็นจำนวนเต็มบวก และเวลาสิ้นสุดต้องไม่เกิน 23:xx
 // (addHours ข้างบนไม่รองรับการข้ามเที่ยงคืน)
 const validateCustomDuration = (rawValue, startTime) => {
