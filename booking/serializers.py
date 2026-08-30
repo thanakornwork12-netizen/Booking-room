@@ -319,6 +319,15 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
         if data['term_start'] >= data['term_end']:
             raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
 
+        attendees = data.get('attendees')
+        if attendees is not None:
+            if attendees < 1:
+                raise serializers.ValidationError({'attendees': 'จำนวนผู้เข้าร่วมต้องมากกว่า 0'})
+            if attendees > data['room'].capacity:
+                raise serializers.ValidationError(
+                    {'attendees': f'จำนวนผู้เข้าร่วมเกินความจุห้อง (ห้องนี้จุได้ {data["room"].capacity} คน)'}
+                )
+
         overlap = TermBooking.objects.filter(
             room=data['room'],
             day_of_week=data['day_of_week'],
@@ -371,9 +380,23 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         room       = data['room']
         start_time = data['start_time']
         end_time   = data['end_time']
+        attendees  = data.get('attendees')
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+
+        # ไม่ตรวจตอน instance มีอยู่แล้ว (แก้ไขการจองเดิม) เพราะ start_time
+        # เดิมอาจผ่านไปแล้วโดยชอบธรรมตั้งแต่ตอนสร้าง (เช่น แก้แค่ title)
+        if not self.instance and start_time < timezone.now():
+            raise serializers.ValidationError('ไม่สามารถจองเวลาที่ผ่านไปแล้วได้')
+
+        if attendees is not None:
+            if attendees < 1:
+                raise serializers.ValidationError({'attendees': 'จำนวนผู้เข้าร่วมต้องมากกว่า 0'})
+            if attendees > room.capacity:
+                raise serializers.ValidationError(
+                    {'attendees': f'จำนวนผู้เข้าร่วมเกินความจุห้อง (ห้องนี้จุได้ {room.capacity} คน)'}
+                )
 
         # ── ชั้นที่ 1: ตรวจ Dynamic Booking (เบื้องต้น ยังไม่ Lock) ──
         overlap_dynamic = Booking.objects.filter(

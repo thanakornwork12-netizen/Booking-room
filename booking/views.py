@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.contrib.auth import login
@@ -211,6 +211,19 @@ AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
 # ไม่งั้นวันที่ไม่มีการจองอะไรต่อแล้ว ทุกห้องจะโชว์ "ว่างถึงเที่ยงคืน" เหมือน
 # กันหมด ดูไม่สมจริง (ดู RoomViewSet._rooms_free_until)
 BUILDING_CLOSING_TIME = time_type(21, 0)
+
+
+class IsAdminOrStaff(BasePermission):
+    """ใช้กับ endpoint ที่ต้องจำกัดแค่ admin/staff เท่านั้น (เช่น export ข้อมูล
+    ทั้งระบบ, จัดการช่วงปิดซ่อมบำรุง) — เขียนเป็น permission class กลาง
+    แทนการเช็ค role อินไลน์กระจายไปแต่ละ view เพราะเคยพลาดมาแล้วจริง:
+    MaintenanceBlockViewSet เช็ค role แค่ใน get_queryset() (ใช้กับ list/
+    retrieve) แต่ create() ของ DRF ModelViewSet ไม่เรียก get_queryset()
+    เลย ทำให้ action สร้างช่วงปิดซ่อมหลุดผ่านไม่ต้องเช็คสิทธิ์อะไรเลย —
+    ยืนยันด้วยการทดสอบจริงว่า student สร้างช่วงปิดซ่อมได้สำเร็จก่อนแก้"""
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated
+                    and getattr(request.user, 'role', None) in ['admin', 'staff'])
 
 
 class RoomViewSet(viewsets.ModelViewSet):
@@ -1739,7 +1752,11 @@ def _finalize_maintenance_slot(current: dict) -> dict:
 
 
 class MaintenanceBlockViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    # เดิมเช็ค role แค่ใน get_queryset() ซึ่งใช้กับ list/retrieve เท่านั้น —
+    # create() ของ DRF ไม่เรียก get_queryset() เลย ทำให้ student สร้างช่วง
+    # ปิดซ่อมบำรุงได้จริง (ยืนยันด้วยการทดสอบ) ย้ายมาเช็คที่ permission_classes
+    # แทน ครอบคลุมทุก action รวมถึง complete/cancel ด้านล่างด้วย
+    permission_classes = [IsAdminOrStaff]
     queryset = MaintenanceBlock.objects.select_related('room__building', 'created_by')
 
     def get_serializer_class(self):
@@ -1870,7 +1887,10 @@ class DashboardView(generics.GenericAPIView):
 # EXPORT EXCEL
 # ============================================================
 class ExportExcelView(APIView):
-    permission_classes = [IsAuthenticated]
+    # เดิมมีแค่ IsAuthenticated — user ธรรมดาคนไหนก็ดึง export ทั้งระบบได้
+    # (default sheets=all รวมตาราง User ทั้งตาราง คือข้อมูลส่วนตัวของทุกคน)
+    # ยืนยันด้วยการทดสอบว่า student ดึงไฟล์ export ได้จริงก่อนแก้
+    permission_classes = [IsAdminOrStaff]
 
     def get(self, request):
         sheets_param  = request.query_params.get('sheets', 'all')
