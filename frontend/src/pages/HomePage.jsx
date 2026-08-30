@@ -6,7 +6,7 @@ import {
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
-import { addHours, pickFittingDuration } from '../utils/booking'
+import { addHours, pickFittingDuration, minutesBetween } from '../utils/booking'
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -675,7 +675,11 @@ export default function HomePage() {
                 // แต่กดแล้วฟอร์มจองจริงให้แค่ 3 ชม. (10:51-13:51) ดูเหมือน
                 // การ์ดโกหก ต้องคำนวณ duration แบบเดียวกับตอนกดจริงตั้งแต่ตรงนี้
                 const fitHours = pickFittingDuration(room.available_from, room.available_until)
-                const bookUntil = fitHours ? addHours(room.available_from, fitHours) : room.available_until
+                const bookUntil = fitHours ? addHours(room.available_from, fitHours) : null
+                // ห้องว่างไม่ถึง 1 ชม. (preset สั้นสุดที่ฟอร์มมีให้) — ห้ามสัญญาว่า
+                // "กดจองได้ถึง X" เพราะ X นั้นจะเกินเวลาที่ห้องว่างจริง กดแล้วจะชน
+                // กับการจองถัดไปจริงๆ บอกเป็นนาทีที่เหลือแทนตรงๆ ดีกว่า
+                const minutesLeft = !fitHours ? minutesBetween(room.available_from, room.available_until) : null
                 return (
                 <button
                   key={room.id}
@@ -700,6 +704,11 @@ export default function HomePage() {
                   {room.available_from && bookUntil && (
                     <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600">
                       <Clock size={11} /> กดจองได้ถึง {bookUntil} น.
+                    </p>
+                  )}
+                  {minutesLeft != null && minutesLeft > 0 && (
+                    <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                      <Clock size={11} /> ว่างอีก {minutesLeft} นาที
                     </p>
                   )}
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
