@@ -760,6 +760,65 @@ class RoomViewSet(viewsets.ModelViewSet):
             item['available_until'] = free_until_map[item['id']].strftime('%H:%M')
         return Response(enriched)
 
+    @action(detail=False, methods=['get'], url_path='usage-stats', permission_classes=[IsAdminOrStaff])
+    def usage_stats(self, request):
+        """สถิติการใช้งานสะสมของทุกห้อง (จำนวนจองรายวันแยกตามสถานะ + จำนวน
+        จองทั้งเทอม) สำหรับพาเนล "ห้องที่ใช้งานเยอะที่สุด" ในแดชบอร์ดแอดมิน —
+        คำนวณด้วย aggregate query ในฐานข้อมูลตรงๆ ครบทุกแถวจริง ไม่ใช่ให้
+        frontend ดึง /bookings/ (ซึ่งจำกัดหน้าละ 20 รายการ) มาไล่นับเอง —
+        ระบบนี้มีการจองสะสมหลักพันแถวแล้ว หน้าแรก 20 รายการล่าสุดไม่ได้
+        สะท้อนยอดใช้งานจริงของห้องที่ไม่ได้ถูกจองบ่อยในช่วงหลังๆ เลย (เจอบั๊ก
+        จริง: ห้องที่มีประวัติจองหลักร้อย-พันครั้ง โชว์ "ใช้งาน 0 ครั้ง" ในแดชบอร์ด)"""
+        booking_rows = Booking.objects.values('room_id').annotate(
+            total=Count('id', filter=Q(status__in=['approved', 'completed', 'checked_in', 'pending'])),
+            approved=Count('id', filter=Q(status='approved')),
+            completed=Count('id', filter=Q(status='completed')),
+            pending=Count('id', filter=Q(status='pending')),
+            checked_in=Count('id', filter=Q(status='checked_in')),
+        )
+        booking_stats = {row['room_id']: row for row in booking_rows}
+
+        now = timezone.localtime()
+        today = now.date()
+        today_dow = today.weekday()
+        now_time = now.time()
+
+        term_stats = {
+            row['room_id']: row['count']
+            for row in TermBooking.objects.filter(status='active')
+                .values('room_id').annotate(count=Count('id'))
+        }
+        term_today_stats = {
+            row['room_id']: row['count']
+            for row in TermBooking.objects.filter(status='active', day_of_week=today_dow)
+                .values('room_id').annotate(count=Count('id'))
+        }
+        term_active_stats = {
+            row['room_id']: row['count']
+            for row in TermBooking.objects.filter(
+                status='active', day_of_week=today_dow,
+                term_start__lte=today, term_end__gte=today,
+                start_time__lte=now_time, end_time__gt=now_time,
+            ).values('room_id').annotate(count=Count('id'))
+        }
+
+        room_ids = set(booking_stats) | set(term_stats) | set(term_today_stats) | set(term_active_stats)
+        result = []
+        for room_id in room_ids:
+            b = booking_stats.get(room_id, {})
+            result.append({
+                'room_id':          room_id,
+                'booking_count':    b.get('total', 0),
+                'approved_count':   b.get('approved', 0),
+                'completed_count':  b.get('completed', 0),
+                'pending_count':    b.get('pending', 0),
+                'checked_in_count': b.get('checked_in', 0),
+                'term_count':       term_stats.get(room_id, 0),
+                'term_today_count': term_today_stats.get(room_id, 0),
+                'term_active_count': term_active_stats.get(room_id, 0),
+            })
+        return Response(result)
+
     @action(detail=False, methods=['post'], url_path='dynamic-recommend')
     def dynamic_recommend(self, request):
         """

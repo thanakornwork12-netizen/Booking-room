@@ -745,66 +745,38 @@ const normalizeText = (value) =>
     .trim()
     .replace(/\s+/g, ' ')
 
-const jsDowToBackend = (dow) => (dow === 0 ? 6 : dow - 1)
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
-const isTermBookingActiveNow = (tb) => {
-  const now = new Date()
-  const today = now.toISOString().split('T')[0]
-  if (tb.term_start && today < tb.term_start) return false
-  if (tb.term_end && today > tb.term_end) return false
-  if (tb.day_of_week !== jsDowToBackend(now.getDay())) return false
-
-  const [sh, sm] = String(tb.start_time || '00:00').split(':').map(Number)
-  const [eh, em] = String(tb.end_time || '23:59').split(':').map(Number)
-  const current = now.getHours() * 60 + now.getMinutes()
-  return current >= (sh * 60 + sm) && current < (eh * 60 + em)
-}
-
-const resolveRoomFromRecord = (record, adminRooms = []) => {
-  if (!record) return null
-  const roomId = record.room ?? record.room_id ?? record.id ?? null
-  const roomName = normalizeText(record.room_name || record.name || '')
-  const roomCode = normalizeText(record.room_code || record.code || '')
-
-  return adminRooms.find(room => {
-    const sameId = roomId !== null && String(room.id) === String(roomId)
-    const sameName = roomName && (
-      normalizeText(room.name) === roomName ||
-      normalizeText(room.code) === roomName
-    )
-    const sameCode = roomCode && (
-      normalizeText(room.name) === roomCode ||
-      normalizeText(room.code) === roomCode
-    )
-    return sameId || sameName || sameCode
-  }) || null
-}
 
 const buildMaintenanceInsights = ({
   adminRooms = [],
-  bookings = [],
-  termBookings = [],
+  usageStats = [],
   dashboard = {},
   slots = [],
 }) => {
-  const roomMap = new Map()
+  // usageStats มาจาก /api/rooms/usage-stats/ ซึ่งคำนวณจากฐานข้อมูลทั้งตาราง
+  // (aggregate query) ตรงๆ — เดิมฟังก์ชันนี้นับเองจาก bookings/termBookings
+  // ที่ /api/bookings/ ส่งมาแค่หน้าละ 20 รายการล่าสุดทั้งระบบ พอมีการจอง
+  // สะสมหลักพันแถว หน้าแรก 20 รายการแทบไม่มีของห้องที่ไม่ได้ถูกจองบ่อยช่วง
+  // หลังๆ เลย ทำให้ห้องที่มีประวัติจองจริงหลักร้อย-พันครั้งโชว์ "0 ครั้ง"
+  const statsByRoomId = new Map(usageStats.map(s => [String(s.room_id), s]))
 
-  adminRooms.forEach(room => {
-    const base = {
+  const rooms = adminRooms.map(room => {
+    const stat = statsByRoomId.get(String(room.id)) || {}
+    return {
       id: room.id,
       name: room.name,
       code: room.code || room.name,
       building: room.building || 'ไม่ระบุ',
       capacity: room.capacity || 0,
-      bookingCount: 0,
-      approvedCount: 0,
-      completedCount: 0,
-      pendingCount: 0,
-      checkedInCount: 0,
-      termCount: 0,
-      termTodayCount: 0,
-      termActiveCount: 0,
+      bookingCount: stat.booking_count || 0,
+      approvedCount: stat.approved_count || 0,
+      completedCount: stat.completed_count || 0,
+      pendingCount: stat.pending_count || 0,
+      checkedInCount: stat.checked_in_count || 0,
+      termCount: stat.term_count || 0,
+      termTodayCount: stat.term_today_count || 0,
+      termActiveCount: stat.term_active_count || 0,
       demandAlerts: [],
       reasons: [],
       usageIndex: 0,
@@ -813,65 +785,6 @@ const buildMaintenanceInsights = ({
       termPressureIndex: 0,
       utilizationShare: Number(room.util_rate || 0),
     }
-    ;[String(room.id), normalizeText(room.name), normalizeText(room.code)]
-      .filter(Boolean)
-      .forEach(key => roomMap.set(key, base))
-  })
-
-  const getRoomBucket = (record) => {
-    const resolved = resolveRoomFromRecord(record, adminRooms)
-    if (resolved) {
-      const keys = [String(resolved.id), normalizeText(resolved.name), normalizeText(resolved.code)]
-      const existing = keys.map(k => roomMap.get(k)).find(Boolean)
-      if (existing) return existing
-
-      const created = {
-        id: resolved.id,
-        name: resolved.name,
-        code: resolved.code || resolved.name,
-        building: resolved.building || 'ไม่ระบุ',
-        capacity: resolved.capacity || 0,
-        bookingCount: 0,
-        approvedCount: 0,
-        completedCount: 0,
-        pendingCount: 0,
-        checkedInCount: 0,
-        termCount: 0,
-        termTodayCount: 0,
-        termActiveCount: 0,
-        demandAlerts: [],
-        reasons: [],
-        usageIndex: 0,
-        riskIndex: 0,
-        idleIndex: 0,
-        termPressureIndex: 0,
-        utilizationShare: 0,
-      }
-      keys.forEach(key => roomMap.set(key, created))
-      return created
-    }
-    return null
-  }
-
-  bookings.forEach(booking => {
-    const bucket = getRoomBucket(booking)
-    if (!bucket) return
-    if (['approved', 'completed', 'checked_in', 'pending'].includes(booking.status)) {
-      bucket.bookingCount += 1
-    }
-    if (booking.status === 'approved') bucket.approvedCount += 1
-    if (booking.status === 'completed') bucket.completedCount += 1
-    if (booking.status === 'pending') bucket.pendingCount += 1
-    if (booking.status === 'checked_in') bucket.checkedInCount += 1
-  })
-
-  const todayDow = jsDowToBackend(new Date().getDay())
-  termBookings.forEach(tb => {
-    const bucket = getRoomBucket(tb)
-    if (!bucket) return
-    if (tb.status === 'active') bucket.termCount += 1
-    if (tb.status === 'active' && tb.day_of_week === todayDow) bucket.termTodayCount += 1
-    if (tb.status === 'active' && isTermBookingActiveNow(tb)) bucket.termActiveCount += 1
   })
 
   const alerts = Array.isArray(dashboard?.demand_alerts) ? dashboard.demand_alerts : []
@@ -881,7 +794,6 @@ const buildMaintenanceInsights = ({
     if (key) alertMap.set(key, alert)
   })
 
-  const rooms = Array.from(new Set(roomMap.values()))
   const maxBookings = Math.max(...rooms.map(room => room.bookingCount), 1)
   const maxCapacity = Math.max(...rooms.map(room => room.capacity || 0), 1)
 
@@ -1023,7 +935,7 @@ const buildAiNarrative = (report, slots) => {
 // ============================================================
 // MAINTENANCE SCHEDULER PANEL
 // ============================================================
-function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
+function MaintenancePanel({ dashboard, adminRooms }) {
   const [slots, setSlots]       = useState([])
   const [report, setReport]     = useState(null)
   const [loading, setLoading]   = useState(false)
@@ -1033,29 +945,33 @@ function MaintenancePanel({ dashboard, bookings, termBookings, adminRooms }) {
   const runMaintenanceAI = async () => {
     setLoading(true)
     try {
-      const [slotResult] = await Promise.allSettled([
+      const [slotResult, statsResult] = await Promise.allSettled([
         api.get('maintenance/slots/', { params: { min_hours: 3, max_demand: 0.10, days: 21 } }),
+        api.get('rooms/usage-stats/'),
       ])
       const nextSlots = slotResult.status === 'fulfilled'
         ? (slotResult.value.data.slots || [])
         : []
+      const usageStats = statsResult.status === 'fulfilled'
+        ? (Array.isArray(statsResult.value.data) ? statsResult.value.data : [])
+        : []
       setSlots(nextSlots)
       setReport(buildMaintenanceInsights({
         adminRooms,
-        bookings,
-        termBookings,
+        usageStats,
         dashboard,
         slots: nextSlots,
       }))
       setRanAt(new Date())
       if (slotResult.status !== 'fulfilled') {
         alert('วิเคราะห์รีพอร์ตได้ แต่ดึงสล็อตซ่อมบำรุงจาก AI ไม่สำเร็จ')
+      } else if (statsResult.status !== 'fulfilled') {
+        alert('วิเคราะห์รีพอร์ตได้ แต่ดึงสถิติการใช้งานห้องไม่สำเร็จ ตัวเลขอาจไม่ครบ')
       }
     } catch {
       setReport(buildMaintenanceInsights({
         adminRooms,
-        bookings,
-        termBookings,
+        usageStats: [],
         dashboard,
         slots: [],
       }))
@@ -1503,8 +1419,6 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
         {tab === 'maintenance' && (
           <MaintenancePanel
             dashboard={dashboard}
-            bookings={bookings}
-            termBookings={termBookings}
             adminRooms={adminRooms}
           />
         )}
@@ -1728,8 +1642,6 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
         {tab === 'maintenance' && (
           <MaintenancePanel
             dashboard={dashboard}
-            bookings={bookings}
-            termBookings={termBookings}
             adminRooms={adminRooms}
           />
         )}
