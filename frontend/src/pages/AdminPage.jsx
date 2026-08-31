@@ -941,6 +941,11 @@ function MaintenancePanel({ dashboard, adminRooms }) {
   const [loading, setLoading]   = useState(false)
   const [blocking, setBlocking] = useState(null)
   const [ranAt, setRanAt]       = useState(null)
+  // แสดงผลตรงๆ ในหน้า (ไม่ใช่แค่ alert ที่พลาดดูง่าย/ปิดไปแล้วหาไม่เจอ) ว่า
+  // ตอนดึง /rooms/usage-stats/ ครั้งล่าสุดเกิดอะไรขึ้นจริง — สำเร็จกี่ห้อง
+  // หรือ error อะไร กันปัญหาที่ทั้งฝั่งเราและ user เห็นแค่ "0 ครั้ง" เฉยๆ
+  // โดยไม่รู้ว่าจริงๆ คือ API fail หรือ fetch สำเร็จแต่ข้อมูลว่างจริง
+  const [statsDebug, setStatsDebug] = useState(null)
 
   const runMaintenanceAI = async () => {
     setLoading(true)
@@ -955,6 +960,25 @@ function MaintenancePanel({ dashboard, adminRooms }) {
       const usageStats = statsResult.status === 'fulfilled'
         ? (Array.isArray(statsResult.value.data) ? statsResult.value.data : [])
         : []
+
+      if (statsResult.status === 'fulfilled') {
+        const totalBookings = usageStats.reduce((sum, s) => sum + (s.booking_count || 0), 0)
+        setStatsDebug({
+          ok: true,
+          httpStatus: statsResult.value.status,
+          roomCount: usageStats.length,
+          totalBookings,
+          isArrayShape: Array.isArray(statsResult.value.data),
+        })
+      } else {
+        const err = statsResult.reason
+        setStatsDebug({
+          ok: false,
+          httpStatus: err?.response?.status ?? null,
+          detail: err?.response?.data?.detail || err?.message || 'ไม่ทราบสาเหตุ (อาจเป็นปัญหาเครือข่าย)',
+        })
+      }
+
       setSlots(nextSlots)
       setReport(buildMaintenanceInsights({
         adminRooms,
@@ -1061,6 +1085,14 @@ function MaintenancePanel({ dashboard, adminRooms }) {
               </span>
             )}
           </div>
+
+          {statsDebug && (
+            <p className={`text-[11px] font-mono ${statsDebug.ok ? 'text-white/60' : 'text-amber-200'}`}>
+              {statsDebug.ok
+                ? `สถิติการใช้งาน: ดึงสำเร็จ (${statsDebug.httpStatus}) — ${statsDebug.roomCount} ห้อง, รวม ${statsDebug.totalBookings} การจอง`
+                : `สถิติการใช้งาน: ดึงไม่สำเร็จ — HTTP ${statsDebug.httpStatus ?? '(ไม่มีการตอบกลับ)'} — ${statsDebug.detail}`}
+            </p>
+          )}
         </div>
       </div>
 
