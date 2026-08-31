@@ -16,7 +16,11 @@ load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-@top1u7dv$mxn%oyw!03)+xq*5nms@isl&bkfvi9lt=o141)sd')
 
 # จะ True เมื่อรันในเครื่อง (localhost) และเป็น False เมื่อรันบน Server (Render)
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+# ค่า default ตอนไม่มี env var DEBUG เลยต้องเป็น 'False' (fail-safe) ไม่ใช่
+# 'True' — ถ้า deploy ที่ไหนแล้วลืมตั้ง DEBUG ไว้ (เช่น service ใหม่/ลืมตั้งค่า)
+# จะได้ปลอดภัยไว้ก่อนโดยอัตโนมัติ แทนที่จะหลุดไปโชว์ error page ที่มี source
+# code/ตัวแปรภายในให้ใครก็ได้เห็น — local dev ต้องตั้ง DEBUG=True ใน .env เอง
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 # NOTE: เคยลองบังคับ WSGIRequestHandler.protocol_version = "HTTP/1.0" ตรงนี้
 # เพื่อแก้ "Broken pipe" ตอน LDAP ช้า (connection ถูก reuse ผิดจังหวะ) แต่
