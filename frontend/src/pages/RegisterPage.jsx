@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Eye, EyeOff, UserPlus, ChevronRight, Building2, ShieldCheck,
@@ -77,6 +77,7 @@ export default function RegisterPage() {
   const [showPass, setShowPass] = useState(false)
   const [showPass2, setShowPass2] = useState(false)
   const [step, setStep] = useState(1)
+  const isSubmittingRef = useRef(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -90,11 +91,13 @@ export default function RegisterPage() {
   }
 
   const onSubmit = async () => {
+    if (isSubmittingRef.current) return
     if (!form.faculty) return setError('กรุณาเลือกคณะ/หน่วยงาน')
     if (!form.password) return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
     if (form.password.length < 6) return setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัว')
 
+    isSubmittingRef.current = true
     setLoading(true)
     setError('')
     try {
@@ -103,6 +106,7 @@ export default function RegisterPage() {
     } catch (err) {
       setError('สมัครสมาชิกไม่สำเร็จ อาจมีชื่อผู้ใช้หรืออีเมลนี้ในระบบแล้ว')
     } finally {
+      isSubmittingRef.current = false
       setLoading(false)
     }
   }

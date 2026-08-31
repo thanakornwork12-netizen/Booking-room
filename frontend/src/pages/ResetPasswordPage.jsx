@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { Eye, EyeOff, Lock, ArrowRight, KeyRound } from 'lucide-react'
 import api from '../api/axios'
@@ -16,12 +16,19 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
+  // token นี้ใช้ครั้งเดียว — ถ้าดับเบิลคลิกยิงซ้ำ request ที่สองจะเจอ token
+  // ที่ใช้ไปแล้ว (invalid) ทั้งที่ request แรกเปลี่ยนรหัสผ่านสำเร็จไปแล้ว
+  // ทำให้เห็น error "ลิงก์หมดอายุ" หลอกๆ น่ากลัวกว่ากรณีอื่นเพราะเป็นหน้า
+  // ตั้งรหัสผ่านใหม่ ผู้ใช้อาจตกใจคิดว่าบัญชีมีปัญหา
+  const isSubmittingRef = useRef(false)
 
   const onSubmit = async () => {
+    if (isSubmittingRef.current) return
     if (!password || !password2) return setError('กรุณากรอกรหัสผ่านใหม่ให้ครบ')
     if (password !== password2) return setError('รหัสผ่านไม่ตรงกัน')
     if (password.length < 6) return setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัว')
 
+    isSubmittingRef.current = true
     setLoading(true)
     setError('')
     try {
@@ -31,6 +38,7 @@ export default function ResetPasswordPage() {
     } catch (err) {
       setError(err?.response?.data?.error || 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว')
     } finally {
+      isSubmittingRef.current = false
       setLoading(false)
     }
   }

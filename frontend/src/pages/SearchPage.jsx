@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Bell, BarChart3, Building2, Calendar, CalendarDays, Check,
@@ -1180,6 +1180,15 @@ export default function SearchPage({ embedded = false }) {
   const [bookingLoading, setBookingLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  // ล็อกแบบ sync ด้วย ref กันยิงจองซ้ำ — bookingLoading (state) ต้องรอ
+  // re-render ก่อนถึงจะมีผลที่ disabled ของปุ่ม ถ้าดับเบิลคลิกเร็วมากๆ
+  // (เช่น กดสองครั้งรัวๆ) สอง click event อาจแทรกกันมาถึง handleBook ก่อนที่
+  // re-render รอบแรกจะเสร็จ ทำให้ยิง POST /bookings/ ซ้ำ 2 ครั้ง — backend มี
+  // select_for_update() กันไม่ให้เกิดการจองซ้ำจริงอยู่แล้ว แต่ request ที่สอง
+  // จะโดนปฏิเสธด้วย error "ห้องนี้ถูกจองแล้ว" ทำให้ผู้ใช้ที่เพิ่งจองสำเร็จ
+  // เห็น error หลอกๆ งงว่าจองไม่ผ่านทั้งที่จริงสำเร็จแล้ว (เหมือน pattern
+  // isSubmittingRef ใน LoginPage.jsx)
+  const isBookingSubmittingRef = useRef(false)
 
   const _initYear = getDefaultAcademicYearBE()
   const _initTerm = getDefaultTermNumber()
@@ -1447,8 +1456,10 @@ export default function SearchPage({ embedded = false }) {
   }
 
   const handleBook = async () => {
+    if (isBookingSubmittingRef.current) return
     if (!splitPlan && !selectedRoom) { setError('ไม่พบห้องที่เลือก'); return }
     if (!title.trim()) { setError('กรุณากรอกชื่อวิชา / กิจกรรม'); return }
+    isBookingSubmittingRef.current = true
     setBookingLoading(true); setError('')
     try {
       let response
@@ -1470,6 +1481,7 @@ export default function SearchPage({ embedded = false }) {
     } catch (err) {
       setError(err.response?.data ? JSON.stringify(err.response.data) : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
     } finally {
+      isBookingSubmittingRef.current = false
       setBookingLoading(false)
     }
   }

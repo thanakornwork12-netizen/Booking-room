@@ -100,6 +100,11 @@ function SettingsModal({ open, onClose, user }) {
   })
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  // ล็อกแบบ sync กันยิงซ้ำ (ดู isBookingSubmittingRef ใน SearchPage.jsx —
+  // เปลี่ยนรหัสผ่าน/ลบบัญชี ยิ่งอ่อนไหวกว่าการจองห้อง ดับเบิลคลิกแล้ว
+  // request ที่สองจะเจอ error หลอกๆ ทั้งที่ request แรกสำเร็จไปแล้ว)
+  const isPasswordSubmittingRef = useRef(false)
+  const isDeleteSubmittingRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -134,6 +139,8 @@ function SettingsModal({ open, onClose, user }) {
 
   const submitChangePassword = async (event) => {
     event.preventDefault()
+    if (isPasswordSubmittingRef.current) return
+    isPasswordSubmittingRef.current = true
     setLoading(true)
     setMessage({ type: '', text: '' })
 
@@ -151,12 +158,15 @@ function SettingsModal({ open, onClose, user }) {
         text: getErrorText(error, 'เปลี่ยนรหัสผ่านไม่สำเร็จ'),
       })
     } finally {
+      isPasswordSubmittingRef.current = false
       setLoading(false)
     }
   }
 
   const submitDeleteAccount = async (event) => {
     event.preventDefault()
+    if (isDeleteSubmittingRef.current) return
+    isDeleteSubmittingRef.current = true
     setLoading(true)
     setMessage({ type: '', text: '' })
 
@@ -169,6 +179,7 @@ function SettingsModal({ open, onClose, user }) {
         type: 'error',
         text: getErrorText(error, 'ลบบัญชีไม่สำเร็จ'),
       })
+      isDeleteSubmittingRef.current = false
       setLoading(false)
     }
   }
