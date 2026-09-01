@@ -600,12 +600,12 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     { key: 'booking', icon: CalendarDays, label: 'Booking', active: location === '/search', onClick: () => navigate('/search') },
   ]
   const chipsSummary = [
-    { label: 'ประเภท', value: isTermMode ? 'ทั้งเทอม' : 'รายวัน', tone: isTermMode ? 'text-indigo-700' : 'text-blue-700' },
-    { label: 'ผู้เข้าร่วม', value: `${attendees} คน` },
-    { label: isTermMode ? 'วัน' : 'วันที่', value: isTermMode ? (dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : 'ยังไม่เลือก') : formatDateShort(date) },
-    { label: 'เวลา', value: startTime ? `${startTime} - ${endTime || '...'}` : 'ยังไม่เลือก' },
-    { label: 'อาคาร', value: selectedBuildingLabel },
-    { label: 'อุปกรณ์', value: `${selectedEquipments.length} รายการ` },
+    { label: 'ประเภท', value: isTermMode ? 'ทั้งเทอม' : 'รายวัน', tone: isTermMode ? 'text-indigo-700' : 'text-blue-700', icon: BookOpen },
+    { label: 'ผู้เข้าร่วม', value: `${attendees} คน`, icon: Users },
+    { label: isTermMode ? 'วัน' : 'วันที่', value: isTermMode ? (dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : 'ยังไม่เลือก') : formatDateShort(date), icon: CalendarDays },
+    { label: 'เวลา', value: startTime ? `${startTime} - ${endTime || '...'}` : 'ยังไม่เลือก', icon: Clock },
+    { label: 'อาคาร', value: selectedBuildingLabel, icon: MapPin },
+    { label: 'อุปกรณ์', value: `${selectedEquipments.length} รายการ`, icon: Settings2 },
   ]
 
   if (success) return (
@@ -885,21 +885,31 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                   </div>
 
                   <aside className="xl:sticky xl:top-24 h-fit self-start">
-                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.06)]">
-                      <div className={`relative overflow-hidden bg-gradient-to-br ${accentBg} px-3 py-2.5 text-white`}>
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.20),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.14),transparent_32%)]" />
-                        <div className="relative flex items-center justify-between gap-2">
-                          <h3 className="text-sm font-bold">สรุปการค้นหา</h3>
-                          <CalendarDays size={16} className="opacity-80" />
+                      <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.06)]">
+                      <div className={`relative overflow-hidden bg-gradient-to-br ${accentBg} px-4 py-3.5 text-white`}>
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_36%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.14),transparent_32%)]" />
+                        <div className="relative flex items-center gap-2.5">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25">
+                            <CalendarDays size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-bold leading-tight">สรุปการค้นหา</h3>
+                            <p className="truncate text-[11px] text-white/70">ตรวจสอบให้ครบก่อนกดค้นหา</p>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="p-2.5">
-                        <div className="space-y-1">
+                      <div className="p-3">
+                        <div className="grid grid-cols-2 gap-1.5">
                           {chipsSummary.map(item => (
-                            <div key={item.label} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-1">
-                              <span className="text-xs text-slate-500">{item.label}</span>
-                              <span className={`text-xs font-semibold text-right ${item.tone || 'text-slate-900'} truncate`}>{item.value}</span>
+                            <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 transition-colors hover:bg-slate-50">
+                              <div className="mb-1 flex items-center gap-1.5">
+                                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${accentBg} text-white`}>
+                                  <item.icon size={11} />
+                                </div>
+                                <span className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">{item.label}</span>
+                              </div>
+                              <p className={`truncate text-sm font-bold ${item.tone || 'text-slate-800'}`}>{item.value}</p>
                             </div>
                           ))}
                         </div>
