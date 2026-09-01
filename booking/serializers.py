@@ -14,11 +14,18 @@ from .models import (
 # USER
 # ============================================================
 class UserSerializer(serializers.ModelSerializer):
+    """ใช้กับ ProfileView (GET/PATCH /api/auth/profile/) — เป็นการแก้ไข
+    ข้อมูลตัวเองของ user เอง ต้องกัน role/username ไม่ให้แก้ได้เองเด็ดขาด
+    (เจอช่องโหว่จริง: PATCH {"role": "admin"} เปลี่ยนสิทธิ์ตัวเองเป็นแอดมิน
+    ได้สำเร็จมาก่อนแก้ — read_only_fields เดิมมีแค่ 'id' เท่านั้น ทั้งที่
+    RegisterSerializer กันเรื่อง role ไว้แล้วจุดหนึ่ง แต่ endpoint นี้ลืมกัน
+    อีกจุด) username ก็ล็อกไว้ด้วยเพราะเป็นตัวจับคู่บัญชี LDAP — ถ้าแก้เอง
+    รอบหน้า login LDAP จะสร้างบัญชีใหม่ซ้อนแทนที่จะจับคู่บัญชีเดิม"""
     class Meta:
         model  = User
         fields = ['id', 'username', 'first_name', 'last_name',
                   'email', 'role', 'faculty', 'phone', 'avatar', 'student_id']
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'role', 'username']
 
 
 class RegisterSerializer(serializers.ModelSerializer):
