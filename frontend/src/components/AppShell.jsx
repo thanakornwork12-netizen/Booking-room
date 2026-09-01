@@ -1164,14 +1164,23 @@ function AppShell({ children }) {
             onClick={() => setIsMobileNavOpen(false)}
           />
           <div className="absolute left-0 top-0 flex h-full w-[86vw] max-w-xs flex-col bg-white shadow-2xl">
-            <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">Sidebar</p>
-                <p className="truncate text-[11px] text-slate-500">UBU</p>
-              </div>
+            <div className="flex items-center justify-between gap-2 border-b border-blue-100 bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-600 px-4 py-4">
               <button
                 type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600"
+                onClick={() => { setIsMobileNavOpen(false); navigate('/profile') }}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-1 py-1 text-left transition active:scale-[0.98]"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white ring-2 ring-white/20">
+                  {(displayName?.[0] || 'U').toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-white">{displayName}</p>
+                  <p className="truncate text-[11px] text-blue-100">{roleLabel} · ดูโปรไฟล์</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white"
                 onClick={() => setIsMobileNavOpen(false)}
                 aria-label="Close navigation"
               >
