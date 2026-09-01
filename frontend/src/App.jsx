@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage'
 import SearchPage from './pages/SearchPage'
 import AdminPage from './pages/AdminPage'
 import GuidePage from './pages/GuidePage'
+import ProfilePage from './pages/ProfilePage'
 import AppShell from './components/AppShell'
 import SlowRequestBanner from './components/SlowRequestBanner'
 import { getUser } from './api/axios'
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/home" element={<PrivateRoute><AppShell><HomePage /></AppShell></PrivateRoute>} />
         <Route path="/search" element={<PrivateRoute><AppShell><SearchPage embedded /></AppShell></PrivateRoute>} />
         <Route path="/guide" element={<PrivateRoute><AppShell><GuidePage /></AppShell></PrivateRoute>} />
+        <Route path="/profile" element={<PrivateRoute><AppShell><ProfilePage /></AppShell></PrivateRoute>} />
 
         {/* Admin Routes */}
         {/* ปรับ path ให้ตรงกับ navigate('/admin/dashboard') ใน LoginPage */}

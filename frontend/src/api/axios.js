@@ -203,6 +203,21 @@ export function getUser() {
   }
 }
 
+// ── Helper: อัปเดตข้อมูล user ที่ cache ไว้ (เช่น หลังแก้โปรไฟล์สำเร็จ) —
+// merge เข้ากับของเดิม ไม่ต้อง login ใหม่ก็เห็นชื่อ/อีเมลใหม่ที่ header ทันที
+export function updateStoredUser(patch) {
+  const current = getUser() || {}
+  const next = { ...current, ...patch }
+  if (patch.first_name !== undefined || patch.last_name !== undefined) {
+    const fullName = [next.first_name, next.last_name].filter(Boolean).join(' ').trim()
+    next.full_name = fullName || next.username
+    next.display_name = fullName || next.username
+    next.name = fullName || next.username
+  }
+  _activeStorage().setItem('user', JSON.stringify(next))
+  return next
+}
+
 // ── Helper: ดึง access token ปัจจุบัน (เช่นไปใช้ต่อ WebSocket) ──────────────
 export function getAccessToken() {
   return _getItem('access_token')

@@ -87,6 +87,7 @@ const supportInfo = {
 }
 
 function SettingsModal({ open, onClose, user }) {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('password')
   const [passwordForm, setPasswordForm] = useState({
     old_password: '',
@@ -213,6 +214,13 @@ function SettingsModal({ open, onClose, user }) {
             <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
               {roleLabels[user?.role] || user?.role || 'ผู้ใช้ระบบ'}
             </span>
+            <button
+              type="button"
+              onClick={() => { onClose(); navigate('/profile') }}
+              className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700 shadow-sm transition hover:bg-blue-50"
+            >
+              แก้ไขข้อมูลส่วนตัว
+            </button>
           </div>
         </div>
 
@@ -1004,15 +1012,19 @@ function AppShell({ children }) {
               <Settings2 size={19} />
             </button>
 
-            <div className="hidden lg:flex h-11 items-center gap-3 rounded-full border border-white/20 bg-white/10 px-3 pr-4 shadow-sm">
+            <button
+              type="button"
+              onClick={() => navigate('/profile')}
+              className="hidden lg:flex h-11 items-center gap-3 rounded-full border border-white/20 bg-white/10 px-3 pr-4 shadow-sm transition hover:border-blue-200 hover:bg-white/20"
+            >
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white">
                 <UserCircle2 size={18} />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 text-left">
                 <p className="truncate text-sm font-semibold leading-tight text-slate-900">{displayName}</p>
                 <p className="truncate text-[11px] text-slate-500">{roleLabel}</p>
               </div>
-            </div>
+            </button>
 
             <button
               type="button"
