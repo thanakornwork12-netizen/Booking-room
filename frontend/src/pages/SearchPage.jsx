@@ -570,6 +570,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration,
     building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error,
     dayOfWeek, setDayOfWeek, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings,
+    termStart, setTermStart, termEnd, setTermEnd, applyAcademicTerm, academicYearBE, termNumber,
   } = formProps
 
   const [customDurationMode, setCustomDurationMode] = useState(!DURATIONS.some(d => d.hours === duration))
@@ -603,6 +604,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     { label: 'ประเภท', value: isTermMode ? 'ทั้งเทอม' : 'รายวัน', tone: isTermMode ? 'text-indigo-700' : 'text-blue-700', icon: BookOpen },
     { label: 'ผู้เข้าร่วม', value: `${attendees} คน`, icon: Users },
     { label: isTermMode ? 'วัน' : 'วันที่', value: isTermMode ? (dayOfWeek != null ? `ทุก${getDayLabel(dayOfWeek)}` : 'ยังไม่เลือก') : formatDateShort(date), icon: CalendarDays },
+    ...(isTermMode ? [{ label: 'ช่วงเทอม', value: (termStart && termEnd) ? `${formatDateShort(termStart)} - ${formatDateShort(termEnd)}` : 'ยังไม่เลือก', icon: CalendarDays }] : []),
     { label: 'เวลา', value: startTime ? `${startTime} - ${endTime || '...'}` : 'ยังไม่เลือก', icon: Clock },
     { label: 'อาคาร', value: selectedBuildingLabel, icon: MapPin },
     { label: 'อุปกรณ์', value: `${selectedEquipments.length} รายการ`, icon: Settings2 },
@@ -760,17 +762,53 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                       <div className="rounded-2xl border border-slate-200 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.04)] p-2.5 au2">
                         <h3 className="text-xs font-bold text-slate-500 mb-2">{isTermMode ? 'วันในสัปดาห์' : 'วันที่'}</h3>
                         {isTermMode ? (
-                          <div className="grid grid-cols-7 gap-1">
-                            {DAYS_OF_WEEK.map(d => (
-                              <button
-                                key={d.value}
-                                onClick={() => setDayOfWeek(d.value)}
-                                className={`rounded-xl border py-1.5 text-[11px] font-semibold transition-all ${dayOfWeek === d.value ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
-                              >
-                                {d.label}
-                              </button>
-                            ))}
-                          </div>
+                          <>
+                            <div className="grid grid-cols-7 gap-1 mb-2.5">
+                              {DAYS_OF_WEEK.map(d => (
+                                <button
+                                  key={d.value}
+                                  onClick={() => setDayOfWeek(d.value)}
+                                  className={`rounded-xl border py-1.5 text-[11px] font-semibold transition-all ${dayOfWeek === d.value ? 'bg-gradient-to-br from-blue-600 to-indigo-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'}`}
+                                >
+                                  {d.label}
+                                </button>
+                              ))}
+                            </div>
+                            <h3 className="text-xs font-bold text-slate-500 mb-2">ช่วงวันที่ของเทอม</h3>
+                            <div className="grid grid-cols-2 gap-1.5 mb-2">
+                              <div>
+                                <p className="text-[10px] text-slate-400 mb-1">เริ่มเทอม</p>
+                                <input
+                                  type="date"
+                                  value={termStart}
+                                  max={termEnd || undefined}
+                                  onChange={e => setTermStart(e.target.value)}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-2 text-xs outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                                />
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-400 mb-1">สิ้นสุดเทอม</p>
+                                <input
+                                  type="date"
+                                  value={termEnd}
+                                  min={termStart || undefined}
+                                  onChange={e => setTermEnd(e.target.value)}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-2 text-xs outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {ACADEMIC_TERM_IDS.map(t => (
+                                <button
+                                  key={t}
+                                  onClick={() => applyAcademicTerm(academicYearBE, t)}
+                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${termNumber === t && termStart === getTermDateRange(academicYearBE, t).start && termEnd === getTermDateRange(academicYearBE, t).end ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                                >
+                                  {ACADEMIC_TERM_META[t]?.short}
+                                </button>
+                              ))}
+                            </div>
+                          </>
                         ) : (
                           <input
                             type="date"
@@ -1417,6 +1455,8 @@ export default function SearchPage({ embedded = false }) {
   const handleSearch = async () => {
     if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
     if (bookingType === 'term' && dayOfWeek == null) { setError('กรุณาเลือกวันในสัปดาห์'); return }
+    if (bookingType === 'term' && (!termStart || !termEnd)) { setError('กรุณาเลือกช่วงวันที่ของเทอม'); return }
+    if (bookingType === 'term' && termStart >= termEnd) { setError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม'); return }
     if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
     setError(''); setLoading(true)
     try {
@@ -1500,7 +1540,7 @@ export default function SearchPage({ embedded = false }) {
     <AppLayout
       step={step} setStep={setStep} navigate={navigate} location={location.pathname}
       bookingType={bookingType} setBookingType={setBookingType}
-      formProps={{ attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error, dayOfWeek, setDayOfWeek, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings }}
+      formProps={{ attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error, dayOfWeek, setDayOfWeek, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings, termStart, setTermStart, termEnd, setTermEnd, applyAcademicTerm, academicYearBE, termNumber }}
       resultProps={{ rooms, setSelectedRoom, setSplitPlan, similarRooms }}
       confirmProps={{ selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit }}
       onReset={handleReset}
