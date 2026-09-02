@@ -629,6 +629,9 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
             <p className="mt-2 text-sm text-slate-500">
               {isTermMode ? `ทุก${getDayLabel(dayOfWeek)} · ${startTime} - ${endTime} น.` : `${formatDate(date)} · ${startTime} - ${endTime} น.`}
             </p>
+            {isTermMode && (
+              <p className="mt-1 text-xs text-slate-400">{formatDateShort(termStart)} - {formatDateShort(termEnd)}</p>
+            )}
             <button
               onClick={() => navigate('/home')}
               className={`mt-6 w-full rounded-2xl py-3.5 text-sm font-bold text-white bg-gradient-to-r ${accentBg} shadow-lg shadow-blue-200/70 hover:shadow-xl transition-all`}
@@ -996,6 +999,9 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                     <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                       <span className="rounded-full bg-white/15 px-3 py-1.5">{attendees} คน</span>
                       <span className="rounded-full bg-white/15 px-3 py-1.5">{isTermMode ? `ทุก${getDayLabel(dayOfWeek)}` : formatDateShort(date)}</span>
+                      {isTermMode && (
+                        <span className="rounded-full bg-white/15 px-3 py-1.5">{formatDateShort(termStart)} - {formatDateShort(termEnd)}</span>
+                      )}
                       <span className="rounded-full bg-white/15 px-3 py-1.5">{startTime} - {endTime}</span>
                       {selectedEquipments.length > 0 && <span className="rounded-full bg-white/15 px-3 py-1.5">{selectedEquipments.length} อุปกรณ์</span>}
                     </div>
@@ -1161,6 +1167,9 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                       <div className="grid gap-2.5 rounded-[24px] border border-slate-200 bg-slate-50 p-3.5 text-sm">
                         <div className="flex justify-between gap-4"><span className="text-slate-500">ประเภท</span><span className="font-semibold text-slate-900">{isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน'}</span></div>
                         <div className="flex justify-between gap-4"><span className="text-slate-500">วัน/วันที่</span><span className="font-semibold text-slate-900">{isTermMode ? `ทุก${getDayLabel(dayOfWeek)}` : formatDate(date)}</span></div>
+                        {isTermMode && (
+                          <div className="flex justify-between gap-4"><span className="text-slate-500">ช่วงเทอม</span><span className="font-semibold text-slate-900">{formatDateShort(termStart)} - {formatDateShort(termEnd)}</span></div>
+                        )}
                         <div className="flex justify-between gap-4"><span className="text-slate-500">เวลา</span><span className="font-semibold text-slate-900">{startTime} - {endTime} น.</span></div>
                         <div className="flex justify-between gap-4"><span className="text-slate-500">ผู้เข้าร่วม</span><span className="font-semibold text-slate-900">{attendees} คน (ความจุ {selectedRoom.capacity})</span></div>
                       </div>
