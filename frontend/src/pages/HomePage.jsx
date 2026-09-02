@@ -163,11 +163,13 @@ function StatCard({ label, value, color, bg, accent, icon: Icon }) {
 function BookingRow({ b, onClick, fmtDate, fmtTime }) {
   const isActive = b.status === 'approved'
   const isFinished = isActive && isPast(b.end_time)
+  const isPending = b.status === 'pending'
+  const isRejected = b.status === 'rejected'
   const isCancelled = b.status === 'cancelled'
   const showCI = isActive && !isFinished && canCheckIn(b.start_time) && !b.checked_in
 
-  const dotColor = isFinished ? '#94a3b8' : (isActive ? '#10b981' : '#cbd5e1')
-  const opacityClass = isCancelled || isFinished ? 'opacity-60' : ''
+  const dotColor = isFinished ? '#94a3b8' : (isActive ? '#10b981' : (isPending ? '#f59e0b' : '#cbd5e1'))
+  const opacityClass = isCancelled || isRejected || isFinished ? 'opacity-60' : ''
 
   return (
     <div onClick={onClick} className={`group px-4 sm:px-5 py-3.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60 transition-colors border-b border-slate-50 last:border-0 ${opacityClass}`}>
@@ -176,6 +178,8 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <p className="text-sm font-bold text-slate-800 truncate max-w-full">{b.room_name || `ห้อง #${b.room}`}</p>
           {showCI && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold pulse shrink-0 whitespace-nowrap">Check-in</span>}
+          {isPending && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold border border-amber-200 shrink-0 whitespace-nowrap">รออนุมัติ</span>}
+          {isRejected && <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-200 shrink-0 whitespace-nowrap">ถูกปฏิเสธ</span>}
           {isFinished && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold border border-slate-200 shrink-0 whitespace-nowrap">เสร็จสิ้น</span>}
         </div>
         <p className="text-xs text-slate-500 truncate mb-1.5">{b.title}</p>
@@ -237,11 +241,13 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
   if (!booking) return null
   const isActive = booking.status === 'approved'
   const isFinished = isActive && isPast(booking.end_time)
+  const isPending = booking.status === 'pending'
+  const isRejected = booking.status === 'rejected'
   const isCancelled = booking.status === 'cancelled'
   const showCheckIn = isActive && !isFinished && canCheckIn(booking.start_time) && !booking.checked_in
   const until = isActive && !isFinished && !booking.checked_in ? timeUntil(booking.start_time) : null
-  const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : '#cbd5e1')
-  const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'กำลังจอง' : 'ยกเลิกแล้ว')
+  const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : (isPending ? '#f59e0b' : (isRejected ? '#e11d48' : '#cbd5e1')))
+  const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'ยืนยันแล้ว' : (isPending ? 'รออนุมัติ' : (isRejected ? 'ถูกปฏิเสธ' : 'ยกเลิกแล้ว')))
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -298,14 +304,20 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
                 <CheckCircle2 size={16} /> ยืนยันการมาใช้งาน (Check-in)
               </button>
             )}
-            {isActive && !isFinished && (
+            {isRejected && booking.reject_reason && (
+              <div className="rounded-xl px-4 py-3 bg-rose-50 border border-rose-200">
+                <p className="text-xs font-bold text-rose-700 mb-1">เหตุผลที่ปฏิเสธ</p>
+                <p className="text-sm text-rose-800">{booking.reject_reason}</p>
+              </div>
+            )}
+            {((isActive && !isFinished) || isPending) && (
               <button onClick={() => onCancel(booking.id)} className="w-full border-2 border-red-100 text-red-600 hover:bg-red-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
-                <XCircle size={16} /> ยกเลิกการจองนี้
+                <XCircle size={16} /> {isPending ? 'ยกเลิกคำขอจอง' : 'ยกเลิกการจองนี้'}
               </button>
             )}
-            {(isCancelled || isFinished) && (
+            {(isCancelled || isFinished || isRejected) && (
               <div className={`rounded-xl px-4 py-3 text-center text-xs font-semibold border ${isFinished ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-blue-50 border-blue-100 text-slate-500'}`}>
-                {isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : 'การจองนี้ถูกยกเลิกแล้ว'}
+                {isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : (isRejected ? 'คำขอจองนี้ถูกปฏิเสธ' : 'การจองนี้ถูกยกเลิกแล้ว')}
               </div>
             )}
             <button onClick={() => onRebook(booking)} className="w-full border-2 border-blue-100 text-blue-700 hover:bg-blue-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">

@@ -215,6 +215,7 @@ class Booking(models.Model):
     end_time       = models.DateTimeField()
     status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     note           = models.TextField(blank=True)
+    reject_reason  = models.TextField(blank=True)
     checked_in     = models.BooleanField(default=False)
     checked_in_at  = models.DateTimeField(null=True, blank=True)   # ✅ เพิ่ม
     checkin_token  = models.UUIDField(default=uuid.uuid4, editable=False)  # ✅ เพิ่ม
@@ -289,6 +290,7 @@ class DemandForecast(models.Model):
 # ============================================================
 class Notification(models.Model):
     TYPE_CHOICES = [
+        ('booking_pending',   'รอการอนุมัติ'),
         ('booking_approved',  'การจองได้รับอนุมัติ'),
         ('booking_rejected',  'การจองถูกปฏิเสธ'),
         ('booking_reminder',  'เตือนก่อนใช้งาน'),

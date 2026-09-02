@@ -106,8 +106,9 @@ function useDevice() {
 
 // ── STATUS CONFIG ─────────────────────────────────────────────
 const STATUS_CFG = {
-  pending:   { label:'กำลังจอง',    bg:'bg-yellow-50',   text:'text-yellow-700', dot:'#f59e0b' },
+  pending:   { label:'รออนุมัติ',   bg:'bg-yellow-50',   text:'text-yellow-700', dot:'#f59e0b' },
   approved:  { label:'ยืนยันแล้ว',  bg:'bg-blue-50',     text:'text-blue-700',   dot:'#3b82f6' },
+  rejected:  { label:'ปฏิเสธแล้ว',  bg:'bg-rose-50',     text:'text-rose-700',   dot:'#e11d48' },
   active:    { label:'กำลังใช้งาน', bg:'bg-emerald-50',  text:'text-emerald-700',dot:'#10b981' },
   soon:      { label:'จะเริ่มเร็วๆ',bg:'bg-amber-50',    text:'text-amber-700',  dot:'#f59e0b' },
   booked:    { label:'จองแล้ว',     bg:'bg-sky-50',      text:'text-sky-700',    dot:'#0ea5e9' },
@@ -169,7 +170,7 @@ const getRoomStatus = (room, bookings, termBookings) => {
   if (active)          { state='active';      label='กำลังใช้งาน';  color='#10b981'; bg='#d1fae5'; border='#6ee7b7' }
   else if (termNow)    { state='term_active'; label='ชั่วโมงเรียน'; color='#9333ea'; bg='#f3e8ff'; border='#c4b5fd' }
   else if (upcoming)   { state='soon';        label='จะเริ่มเร็วๆ'; color='#f59e0b'; bg='#fef3c7'; border='#fcd34d' }
-  else if (pending)    { state='pending';     label='กำลังจอง';    color='#eab308'; bg='#fefce8'; border='#fde047' }
+  else if (pending)    { state='pending';     label='รออนุมัติ';    color='#eab308'; bg='#fefce8'; border='#fde047' }
   else if (hasTermToday){ state='term_today'; label='มีตารางสอน';   color='#7c3aed'; bg='#ede9fe'; border='#a78bfa' }
   else if (booked)     { state='booked';      label='ยืนยันแล้ว';  color='#3b82f6'; bg='#eff6ff'; border='#93c5fd' }
   else                 { state='free';        label='ว่าง';        color='#94a3b8'; bg='#f1f5f9'; border='#cbd5e1' }
@@ -360,7 +361,7 @@ function ExportButton({ isMobile = false }) {
 // ============================================================
 // BOOKING DETAIL MODAL
 // ============================================================
-function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }) {
+function BookingDetailModal({ booking, onClose, onCancel, onApprove, onReject, fmtTime, fmtDateFull }) {
   if (!booking) return null
   const s = getEffectiveS(booking)
   return (
@@ -398,8 +399,26 @@ function BookingDetailModal({ booking, onClose, onCancel, fmtTime, fmtDateFull }
               </div>
             ))}
           </div>
+          {booking.status === 'rejected' && booking.reject_reason && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 mb-4">
+              <p className="text-xs font-bold text-rose-700 mb-1">เหตุผลที่ปฏิเสธ</p>
+              <p className="text-sm text-rose-800">{booking.reject_reason}</p>
+            </div>
+          )}
           <p className="text-xs text-slate-300 text-center mb-4">ID: #{booking.id}</p>
-          {(booking.status === 'approved' || booking.status === 'pending') && !isPast(booking.end_time) && (
+          {booking.status === 'pending' && (
+            <div className="flex gap-2">
+              <button onClick={() => onReject(booking.id)}
+                className="flex-1 border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
+                ปฏิเสธ
+              </button>
+              <button onClick={() => onApprove(booking.id)}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-bold text-sm transition-colors">
+                อนุมัติ
+              </button>
+            </div>
+          )}
+          {booking.status === 'approved' && !isPast(booking.end_time) && (
             <button onClick={() => onCancel(booking.id)}
               className="w-full border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
               ยกเลิกการจองนี้
@@ -522,7 +541,7 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
     { key: 'all', label: 'ทั้งหมด', value: rooms.length, icon: LayoutGrid, color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' },
     { key: 'active', label: 'กำลังใช้งาน', value: activeCount, icon: Zap, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
     { key: 'term_active', label: 'ชั่วโมงเรียน', value: termActiveCount, icon: BookOpen, color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
-    { key: 'pending', label: 'กำลังจอง', value: pendingCount, icon: Calendar, color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
+    { key: 'pending', label: 'รออนุมัติ', value: pendingCount, icon: Calendar, color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
     { key: 'free', label: 'ว่าง', value: freeCount, icon: Check, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
     { key: 'maintenance', label: 'ซ่อมบำรุง', value: maintenanceCount, icon: Wrench, color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
   ]
@@ -532,7 +551,7 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
     { key:'active', label:'กำลังใช้งาน', count: activeCount },
     { key:'term_active', label:'ชั่วโมงเรียน', count: termActiveCount },
     { key:'term_today', label:'มีตารางสอน', count: termTodayCount },
-    { key:'pending', label:'กำลังจอง', count: pendingCount },
+    { key:'pending', label:'รออนุมัติ', count: pendingCount },
     { key:'soon', label:'จะเริ่มเร็วๆ', count: soonCount },
     { key:'booked', label:'จองแล้ว', count: bookedCount },
     { key:'free', label:'ว่าง', count: freeCount },
@@ -1307,7 +1326,7 @@ function MaintenancePanel({ dashboard, adminRooms }) {
 // DESKTOP
 // ============================================================
 function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
-  setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
+  setSelectedBooking, handleCancel, handleApprove, handleReject, fmtDate, fmtTime, fmtDateFull, navigate,
   onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
   hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
 
@@ -1421,10 +1440,23 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
                             <span>👥 {b.attendees} คน</span>
                           </div>
                         </div>
-                        <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
-                          className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl flex-shrink-0">
-                          <X size={11} />ยกเลิก
-                        </button>
+                        {b.status === 'pending' ? (
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <button onClick={e=>{e.stopPropagation();handleReject(b.id)}}
+                              className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl">
+                              <X size={11} />ปฏิเสธ
+                            </button>
+                            <button onClick={e=>{e.stopPropagation();handleApprove(b.id)}}
+                              className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-xl">
+                              <Check size={11} />อนุมัติ
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
+                            className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl flex-shrink-0">
+                            <X size={11} />ยกเลิก
+                          </button>
+                        )}
                       </div>
                     )
                   })
@@ -1546,7 +1578,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
         </div>
       </div>
       <BookingDetailModal booking={selectedBooking} onClose={()=>setSelectedBooking(null)}
-        onCancel={handleCancel} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
+        onCancel={handleCancel} onApprove={handleApprove} onReject={handleReject} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
     </div>
   )
 }
@@ -1555,7 +1587,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
 // MOBILE
 // ============================================================
 function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
-  setSelectedBooking, handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
+  setSelectedBooking, handleCancel, handleApprove, handleReject, fmtDate, fmtTime, fmtDateFull, navigate,
   onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
   hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
 
@@ -1646,10 +1678,23 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                           <span>⏰ {fmtTime(b.start_time)}</span>
                         </div>
                       </div>
-                      <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
-                        className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1 flex-shrink-0">
-                        <X size={11} />ยกเลิก
-                      </button>
+                      {b.status === 'pending' ? (
+                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                          <button onClick={e=>{e.stopPropagation();handleApprove(b.id)}}
+                            className="text-xs text-white bg-emerald-600 px-2.5 py-1.5 rounded-xl flex items-center gap-1">
+                            <Check size={11} />อนุมัติ
+                          </button>
+                          <button onClick={e=>{e.stopPropagation();handleReject(b.id)}}
+                            className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1">
+                            <X size={11} />ปฏิเสธ
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
+                          className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1 flex-shrink-0">
+                          <X size={11} />ยกเลิก
+                        </button>
+                      )}
                     </div>
                   )
                 })
@@ -1734,7 +1779,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
         </div>
       </div>
       <BookingDetailModal booking={selectedBooking} onClose={()=>setSelectedBooking(null)}
-        onCancel={handleCancel} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
+        onCancel={handleCancel} onApprove={handleApprove} onReject={handleReject} fmtTime={fmtTime} fmtDateFull={fmtDateFull} />
     </div>
   )
 }
@@ -2030,6 +2075,25 @@ export default function AdminPage() {
     } catch { alert('เกิดข้อผิดพลาด') }
   }
 
+  const handleApprove = async (id) => {
+    if (!confirm('ยืนยันอนุมัติการจองนี้?')) return
+    try {
+      await api.post(`bookings/${id}/approve/`)
+      setBookings(prev => prev.map(b => b.id===id ? {...b,status:'approved'} : b))
+      if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'approved'}))
+    } catch { alert('เกิดข้อผิดพลาด') }
+  }
+
+  const handleReject = async (id) => {
+    const reason = prompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):', '')
+    if (reason === null) return
+    try {
+      await api.post(`bookings/${id}/reject/`, { reason })
+      setBookings(prev => prev.map(b => b.id===id ? {...b,status:'rejected',reject_reason:reason} : b))
+      if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'rejected',reject_reason:reason}))
+    } catch { alert('เกิดข้อผิดพลาด') }
+  }
+
   const fmtDate     = dt => new Date(dt).toLocaleDateString('th-TH',{day:'numeric',month:'short'})
   const fmtTime     = dt => new Date(dt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})
   const fmtDateFull = dt => new Date(dt).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long'})
@@ -2054,7 +2118,7 @@ export default function AdminPage() {
     dashboard, adminRooms, bookings, termBookings, weekStats, tab, setTab,
     hasMoreBookings: !!bookingsNextUrl, loadingMoreBookings, onLoadMoreBookings: loadMoreBookings,
     selectedBooking, setSelectedBooking,
-    handleCancel, fmtDate, fmtTime, fmtDateFull, navigate,
+    handleCancel, handleApprove, handleReject, fmtDate, fmtTime, fmtDateFull, navigate,
     buildingsList,
     onAddRoom: () => setRoomModal({ mode: 'create' }),
     onEditRoom: (room) => setRoomModal({ mode: 'edit', room }),

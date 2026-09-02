@@ -2,7 +2,7 @@
 # ส่ง WebSocket Event อัตโนมัติทุกครั้งที่ Booking เปลี่ยนสถานะ
 
 from django.db import transaction
-from django.db.models.signals import post_save
+from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.core.mail import send_mail
 from django.conf import settings
@@ -67,14 +67,29 @@ def log_email_error(context, error):
     logger.exception('%s: %s', context, error)
 
 
+@receiver(pre_save, sender=Booking)
+def stash_old_booking_status(sender, instance, **kwargs):
+    """เก็บสถานะก่อน save ไว้ใน instance เพื่อให้ post_save รู้ว่าเปลี่ยนจากอะไรมาเป็นอะไร"""
+    if not instance.pk:
+        instance._old_status = None
+        return
+    instance._old_status = Booking.objects.filter(pk=instance.pk).values_list('status', flat=True).first()
+
+
 @receiver(post_save, sender=Booking)
 def broadcast_booking_update(sender, instance, created, **kwargs):
     """
-    ทุกครั้งที่ Booking ถูก save → broadcast ให้ทุก Client รู้
+    ทุกครั้งที่ Booking ถูก save → broadcast ให้ทุก Client รู้ และส่งอีเมลตามการเปลี่ยนสถานะ
     """
+    old_status = getattr(instance, '_old_status', None)
+
     if created:
+        send_email_after_commit(send_booking_pending_email, instance)
+    elif old_status == 'pending' and instance.status == 'approved':
         send_email_after_commit(send_booking_confirmation_email, instance)
-    elif instance.status == 'cancelled':
+    elif old_status == 'pending' and instance.status == 'rejected':
+        send_email_after_commit(send_booking_rejected_email, instance)
+    elif instance.status == 'cancelled' and old_status != 'cancelled':
         send_email_after_commit(send_booking_cancelled_email, instance)
 
     channel_layer = get_channel_layer()
@@ -305,8 +320,143 @@ def send_password_reset_email(user, uidb64, token):
         log_email_error('ส่งอีเมลรีเซ็ตรหัสผ่านไม่สำเร็จ', e)
 
 
+def send_booking_pending_email(instance):
+    """ส่งอีเมลแจ้งว่าได้รับคำขอจองแล้ว กำลังรอแอดมินอนุมัติ"""
+    user_email = get_recipient_email(instance.user)
+    if not user_email:
+        logger.warning('ไม่ส่งอีเมลรออนุมัติ เพราะ user %s ไม่มี email', instance.user_id)
+        return
+
+    start_thai = instance.start_time.astimezone(THAI_TZ)
+    end_thai   = instance.end_time.astimezone(THAI_TZ)
+    cancel_url = f'{SITE_URL}/api/bookings/{instance.id}/cancel-email/{instance.checkin_token}/'
+
+    plain_text = f'''
+สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
+
+ระบบได้รับคำขอจองห้องของคุณแล้ว กำลังรอแอดมินตรวจสอบและอนุมัติ
+เมื่อผลการพิจารณาออกแล้ว ระบบจะส่งอีเมลแจ้งให้ทราบอีกครั้ง
+
+รายละเอียดคำขอจอง
+─────────────────────────
+ห้อง      : {instance.room.name}
+อาคาร     : {instance.room.building.name}
+หัวข้อ    : {instance.title}
+วันที่     : {start_thai.strftime("%d/%m/%Y")}
+เวลาเริ่ม  : {start_thai.strftime("%H:%M")} น.
+เวลาสิ้นสุด: {end_thai.strftime("%H:%M")} น.
+ผู้เข้าร่วม: {instance.attendees} คน
+─────────────────────────
+
+❌ ยกเลิกคำขอจอง: {cancel_url}
+
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+    '''
+
+    html_message = f'''
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
+  <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+    <!-- Header -->
+    <div style="background:#d97706;padding:28px 32px;">
+      <h1 style="color:white;margin:0;font-size:22px;">⏳ ได้รับคำขอจองแล้ว</h1>
+      <p style="color:#fef3c7;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
+    </div>
+
+    <!-- Yellow accent -->
+    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
+
+    <!-- Body -->
+    <div style="padding:28px 32px;">
+      <p style="font-size:16px;color:#374151;">
+        สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b>
+      </p>
+      <p style="color:#6b7280;">ระบบได้รับคำขอจองห้องของคุณแล้ว กำลังรอแอดมินตรวจสอบและอนุมัติ เมื่อผลออกแล้วจะส่งอีเมลแจ้งอีกครั้งครับ</p>
+
+      <!-- Details Table -->
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;border-radius:8px;overflow:hidden;">
+        <tr style="background:#fffbeb;">
+          <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
+          <td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td>
+        </tr>
+        <tr style="background:#fffbeb;">
+          <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
+          <td style="padding:10px 12px;color:#111827;">{instance.title}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:#6b7280;">📅 วันที่</td>
+          <td style="padding:10px 12px;color:#111827;">{start_thai.strftime("%d/%m/%Y")}</td>
+        </tr>
+        <tr style="background:#fffbeb;">
+          <td style="padding:10px 12px;color:#6b7280;">⏰ เวลา</td>
+          <td style="padding:10px 12px;color:#111827;">
+            {start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:#6b7280;">👥 ผู้เข้าร่วม</td>
+          <td style="padding:10px 12px;color:#111827;">{instance.attendees} คน</td>
+        </tr>
+      </table>
+
+      <!-- Status Box -->
+      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:16px;margin:24px 0;text-align:center;">
+        <p style="margin:0;font-size:14px;color:#92400e;font-weight:bold;">⏳ รอแอดมินอนุมัติ</p>
+      </div>
+
+      <!-- Cancel Button -->
+      <div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:16px;text-align:center;">
+        <p style="margin:0 0 12px;font-size:14px;color:#6b7280;">เปลี่ยนใจ ไม่ต้องการห้องนี้แล้ว?</p>
+        <a href="{cancel_url}"
+           style="display:inline-block;background:#dc2626;color:white;
+                  padding:10px 28px;text-decoration:none;border-radius:8px;
+                  font-size:14px;font-weight:bold;">
+          ❌ ยกเลิกคำขอจอง
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
+        ลิงก์ใช้ได้ครั้งเดียว • ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
+    '''
+
+    try:
+      logger.info(
+        'Attempting send_mail to %s (pending instance id=%s) via %s:%s backend=%s',
+        user_email,
+        getattr(instance, 'id', None),
+        getattr(settings, 'EMAIL_HOST', None),
+        getattr(settings, 'EMAIL_PORT', None),
+        getattr(settings, 'EMAIL_BACKEND', None),
+      )
+      send_mail(
+        subject=f'⏳ ได้รับคำขอจองห้อง {instance.room.name} แล้ว รอการอนุมัติ',
+        message=plain_text,
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+        recipient_list=[user_email],
+        html_message=html_message,
+        fail_silently=False,
+      )
+    except Exception as e:
+      log_email_error('ส่งอีเมลรอการอนุมัติไม่สำเร็จ', e)
+
+
 def send_booking_confirmation_email(instance):
-    """ส่งอีเมลยืนยันเมื่อจองสำเร็จ พร้อมปุ่ม Check-in และ ยกเลิก"""
+    """ส่งอีเมลยืนยันเมื่อแอดมินอนุมัติการจอง พร้อมปุ่ม Check-in และ ยกเลิก"""
     user_email = get_recipient_email(instance.user)
     if not user_email:
         logger.warning('ไม่ส่งอีเมลยืนยัน เพราะ user %s ไม่มี email', instance.user_id)
@@ -648,3 +798,133 @@ def send_booking_cancelled_email(instance):
         )
     except Exception as e:
         log_email_error('ส่งอีเมลยกเลิกไม่สำเร็จ', e)
+
+
+def send_booking_rejected_email(instance):
+    """ส่งอีเมลเมื่อแอดมินปฏิเสธคำขอจอง"""
+    user_email = get_recipient_email(instance.user)
+    if not user_email:
+        logger.warning('ไม่ส่งอีเมลปฏิเสธ เพราะ user %s ไม่มี email', instance.user_id)
+        return
+
+    start_thai = instance.start_time.astimezone(THAI_TZ)
+    end_thai   = instance.end_time.astimezone(THAI_TZ)
+    reason     = (instance.reject_reason or '').strip()
+
+    plain_text = f'''
+สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
+
+คำขอจองห้องของคุณถูกปฏิเสธ
+
+รายละเอียดคำขอที่ถูกปฏิเสธ
+─────────────────────────
+ห้อง      : {instance.room.name}
+อาคาร     : {instance.room.building.name}
+หัวข้อ    : {instance.title}
+วันที่     : {start_thai.strftime("%d/%m/%Y")}
+เวลาเริ่ม  : {start_thai.strftime("%H:%M")} น.
+เวลาสิ้นสุด: {end_thai.strftime("%H:%M")} น.
+─────────────────────────
+{f"เหตุผล: {reason}" if reason else ""}
+
+หากต้องการจองห้องอื่นหรือช่วงเวลาอื่น สามารถเข้าระบบเพื่อจองใหม่ได้เลย
+
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+    '''
+
+    reason_html = f'''
+      <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:16px;margin:0 0 24px;">
+        <p style="margin:0 0 4px;font-size:13px;color:#991b1b;font-weight:bold;">เหตุผลที่ปฏิเสธ</p>
+        <p style="margin:0;font-size:14px;color:#7f1d1d;">{reason}</p>
+      </div>
+    ''' if reason else ''
+
+    html_message = f'''
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
+  <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+    <!-- Header -->
+    <div style="background:#dc2626;padding:28px 32px;">
+      <h1 style="color:white;margin:0;font-size:22px;">❌ คำขอจองถูกปฏิเสธ</h1>
+      <p style="color:#fecaca;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
+    </div>
+
+    <!-- Yellow accent -->
+    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
+
+    <!-- Body -->
+    <div style="padding:28px 32px;">
+      <p style="font-size:16px;color:#374151;">
+        สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b>
+      </p>
+      <p style="color:#6b7280;">คำขอจองห้องของคุณถูกปฏิเสธ รายละเอียดด้านล่างครับ</p>
+
+      <!-- Details Table -->
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
+        <tr style="background:#fef2f2;">
+          <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
+          <td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td>
+        </tr>
+        <tr style="background:#fef2f2;">
+          <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
+          <td style="padding:10px 12px;color:#111827;">{instance.title}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:#6b7280;">📅 วันที่</td>
+          <td style="padding:10px 12px;color:#111827;">{start_thai.strftime("%d/%m/%Y")}</td>
+        </tr>
+        <tr style="background:#fef2f2;">
+          <td style="padding:10px 12px;color:#6b7280;">⏰ เวลา</td>
+          <td style="padding:10px 12px;color:#111827;">
+            {start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.
+          </td>
+        </tr>
+      </table>
+
+      {reason_html}
+
+      <!-- Info Box -->
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;">
+        <p style="margin:0;font-size:14px;color:#1e40af;">
+          💡 หากต้องการจองห้องอื่นหรือช่วงเวลาอื่น สามารถเข้าระบบเพื่อจองใหม่ได้เลยครับ
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
+    '''
+
+    try:
+      logger.info(
+        'Attempting send_mail to %s (rejected instance id=%s) via %s:%s backend=%s',
+        user_email,
+        getattr(instance, 'id', None),
+        getattr(settings, 'EMAIL_HOST', None),
+        getattr(settings, 'EMAIL_PORT', None),
+        getattr(settings, 'EMAIL_BACKEND', None),
+      )
+      send_mail(
+        subject=f'❌ คำขอจองห้อง {instance.room.name} ถูกปฏิเสธ',
+        message=plain_text,
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+        recipient_list=[user_email],
+        html_message=html_message,
+        fail_silently=False,
+      )
+    except Exception as e:
+      log_email_error('ส่งอีเมลปฏิเสธไม่สำเร็จ', e)

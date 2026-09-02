@@ -374,8 +374,8 @@ class BookingSerializer(serializers.ModelSerializer):
         model  = Booking
         fields = ['id', 'user', 'user_name', 'room', 'room_name', 'building',
                   'title', 'attendees', 'start_time', 'end_time',
-                  'status', 'note', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'user', 'status', 'created_at', 'updated_at']
+                  'status', 'note', 'reject_reason', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'status', 'reject_reason', 'created_at', 'updated_at']
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):

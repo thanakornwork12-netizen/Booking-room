@@ -1466,17 +1466,69 @@ class BookingViewSet(viewsets.ModelViewSet):
             ).exists():
                 raise ValidationError({'detail': 'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'})
 
-            booking = serializer.save(user=self.request.user, status='approved')
+            booking = serializer.save(user=self.request.user, status='pending')
             Notification.objects.create(
                 user=self.request.user, booking=booking,
-                type='booking_approved', title='จองห้องสำเร็จ',
-                message=(f'จองห้อง {booking.room.name} '
+                type='booking_pending', title='ส่งคำขอจองห้องแล้ว',
+                message=(f'คำขอจองห้อง {booking.room.name} '
                          f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
-                         f'เรียบร้อยแล้ว')
+                         f'ถูกส่งแล้ว กำลังรอแอดมินอนุมัติ')
             )
 
     def destroy(self, request, *args, **kwargs):
         return Response({'error': 'ใช้ปุ่ม cancel แทน'}, status=405)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
+        booking = self.get_object()
+        if booking.status != 'pending':
+            return Response({'error': 'อนุมัติได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
+
+        old = booking.status
+        booking.status = 'approved'
+        booking.approved_by = request.user
+        booking.save()
+        BookingLog.objects.create(
+            booking=booking, changed_by=request.user,
+            old_status=old, new_status='approved'
+        )
+        Notification.objects.create(
+            user=booking.user, booking=booking,
+            type='booking_approved', title='การจองได้รับการอนุมัติ',
+            message=(f'การจองห้อง {booking.room.name} '
+                     f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                     f'ได้รับการอนุมัติแล้ว')
+        )
+        return Response({'message': 'อนุมัติการจองแล้ว'})
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
+        booking = self.get_object()
+        if booking.status != 'pending':
+            return Response({'error': 'ปฏิเสธได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
+
+        reason = (request.data.get('reason') or '').strip()
+        old = booking.status
+        booking.status = 'rejected'
+        booking.approved_by = request.user
+        booking.reject_reason = reason
+        booking.save()
+        BookingLog.objects.create(
+            booking=booking, changed_by=request.user,
+            old_status=old, new_status='rejected', remark=reason
+        )
+        Notification.objects.create(
+            user=booking.user, booking=booking,
+            type='booking_rejected', title='การจองถูกปฏิเสธ',
+            message=(f'การจองห้อง {booking.room.name} '
+                     f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                     f'ถูกปฏิเสธ' + (f' เหตุผล: {reason}' if reason else ''))
+        )
+        return Response({'message': 'ปฏิเสธการจองแล้ว'})
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
