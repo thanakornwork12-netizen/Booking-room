@@ -77,6 +77,42 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// ── Refresh token แบบ dedupe ────────────────────────────────────────────
+// หน้าเดียวมักยิงหลาย request พร้อมกัน (Promise.all ใน HomePage เช่น
+// profile/bookings/term-bookings/today-feed) ถ้า access token หมดอายุ
+// ทุกเส้นจะโดน 401 พร้อมกันหมด — ถ้าไม่ dedupe แต่ละเส้นจะยิง
+// POST auth/refresh/ ของตัวเอง (เหมือนปัญหา "Broken pipe" ตอน login ซ้อน
+// ที่ _pendingLoginRequest กันไว้แล้วด้านล่าง) ถ้าเส้นใดเส้นหนึ่งพลาด
+// (cold start ช้า, เน็ตสะดุดชั่วขณะ) จะเด้ง logout ทั้งที่ session จริงๆ
+// ยังกู้คืนได้ปกติจากเส้นอื่นที่ผ่าน ต้อง share promise เดียวกันทุกเส้น
+// ให้ผลลัพธ์ตรงกันเสมอ
+let _pendingRefresh = null
+
+async function _refreshAccessToken() {
+  if (_pendingRefresh) return _pendingRefresh
+
+  _pendingRefresh = (async () => {
+    const refresh = _getItem('refresh_token')
+    if (!refresh) throw new Error('no refresh token')
+
+    const res = await axios.post(`${API_BASE_URL}auth/refresh/`, { refresh })
+    const newAccess = res.data.access
+    _activeStorage().setItem('access_token', newAccess)
+    // ROTATE_REFRESH_TOKENS=True ฝั่ง backend — refresh token เก่าใช้ครั้ง
+    // เดียวแล้วถูกแทนที่ด้วยอันใหม่ ถ้าไม่เก็บอันใหม่ไว้ครั้งถัดไปจะ refresh
+    // ด้วย token ที่ไม่ใช่ตัวล่าสุดตลอด (ยังไม่พังเพราะ BLACKLIST_AFTER_ROTATION
+    // ปิดอยู่ แต่ผิดเจตนาของการ rotate)
+    if (res.data.refresh) _activeStorage().setItem('refresh_token', res.data.refresh)
+    return newAccess
+  })()
+
+  try {
+    return await _pendingRefresh
+  } finally {
+    _pendingRefresh = null
+  }
+}
+
 // ── Response: จัดการ token หมดอายุ (401) ─────────────────────────────────
 api.interceptors.response.use(
   response => response,
@@ -88,24 +124,12 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
 
-      const refresh = _getItem('refresh_token')
-      if (!refresh) {
-        // ไม่มี refresh token → logout
-        _clearAndRedirect()
-        return Promise.reject(error)
-      }
-
       try {
-        const res = await axios.post(
-          `${API_BASE_URL}auth/refresh/`,
-          { refresh }
-        )
-        const newAccess = res.data.access
-        _activeStorage().setItem('access_token', newAccess)
+        const newAccess = await _refreshAccessToken()
         original.headers.Authorization = `Bearer ${newAccess}`
         return api(original)   // retry request เดิม
       } catch {
-        // refresh ล้มเหลว → logout
+        // refresh ล้มเหลว (หรือไม่มี refresh token) → logout
         _clearAndRedirect()
         return Promise.reject(error)
       }
