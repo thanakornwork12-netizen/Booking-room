@@ -667,20 +667,31 @@ export default function HomePage() {
           </div>
         </section>
 
-        {todayFeed.length > 0 && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-md">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-md">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Zap size={16} className="text-amber-500" />
                 <span className="text-sm font-bold text-slate-800">ห้องว่างวันนี้</span>
               </div>
-              <button
-                onClick={() => navigate('/search', { state: { quickAvailableNow: true } })}
-                className="text-xs font-semibold text-blue-700 hover:underline"
-              >
-                ดูทั้งหมด
-              </button>
+              {todayFeed.length > 0 && (
+                <button
+                  onClick={() => navigate('/search', { state: { quickAvailableNow: true } })}
+                  className="text-xs font-semibold text-blue-700 hover:underline"
+                >
+                  ดูทั้งหมด
+                </button>
+              )}
             </div>
+            {todayFeed.length === 0 ? (
+              // ฟีดนี้แนะนำเฉพาะห้องที่ยังมีช่วงว่างเหลือ "ก่อนอาคารปิด" ของวันนี้
+              // (ดู RoomViewSet._rooms_next_free_window ฝั่ง backend) — ถ้าเข้ามา
+              // ดูตอนดึกหลังอาคารปิดหมดแล้ว การ์ดจะไม่มีเหลือให้แนะนำเลยจริงๆ ไม่ใช่
+              // บั๊ก แต่การให้ section หายไปเงียบๆ ทำให้ดูเหมือนฟีเจอร์หาย ต้องมี
+              // ข้อความอธิบายแทน
+              <p className="py-3 text-center text-xs text-slate-400">
+                ตอนนี้ไม่มีห้องว่างให้แนะนำ (อาจพ้นเวลาทำการของอาคารแล้ว) ลองเข้ามาดูใหม่พรุ่งนี้
+              </p>
+            ) : (
             <div className="flex gap-3 overflow-x-auto pb-1">
               {todayFeed.map(room => {
                 // แต่ละห้องในฟีดนี้อาจว่าง "ตอนนี้" หรือ "ช่วงอื่นของวันนี้"
@@ -746,8 +757,8 @@ export default function HomePage() {
                 )
               })}
             </div>
-          </section>
-        )}
+            )}
+        </section>
 
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
           <div className="flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
