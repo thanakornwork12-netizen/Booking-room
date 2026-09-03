@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, Bot, Search, CalendarDays, CheckCircle2, ArrowRight } from 'lucide-react'
+import { Sparkles, Bot, Search, CalendarDays, CheckCircle2, ArrowRight, ShieldCheck } from 'lucide-react'
 
 const hasToken = () => !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
 
@@ -37,13 +37,20 @@ const FEATURES = [
     title: 'ยกเลิกได้ทันทีผ่านอีเมล',
     desc: 'หากมีเหตุไม่สามารถมาใช้งานได้ กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยันการจอง ไม่ต้องเข้าระบบ',
   },
+  {
+    icon: ShieldCheck,
+    gradient: 'from-amber-500 to-orange-500',
+    title: 'แอดมินตรวจสอบก่อนอนุมัติ',
+    desc: 'ทุกคำขอจองจะถูกแอดมินตรวจสอบก่อนอนุมัติ พร้อมแจ้งผลทันทีทางอีเมลไม่ว่าจะอนุมัติหรือปฏิเสธ',
+  },
 ]
 
 const STEPS = [
   { emoji: '🔎', title: 'ค้นหาห้อง', desc: 'ระบุวัน เวลา จำนวนคน และอุปกรณ์ที่ต้องการ' },
   { emoji: '🤖', title: 'ดูคำแนะนำจาก AI', desc: 'ระบบแสดงห้องที่เหมาะสมพร้อมระดับความต้องการ' },
-  { emoji: '📋', title: 'ยืนยันการจอง', desc: 'กรอกหัวข้อและยืนยันรายละเอียด' },
-  { emoji: '✅', title: 'ใช้งานห้องได้เลย', desc: 'มาใช้งานตามเวลาที่จองไว้ได้เลย ยกเลิกได้ทันทีทางอีเมลหากมีเหตุขัดข้อง' },
+  { emoji: '📋', title: 'ส่งคำขอจอง', desc: 'กรอกหัวข้อและส่งคำขอจอง' },
+  { emoji: '⏳', title: 'รอแอดมินอนุมัติ', desc: 'แอดมินตรวจสอบคำขอ แล้วแจ้งผลอนุมัติหรือปฏิเสธทันทีทางอีเมล' },
+  { emoji: '✅', title: 'ใช้งานห้องได้เลย', desc: 'เมื่อได้รับอนุมัติแล้ว มาใช้งานตามเวลาที่จองไว้ได้เลย ยกเลิกได้ทันทีทางอีเมลหากมีเหตุขัดข้อง' },
 ]
 
 const TOTAL_BOOKINGS = '7,252'
@@ -240,8 +247,8 @@ export default function LandingPage() {
       {/* ── How it works ───────────────────────────────── */}
       <section className="py-14">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
-          <h2 className="text-center text-2xl font-extrabold text-slate-900">วิธีใช้งานง่ายๆ 4 ขั้นตอน</h2>
-          <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          <h2 className="text-center text-2xl font-extrabold text-slate-900">วิธีใช้งานง่ายๆ 5 ขั้นตอน</h2>
+          <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
             {STEPS.map((s, i) => (
               <Reveal key={s.title} delay={i * 100}>
                 <div className="text-center">

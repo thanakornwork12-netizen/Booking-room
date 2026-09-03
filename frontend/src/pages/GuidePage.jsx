@@ -17,14 +17,19 @@ const STEPS = [
     desc: 'ระบุวัน เวลา และจำนวนคน ระบบ AI จะแนะนำห้องที่เหมาะสมที่สุดให้คุณทันที พร้อมข้อมูลอุปกรณ์ภายในห้อง',
   },
   {
-    n: 2, emoji: '📅', color: 'bg-indigo-600',
-    title: 'ยืนยันการจอง',
-    desc: 'ตรวจสอบรายละเอียด กดยืนยัน และรอรับแจ้งเตือนผ่านระบบหรืออีเมลมหาวิทยาลัย',
+    n: 2, emoji: '📋', color: 'bg-indigo-600',
+    title: 'ส่งคำขอจอง',
+    desc: 'ตรวจสอบรายละเอียด กรอกหัวข้อ แล้วกดส่งคำขอจอง',
   },
   {
-    n: 3, emoji: '🔑', color: 'bg-emerald-500',
+    n: 3, emoji: '⏳', color: 'bg-amber-500',
+    title: 'รอแอดมินอนุมัติ',
+    desc: 'แอดมินตรวจสอบคำขอก่อนทุกครั้ง แล้วแจ้งผลอนุมัติหรือปฏิเสธทันทีผ่านระบบหรืออีเมลมหาวิทยาลัย',
+  },
+  {
+    n: 4, emoji: '🔑', color: 'bg-emerald-500',
     title: 'ใช้งานห้อง',
-    desc: 'มาใช้งานห้องได้ตามเวลาที่จองไว้ หากมีเหตุไม่สามารถมาได้ กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยันการจอง',
+    desc: 'เมื่อได้รับอนุมัติแล้ว มาใช้งานห้องได้ตามเวลาที่จองไว้ หากมีเหตุไม่สามารถมาได้ กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยันการจอง',
   },
 ]
 
@@ -74,7 +79,7 @@ export default function GuidePage() {
 
       <section>
         <h2 className="text-xl font-extrabold text-slate-900">ขั้นตอนการจองห้อง 🚀</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map(step => (
             <div key={step.n} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <div className={`flex h-11 w-11 items-center justify-center rounded-full text-sm font-extrabold text-white ${step.color}`}>
