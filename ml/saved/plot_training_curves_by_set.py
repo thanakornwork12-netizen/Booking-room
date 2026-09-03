@@ -61,16 +61,13 @@ for set_name in SETS:
         continue
     c = COLORS[set_name]
     tr = curves[set_name]['train_mean']
-    va = curves[set_name]['valid_mean']
     ax.plot(range(1, len(tr) + 1), tr, color=c, marker='o', markersize=3, linewidth=2,
-             linestyle='-', label=f'{set_name} ({SET_NAMES[set_name]}) — Train')
-    ax.plot(range(1, len(va) + 1), va, color=c, marker='o', markersize=3, linewidth=1.5,
-             linestyle='--', alpha=0.7, label=f'{set_name} ({SET_NAMES[set_name]}) — Cal')
+             label=f'{set_name} ({SET_NAMES[set_name]})')
 
-ax.set_title('TrainAcc vs CalAcc per Round (avg. across 8 rooms)\nsolid = Train, dashed = Calibration', fontweight='bold')
+ax.set_title('TrainAcc per Round (avg. across 8 rooms)', fontweight='bold')
 ax.set_xlabel('Boosting Round')
 ax.set_ylabel('Accuracy (%)')
-ax.legend(loc='lower right', fontsize=8, ncol=2)
+ax.legend(loc='lower right')
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 ax.grid(alpha=0.25)
