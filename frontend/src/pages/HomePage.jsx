@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Clock, Users, Search, X, XCircle,
   Building2, ChevronRight, CheckCircle2,
-  ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
+  ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History, LayoutGrid
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
 import { addHours, pickFittingDuration, minutesBetween } from '../utils/booking'
@@ -192,6 +192,135 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
       </div>
       <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 shrink-0 mt-2 transition-colors" />
     </div>
+  )
+}
+
+// สีเดียวกับ RoomStatusGrid ในหน้าแอดมิน (AdminPage.jsx) — ผู้ใช้ทั่วไปควรเห็น
+// สถานะห้องด้วยภาษาสี/ป้ายชุดเดียวกับที่แอดมินเห็น ไม่ใช่คนละชุด
+const ROOM_STATE_CFG = {
+  active:      { label: 'กำลังใช้งาน', color: '#10b981', bg: '#d1fae5', border: '#6ee7b7' },
+  term_active: { label: 'ชั่วโมงเรียน', color: '#9333ea', bg: '#f3e8ff', border: '#c4b5fd' },
+  soon:        { label: 'จะเริ่มเร็วๆ', color: '#f59e0b', bg: '#fef3c7', border: '#fcd34d' },
+  pending:     { label: 'รออนุมัติ',   color: '#eab308', bg: '#fefce8', border: '#fde047' },
+  term_today:  { label: 'มีตารางสอน',  color: '#7c3aed', bg: '#ede9fe', border: '#a78bfa' },
+  booked:      { label: 'ยืนยันแล้ว',  color: '#3b82f6', bg: '#eff6ff', border: '#93c5fd' },
+  free:        { label: 'ว่าง',        color: '#94a3b8', bg: '#f1f5f9', border: '#cbd5e1' },
+  maintenance: { label: 'ซ่อมบำรุง',   color: '#ef4444', bg: '#fff1f2', border: '#fecdd3' },
+  disabled:    { label: 'ปิดใช้งาน',   color: '#64748b', bg: '#f8fafc', border: '#cbd5e1' },
+}
+const PULSE_STATES = ['active', 'pending', 'term_active', 'maintenance']
+
+// ฟีดสถานะห้องทั้งหมดแบบ real-time — เวอร์ชันผู้ใช้ทั่วไปของ RoomStatusGrid
+// ในหน้าแอดมิน ดึงจาก /rooms/status-feed/ ซึ่งคำนวณสถานะฝั่ง backend เอง
+// (ไม่ใช่ให้ frontend คำนวณจาก bookings ทั้งระบบเหมือนหน้าแอดมิน) เพราะ
+// ผู้ใช้ทั่วไปเห็นแค่ booking ของตัวเองผ่าน /bookings/ อยู่แล้ว ไม่มีสิทธิ์เห็น
+// ของคนอื่นมาคำนวณเอง — endpoint นี้ตั้งใจไม่ส่งหัวข้อ/ชื่อผู้จองกลับมาด้วย
+function RoomStatusFeed() {
+  const [rooms, setRooms] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [filterState, setFilterState] = useState('all')
+  const [filterBuilding, setFilterBuilding] = useState('ทั้งหมด')
+
+  useEffect(() => {
+    let active = true
+    const load = () => api.get('/rooms/status-feed/')
+      .then(res => { if (active) setRooms(Array.isArray(res.data) ? res.data : []) })
+      .catch(() => {})
+      .finally(() => { if (active) setLoaded(true) })
+    load()
+    const t = setInterval(load, 30000)
+    return () => { active = false; clearInterval(t) }
+  }, [])
+
+  if (!loaded || rooms.length === 0) return null
+
+  const stateCounts = rooms.reduce((acc, r) => { acc[r.state] = (acc[r.state] || 0) + 1; return acc }, {})
+  const buildings = ['ทั้งหมด', ...Array.from(new Set(rooms.map(r => r.building_name))).sort((a, b) => a.localeCompare(b, 'th'))]
+  const filtered = rooms
+    .filter(r => filterBuilding === 'ทั้งหมด' || r.building_name === filterBuilding)
+    .filter(r => filterState === 'all' || r.state === filterState)
+
+  const stateFilters = [
+    { key: 'all', label: 'ทั้งหมด', count: rooms.length },
+    { key: 'active', label: 'กำลังใช้งาน', count: stateCounts.active || 0 },
+    { key: 'term_active', label: 'ชั่วโมงเรียน', count: stateCounts.term_active || 0 },
+    { key: 'pending', label: 'รออนุมัติ', count: stateCounts.pending || 0 },
+    { key: 'free', label: 'ว่าง', count: stateCounts.free || 0 },
+    { key: 'maintenance', label: 'ซ่อมบำรุง', count: stateCounts.maintenance || 0 },
+  ].filter(s => s.key === 'all' || s.count > 0)
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-md">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <LayoutGrid size={16} className="text-blue-600" />
+          <span className="text-sm font-bold text-slate-800">สถานะห้องทั้งหมด</span>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+          <Clock size={10} className="pulse" /> อัปเดตทุก 30 วิ
+        </span>
+      </div>
+
+      <div className="flex gap-1.5 overflow-x-auto pb-2">
+        {stateFilters.map(s => (
+          <button key={s.key} type="button" onClick={() => setFilterState(s.key)}
+            className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${filterState === s.key ? 'bg-slate-900 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>
+            {s.label} <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] ${filterState === s.key ? 'bg-white/15' : 'bg-slate-100'}`}>{s.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {buildings.length > 2 && (
+        <select value={filterBuilding} onChange={e => setFilterBuilding(e.target.value)}
+          className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 outline-none focus:border-blue-400">
+          {buildings.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+      )}
+
+      {filtered.length === 0 ? (
+        <p className="mt-4 py-6 text-center text-xs text-slate-400">ไม่พบห้องตามตัวกรองนี้</p>
+      ) : (
+        <div className="mt-3 grid max-h-[26rem] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
+          {filtered.map(room => {
+            const cfg = ROOM_STATE_CFG[room.state] || ROOM_STATE_CFG.free
+            const hasSlots = room.slots_today.length > 0 || room.term_slots_today.length > 0
+            return (
+              <div key={room.id} className="rounded-2xl border-2 p-3" style={{ background: cfg.bg, borderColor: cfg.border }}>
+                <div className="mb-1.5 flex items-start justify-between gap-1">
+                  <span
+                    className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${PULSE_STATES.includes(room.state) ? 'pulse' : ''}`}
+                    style={{ background: cfg.color }}
+                  />
+                  <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-tight" style={{ background: cfg.color + '20', color: cfg.color }}>
+                    {cfg.label}
+                  </span>
+                </div>
+                <p className="truncate text-sm font-extrabold text-slate-800">{room.name}</p>
+                <p className="truncate text-[11px] text-slate-500">{room.building_name}</p>
+                {room.state === 'maintenance' ? (
+                  <p className="mt-1 text-[11px] text-slate-500">กำลังปิดห้องเพื่อซ่อมบำรุง</p>
+                ) : room.state === 'disabled' ? (
+                  <p className="mt-1 text-[11px] text-slate-500">ห้องถูกปิดใช้งาน</p>
+                ) : !hasSlots ? (
+                  <p className="mt-1 text-[11px] text-slate-400">ไม่มีการจอง</p>
+                ) : (
+                  <div className="mt-1 space-y-0.5">
+                    {room.slots_today.slice(0, 3).map((s, i) => (
+                      <p key={i} className={`text-[11px] tabular-nums ${s.status === 'pending' ? 'text-yellow-600' : 'text-blue-500'}`}>
+                        {s.start_time}–{s.end_time}{s.status === 'pending' ? ' ?' : ''}
+                      </p>
+                    ))}
+                    {room.term_slots_today.length > 0 && (
+                      <p className="text-[11px] text-purple-500">📚 {room.term_slots_today.length} คาบวันนี้</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -748,6 +877,8 @@ export default function HomePage() {
             </div>
           </section>
         )}
+
+        <RoomStatusFeed />
 
         <section className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
           <div className="flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">

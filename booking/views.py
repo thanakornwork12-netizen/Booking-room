@@ -790,6 +790,88 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         return Response(enriched)
 
+    @action(detail=False, methods=['get'], url_path='status-feed')
+    def status_feed(self, request):
+        """สถานะห้องแบบ real-time ของทุกห้องในระบบ สำหรับผู้ใช้ทั่วไป (ไม่ใช่
+        แค่แอดมิน) — คู่กับ admin_status ที่จำกัดสิทธิ์ไว้เฉพาะ admin/staff
+        เท่านั้น endpoint นี้ตั้งใจไม่โชว์รายละเอียดผู้จอง/หัวข้อการจอง (ข้อมูล
+        ส่วนตัวของคนอื่น) บอกแค่ "ช่วงเวลาไหนไม่ว่าง" พอ
+
+        คืนค่า state/label ต่อห้องตามลำดับความสำคัญเดียวกับที่แอดมินเห็นใน
+        RoomStatusGrid (active > term_active > soon > pending > term_today >
+        booked > free) เพื่อให้ผู้ใช้เห็นภาพรวมเดียวกัน"""
+        now = timezone.localtime()
+        today = now.date()
+        now_time = now.time()
+        target_dow = today.weekday()
+
+        rooms = Room.objects.filter(is_active=True).select_related('building').order_by('name')
+        room_ids = [r.id for r in rooms]
+
+        bookings_by_room = {}
+        for b in Booking.objects.filter(
+            room_id__in=room_ids, status__in=['pending', 'approved'],
+            start_time__date=today,
+        ).values('room_id', 'start_time', 'end_time', 'status'):
+            bookings_by_room.setdefault(b['room_id'], []).append(b)
+
+        terms_by_room = {}
+        for t in TermBooking.objects.filter(
+            room_id__in=room_ids, day_of_week=target_dow, status='active',
+            term_start__lte=today, term_end__gte=today,
+        ).values('room_id', 'start_time', 'end_time'):
+            terms_by_room.setdefault(t['room_id'], []).append(t)
+
+        return Response([
+            self._room_status_entry(room, bookings_by_room.get(room.id, []), terms_by_room.get(room.id, []), now, now_time)
+            for room in rooms
+        ])
+
+    def _room_status_entry(self, room, room_bookings, room_terms, now, now_time):
+        room_bookings = sorted(room_bookings, key=lambda b: b['start_time'])
+        room_terms = sorted(room_terms, key=lambda t: t['start_time'])
+
+        if room.status == 'maintenance':
+            state, label = 'maintenance', 'ซ่อมบำรุง'
+        elif room.status == 'disabled':
+            state, label = 'disabled', 'ปิดใช้งาน'
+        else:
+            active = next((b for b in room_bookings
+                           if b['status'] == 'approved' and b['start_time'] <= now <= b['end_time']), None)
+            term_now = next((t for t in room_terms
+                              if t['start_time'] <= now_time < t['end_time']), None)
+            upcoming = next((b for b in room_bookings
+                              if b['status'] == 'approved' and now < b['start_time'] <= now + timedelta(minutes=30)), None)
+            pending = next((b for b in room_bookings
+                             if b['status'] == 'pending' and b['end_time'] > now), None)
+            booked = next((b for b in room_bookings
+                            if b['status'] == 'approved' and b['end_time'] > now and b is not active and b is not upcoming), None)
+
+            if active:          state, label = 'active', 'กำลังใช้งาน'
+            elif term_now:      state, label = 'term_active', 'ชั่วโมงเรียน'
+            elif upcoming:      state, label = 'soon', 'จะเริ่มเร็วๆ'
+            elif pending:       state, label = 'pending', 'รออนุมัติ'
+            elif room_terms:    state, label = 'term_today', 'มีตารางสอน'
+            elif booked:        state, label = 'booked', 'ยืนยันแล้ว'
+            else:               state, label = 'free', 'ว่าง'
+
+        return {
+            'id': room.id, 'name': room.name,
+            'building_name': room.building.name if room.building else 'ไม่ระบุ',
+            'building_code': room.building.code if room.building else '',
+            'floor': room.floor, 'capacity': room.capacity, 'room_type': room.room_type,
+            'state': state, 'label': label,
+            'slots_today': [{
+                'start_time': timezone.localtime(b['start_time']).strftime('%H:%M'),
+                'end_time': timezone.localtime(b['end_time']).strftime('%H:%M'),
+                'status': b['status'],
+            } for b in room_bookings if b['end_time'] > now],
+            'term_slots_today': [{
+                'start_time': t['start_time'].strftime('%H:%M'),
+                'end_time': t['end_time'].strftime('%H:%M'),
+            } for t in room_terms],
+        }
+
     @action(detail=False, methods=['get'], url_path='usage-stats', permission_classes=[IsAdminOrStaff])
     def usage_stats(self, request):
         """สถิติการใช้งานสะสมของทุกห้อง (จำนวนจองรายวันแยกตามสถานะ + จำนวน
