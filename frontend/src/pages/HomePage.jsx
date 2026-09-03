@@ -671,7 +671,7 @@ export default function HomePage() {
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Zap size={16} className="text-amber-500" />
-                <span className="text-sm font-bold text-slate-800">ห้องว่างตอนนี้</span>
+                <span className="text-sm font-bold text-slate-800">ห้องว่างวันนี้</span>
               </div>
               <button
                 onClick={() => navigate('/search', { state: { quickAvailableNow: true } })}
@@ -682,6 +682,14 @@ export default function HomePage() {
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {todayFeed.map(room => {
+                // แต่ละห้องในฟีดนี้อาจว่าง "ตอนนี้" หรือ "ช่วงอื่นของวันนี้"
+                // (ห้องที่กำลังถูกใช้อยู่ตอนนี้แต่จะว่างช่วงบ่ายก็ติดฟีดด้วย —
+                // ดู RoomViewSet._rooms_next_free_window ฝั่ง backend) ต้องเทียบ
+                // available_from กับเวลาปัจจุบันเองตรงนี้ว่าห้องนี้ว่างอยู่แล้ว
+                // หรือจะว่างในอนาคต ถึงจะโชว์ badge/ข้อความให้ตรงกับความจริง
+                const nowStr = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
+                const isAvailableNow = room.available_from <= nowStr
+
                 // การ์ดนี้ต้องบอกเวลาที่ "จะได้จริง" ถ้ากด ไม่ใช่แค่เวลาที่ห้อง
                 // ว่างสูงสุด (available_until) — ไม่งั้นการ์ดบอกว่างถึง 21:00
                 // แต่กดแล้วฟอร์มจองจริงให้แค่ 3 ชม. (10:51-13:51) ดูเหมือน
@@ -698,7 +706,11 @@ export default function HomePage() {
                   onClick={() => navigate('/search', {
                     state: {
                       quickRoom: room,
-                      quickStartTime: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+                      // ห้องอาจว่างช่วงบ่ายไม่ใช่ตอนนี้ — ต้องส่งเวลาที่ห้องจะ
+                      // ว่างจริง (available_from) ไม่ใช่นาฬิกา ณ ขณะกดเสมอไป
+                      // ไม่งั้นฟอร์มจะตั้งเวลาเริ่มเป็น "ตอนนี้" ทั้งที่ห้องยังไม่
+                      // ว่าง กดจองแล้วชนกับที่กำลังใช้อยู่ตอนนี้แน่ๆ
+                      quickStartTime: room.available_from,
                       // การ์ดนี้โฆษณาว่าห้องว่างถึง room.available_until — ฟอร์ม
                       // จองต้องตั้ง default duration ให้สอดคล้องกับที่โฆษณาไว้ด้วย
                       // ไม่งั้นจะเห็นเวลาอีกค่าที่ไม่เกี่ยวกันเลย (ค่า default เดิม
@@ -708,19 +720,22 @@ export default function HomePage() {
                   })}
                   className="w-48 shrink-0 rounded-2xl border border-slate-100 bg-white p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
                 >
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> ว่างตอนนี้
+                  <div className={`flex items-center gap-1.5 text-[10px] font-bold ${isAvailableNow ? 'text-emerald-600' : 'text-blue-600'}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${isAvailableNow ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                    {isAvailableNow ? 'ว่างตอนนี้' : `ว่างช่วง ${room.available_from} น.`}
                   </div>
                   <p className="mt-1.5 truncate text-sm font-bold text-slate-900">{room.name}</p>
                   <p className="mt-0.5 truncate text-xs text-slate-500">{room.building_name}</p>
                   {room.available_from && bookUntil && (
                     <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600">
-                      <Clock size={11} /> กดจองได้ถึง {bookUntil} น.
+                      <Clock size={11} />
+                      {isAvailableNow ? `กดจองได้ถึง ${bookUntil} น.` : `จอง ${room.available_from}–${bookUntil} น.`}
                     </p>
                   )}
                   {minutesLeft != null && minutesLeft > 0 && (
                     <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-amber-600">
-                      <Clock size={11} /> ว่างอีก {minutesLeft} นาที
+                      <Clock size={11} />
+                      {isAvailableNow ? `ว่างอีก ${minutesLeft} นาที` : `ว่าง ${room.available_from}–${room.available_until} น.`}
                     </p>
                   )}
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">

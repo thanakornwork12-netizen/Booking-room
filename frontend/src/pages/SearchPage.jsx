@@ -463,6 +463,12 @@ function RoomCard({ room, onClick, isTermMode, selectedEquipments, equipmentPres
             {facilityCount > 0 && (
               <span className="inline-flex items-center gap-1"><Sparkles size={12} className="text-slate-400" /> อุปกรณ์ {facilityCount} รายการ</span>
             )}
+            {/* มีเฉพาะห้องจากฟีด "ห้องว่างวันนี้" — แต่ละห้องว่างช่วงเวลาต่างกัน
+                (บางห้องว่างตอนนี้ บางห้องว่างช่วงบ่าย) ต้องโชว์ตรงนี้ให้เห็นชัด
+                ไม่งั้นดูจากการ์ดเฉยๆ ไม่รู้ว่าห้องไหนว่างตอนไหนบ้าง */}
+            {room.available_from && room.available_until && (
+              <span className="inline-flex items-center gap-1 font-semibold text-blue-600"><Clock size={12} /> {room.available_from}–{room.available_until} น.</span>
+            )}
           </div>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -1038,10 +1044,16 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                             isBest={index === 0}
                             onClick={() => {
                               setSplitPlan(null); setSelectedRoom(room)
-                              // ห้องจากฟีด "ห้องว่างตอนนี้" (ดูทั้งหมด) มี available_until
-                              // ติดมาด้วย — ปรับ duration ให้สอดคล้องกับที่การ์ดโฆษณาไว้
+                              // ห้องจากฟีด "ห้องว่างวันนี้" (ดูทั้งหมด) มี available_from/
+                              // available_until ติดมาด้วย — บางห้องในฟีดนี้ไม่ได้ว่าง
+                              // "ตอนนี้" แต่ว่างช่วงอื่นของวันนี้ ต้องตั้งเวลาเริ่มจองเป็น
+                              // เวลาที่ห้องนั้นว่างจริง ไม่ใช่ startTime ตัวกลางของหน้า
+                              // (ซึ่งตั้งไว้ครั้งเดียวตอนโหลดหน้าเป็น "ตอนนี้" เท่านั้น) ไม่งั้น
+                              // จะพยายามจองห้องที่ยังไม่ว่างให้เริ่ม "ตอนนี้" ซึ่งชนแน่นอน
                               // (ห้องจากผลค้นหาปกติไม่มี field นี้ ฟังก์ชันจะ no-op เอง)
-                              const fitDuration = pickFittingDuration(startTime, room.available_until)
+                              const effectiveStart = room.available_from || startTime
+                              if (room.available_from) setStartTime(room.available_from)
+                              const fitDuration = pickFittingDuration(effectiveStart, room.available_until)
                               if (fitDuration) { setCustomDurationMode(false); setDuration(fitDuration) }
                               setStep(3)
                             }}

@@ -209,7 +209,7 @@ AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
 
 # เวลาปิดทำการอาคาร ใช้เป็นเพดานสูงสุดของ "ห้องว่างถึงกี่โมง" ในฟีดหน้าแรก —
 # ไม่งั้นวันที่ไม่มีการจองอะไรต่อแล้ว ทุกห้องจะโชว์ "ว่างถึงเที่ยงคืน" เหมือน
-# กันหมด ดูไม่สมจริง (ดู RoomViewSet._rooms_free_until)
+# กันหมด ดูไม่สมจริง (ดู RoomViewSet._rooms_next_free_window)
 BUILDING_CLOSING_TIME = time_type(21, 0)
 
 
@@ -671,61 +671,86 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         return enriched + day_suggestions
 
-    def _rooms_free_until(self, room_ids, target_date, now_time):
-        """เวลาที่แต่ละห้อง 'ว่างไปจนถึง' จริงๆ นับจากตอนนี้ — เวลาเริ่มของงานถัดไป
-        (จอง/ซ่อมบำรุง/ล็อกทั้งเทอม) ที่ใกล้ที่สุดวันนี้ หรือเวลาปิดทำการอาคาร
-        ถ้าไม่มีอะไรเหลือแล้ว แต่ละห้องว่างไม่เท่ากัน ไม่ควรเหมาว่าทุกห้องว่าง
-        แค่ 1 ชม.เท่ากันหมด และไม่ควรโชว์ว่าว่างยาวไปถึงเที่ยงคืนทั้งที่อาคาร
-        ปิดไปนานแล้ว (ไม่สมจริง — ดูเหมือนสุ่มมาเพราะทุกห้องจะโชว์เวลาเดียวกัน
-        หมดในวันที่ไม่มีการจองอะไรต่อแล้ว)
+    def _rooms_next_free_window(self, room_ids, target_date, now_time):
+        """ช่วงเวลาที่แต่ละห้อง "ว่างถัดไป" ของวันนี้ นับจากตอนนี้ — ถ้าห้องว่าง
+        อยู่แล้วก็คือช่วงว่างปัจจุบัน (เริ่มจากตอนนี้) ถ้ากำลังถูกใช้งานอยู่ก็หา
+        ว่าจะว่างตอนไหน แล้วว่างไปจนถึงงานถัดไป (จอง/ซ่อมบำรุง/คาบเรียน) หรือ
+        เวลาปิดอาคาร ห้องที่ถูกจองรวดจนไม่มีช่วงว่างเหลือเลยก่อนปิดจะได้ None
+        — ให้ caller กรองห้องนั้นออกจากฟีด ไม่ใช่ตัดห้องที่กำลังไม่ว่าง ณ ขณะนี้
+        ทิ้งไปเฉยๆ (ห้องที่ไม่ว่างตอนนี้แต่จะว่างช่วงบ่ายก็ควรติดฟีดด้วย —
+        ทำให้แต่ละห้องในฟีดโชว์ช่วงเวลาต่างกันจริง แทนที่จะเหลือแต่ห้องที่ว่าง
+        ตอนนี้แล้วไปกองที่ "ว่างถึงปิดอาคาร" เวลาเดียวกันหมดทุกใบ)
 
         คำนวณทีเดียวหลายห้อง (3 query รวม แทนที่จะเป็น 3 query ต่อห้อง — กัน N+1
-        ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: time}"""
-        # ถ้าตอนนี้ก็ปาเข้าไปหลังเวลาปิดทำการแล้ว ไม่ควรโชว์ "ว่างถึง 21:00"
-        # ที่เป็นเวลาในอดีต (ก่อนหน้า now_time) จึงใช้เวลาไหนช้ากว่าระหว่าง
-        # now_time กับเวลาปิดทำการแทน (กลายเป็นช่วงว่าง 0 นาทีในกรณีนั้น)
+        ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: (from_time, until_time) | None}"""
         day_end = max(BUILDING_CLOSING_TIME, now_time)
-        result = {rid: day_end for rid in room_ids}
-
-        def apply_earliest(rows, extract_time):
-            for room_id, start_time in rows:
-                t = extract_time(start_time)
-                if t < result[room_id]:
-                    result[room_id] = t
+        busy = {rid: [] for rid in room_ids}
 
         booking_rows = Booking.objects.filter(
             room_id__in=room_ids, status__in=['pending', 'approved', 'checked_in'],
-            start_time__date=target_date, start_time__time__gt=now_time,
-        ).values_list('room_id', 'start_time')
-        apply_earliest(booking_rows, lambda dt: timezone.localtime(dt).time())
+            start_time__date=target_date,
+        ).values_list('room_id', 'start_time', 'end_time')
+        for room_id, s, e in booking_rows:
+            busy[room_id].append((timezone.localtime(s).time(), timezone.localtime(e).time()))
 
         maint_rows = MaintenanceBlock.objects.filter(
             room_id__in=room_ids, status__in=['scheduled', 'active'],
-            start_time__date=target_date, start_time__time__gt=now_time,
-        ).values_list('room_id', 'start_time')
-        apply_earliest(maint_rows, lambda dt: timezone.localtime(dt).time())
+            start_time__date=target_date,
+        ).values_list('room_id', 'start_time', 'end_time')
+        for room_id, s, e in maint_rows:
+            busy[room_id].append((timezone.localtime(s).time(), timezone.localtime(e).time()))
 
         target_dow = target_date.weekday()
         term_rows = TermBooking.objects.filter(
             room_id__in=room_ids, day_of_week=target_dow, status='active',
             term_start__lte=target_date, term_end__gte=target_date,
-            start_time__gt=now_time,
-        ).values_list('room_id', 'start_time')
-        apply_earliest(term_rows, lambda dt: dt)
+        ).values_list('room_id', 'start_time', 'end_time')
+        for room_id, s, e in term_rows:
+            busy[room_id].append((s, e))
+
+        result = {}
+        for room_id in room_ids:
+            # รวมช่วงที่ทับ/ต่อกันเป็นช่วงเดียว กันกรณีจอง+ซ่อมบำรุงชนกันแล้ว
+            # นับเป็นสองช่องว่างปลอมๆ คั่นกลาง
+            merged = []
+            for s, e in sorted(busy[room_id]):
+                if merged and s <= merged[-1][1]:
+                    if e > merged[-1][1]:
+                        merged[-1] = (merged[-1][0], e)
+                else:
+                    merged.append((s, e))
+
+            # เดินไล่จาก "ตอนนี้" ผ่านช่วงที่ถูกจองแต่ละช่วง จนเจอช่องว่างแรก
+            cursor = now_time
+            window = None
+            for s, e in merged:
+                if e <= cursor:
+                    continue  # ช่วงนี้ผ่านไปแล้ว ไม่เกี่ยวกับ "ถัดจากนี้"
+                if s > cursor:
+                    window = (cursor, min(s, day_end))
+                    break
+                cursor = e  # ตอนนี้ตกอยู่กลางช่วงนี้พอดี ข้ามไปดูช่วงถัดไป
+            else:
+                if cursor < day_end:
+                    window = (cursor, day_end)
+
+            result[room_id] = window if (window and window[0] < window[1]) else None
 
         return result
 
     @action(detail=False, methods=['get'], url_path='today-feed')
     def today_feed(self, request):
-        """ห้องว่าง ณ ตอนนี้ สำหรับฟีดแนะนำในหน้าแรก — จำกัดแค่ห้องที่มีข้อมูล AI
+        """ห้องว่างวันนี้ สำหรับฟีดแนะนำในหน้าแรก — จำกัดแค่ห้องที่มีข้อมูล AI
         จริงเหมือนเส้นทางจองอื่นๆ (ดู AI_FORECAST_ROOM_IDS)
 
-        แต่ละห้องโชว์เวลาที่ว่างจริงของตัวเอง (ไม่ใช่ล็อกไว้ 1 ชม.เท่ากันหมด) — บาง
-        ห้องว่างแค่ 20 นาที บางห้องว่างยาว 3 ชม. ก็ควรเห็นต่างกัน กันคนเข้าใจผิดว่า
-        ห้องที่จริงว่างนานกว่านั้นมาก ดันโชว์แค่ 1 ชม.
+        แต่ละห้องโชว์ "ช่วงว่างถัดไปของวันนี้" ของตัวเอง ไม่ใช่แค่ห้องที่ว่าง ณ
+        วินาทีนี้ — ห้องที่กำลังถูกใช้อยู่ตอนนี้แต่จะว่างช่วงบ่ายก็ติดฟีดด้วย
+        (available_from เป็นเวลาที่จะว่างจริง ไม่ใช่ตอนนี้เสมอไป) ไม่งั้นฟีดจะมี
+        แต่ห้องที่ว่างตอนนี้ ซึ่งพอไม่มีอะไรจองต่อจะไปกองที่ "ว่างถึงเวลาปิด
+        อาคาร" เวลาเดียวกันหมดทุกใบ ดูเหมือนข้อมูลซ้ำทั้งที่ตัวเลขถูกต้องอยู่แล้ว
 
         ?limit=N (default 5) — หน้าแรกใช้ค่า default โชว์ตัวอย่างสั้นๆ ส่วน "ดูทั้งหมด"
-        ส่ง limit สูงๆ มาแทน (หรือ 0 = ไม่จำกัด) เพื่อเห็นห้องว่างตอนนี้ทั้งหมดจริง
+        ส่ง limit สูงๆ มาแทน (หรือ 0 = ไม่จำกัด) เพื่อเห็นห้องว่างวันนี้ทั้งหมดจริง
         """
         now = timezone.localtime()
         today = now.date()
@@ -736,28 +761,33 @@ class RoomViewSet(viewsets.ModelViewSet):
         except (TypeError, ValueError):
             limit = 5
 
-        # เช็คว่างเฉพาะ ณ ตอนนี้ (หน้าต่างแคบๆ 1 นาที) ไม่บังคับว่าต้องว่างยาวเป็น
-        # ชม. — ระยะที่ว่างจริงของแต่ละห้องคำนวณแยกด้านล่างด้วย _room_free_until
-        instant_end = (datetime.combine(today, now_time) + timedelta(minutes=1)).time()
-        blocked = self._blocked_room_ids(today, now_time, instant_end)
-        qs = (
-            Room.objects.filter(
+        rooms_by_id = {
+            r.id: r for r in Room.objects.filter(
                 is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
-            ).exclude(id__in=blocked).select_related('building')
-            .prefetch_related('room_facilities__facility', 'forecasts')
-            .order_by('capacity')
-        )
-        rooms = list(qs) if limit <= 0 else list(qs[:limit])
+            ).select_related('building').prefetch_related('room_facilities__facility', 'forecasts')
+        }
 
-        enriched = self._enrich_rooms(rooms, today, now_time, instant_end, 'dynamic', request)
-        # _enrich_rooms ใช้ start_time/end_time แค่กรอง forecast ข้างในเฉยๆ ไม่ได้
-        # แนบกลับมาในผลลัพธ์ — ฟีดนี้ต้องโชว์ช่วงเวลาที่ว่างจริงในการ์ดด้วย
-        # (จับคู่ด้วย room id เพราะ _enrich_rooms เรียง result ใหม่ตาม demand
-        # level ไม่ใช่ลำดับเดิมของ rooms อีกแล้ว)
-        free_until_map = self._rooms_free_until([item['id'] for item in enriched], today, now_time)
-        for item in enriched:
-            item['available_from'] = now_time.strftime('%H:%M')
-            item['available_until'] = free_until_map[item['id']].strftime('%H:%M')
+        windows = self._rooms_next_free_window(list(rooms_by_id.keys()), today, now_time)
+        # ห้องที่ไม่มีช่วงว่างเหลือเลยวันนี้ (โดนจองรวดจนปิดอาคาร) ไม่แนะนำ —
+        # เรียงห้องที่ว่างเร็วสุดขึ้นก่อน ให้ฟีดอ่านเป็นไทม์ไลน์ของวันได้เลย
+        available_ids = sorted(
+            (rid for rid, w in windows.items() if w is not None),
+            key=lambda rid: windows[rid][0],
+        )
+        if limit > 0:
+            available_ids = available_ids[:limit]
+
+        # เรียก _enrich_rooms ทีละห้อง เพราะแต่ละห้องมีช่วงเวลาที่ต้องใช้กรอง
+        # forecast ไม่เท่ากัน (ห้องนี้ต้องเช็ค demand ช่วงบ่าย อีกห้องช่วงเย็น)
+        # — ฟีดมีแค่ไม่กี่ห้อง (AI_FORECAST_ROOM_IDS) ไม่ต้องกังวลเรื่อง N+1
+        enriched = []
+        for rid in available_ids:
+            w_from, w_until = windows[rid]
+            item = self._enrich_rooms([rooms_by_id[rid]], today, w_from, w_until, 'dynamic', request)[0]
+            item['available_from'] = w_from.strftime('%H:%M')
+            item['available_until'] = w_until.strftime('%H:%M')
+            enriched.append(item)
+
         return Response(enriched)
 
     @action(detail=False, methods=['get'], url_path='usage-stats', permission_classes=[IsAdminOrStaff])
