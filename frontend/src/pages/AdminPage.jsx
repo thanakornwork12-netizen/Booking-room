@@ -412,11 +412,18 @@ function BookingDetailModal({ booking, onClose, onCancel, onApprove, onReject, f
                 className="flex-1 border-2 border-red-100 text-red-500 hover:bg-red-50 py-3 rounded-2xl font-bold text-sm transition-colors">
                 ปฏิเสธ
               </button>
-              <button onClick={() => onApprove(booking.id)}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-bold text-sm transition-colors">
-                อนุมัติ
-              </button>
+              {/* เวลาที่จองผ่านไปแล้วอนุมัติไม่ได้ (backend เช็คเช่นกัน) — ปฏิเสธ
+                  ยังทำได้ปกติเพื่อเคลียร์รายการที่ค้าง pending อยู่ */}
+              {!isPast(booking.end_time) && (
+                <button onClick={() => onApprove(booking.id)}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-bold text-sm transition-colors">
+                  อนุมัติ
+                </button>
+              )}
             </div>
+          )}
+          {booking.status === 'pending' && isPast(booking.end_time) && (
+            <p className="text-center text-xs text-amber-600 mt-2">เวลาที่จองผ่านไปแล้ว ไม่สามารถอนุมัติได้</p>
           )}
           {booking.status === 'approved' && !isPast(booking.end_time) && (
             <button onClick={() => onCancel(booking.id)}
@@ -1446,10 +1453,12 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
                               className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl">
                               <X size={11} />ปฏิเสธ
                             </button>
-                            <button onClick={e=>{e.stopPropagation();handleApprove(b.id)}}
-                              className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-xl">
-                              <Check size={11} />อนุมัติ
-                            </button>
+                            {!isPast(b.end_time) && (
+                              <button onClick={e=>{e.stopPropagation();handleApprove(b.id)}}
+                                className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-xl">
+                                <Check size={11} />อนุมัติ
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <button onClick={e=>{e.stopPropagation();handleCancel(b.id)}}
@@ -1680,10 +1689,12 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                       </div>
                       {b.status === 'pending' ? (
                         <div className="flex flex-col gap-1.5 flex-shrink-0">
-                          <button onClick={e=>{e.stopPropagation();handleApprove(b.id)}}
-                            className="text-xs text-white bg-emerald-600 px-2.5 py-1.5 rounded-xl flex items-center gap-1">
-                            <Check size={11} />อนุมัติ
-                          </button>
+                          {!isPast(b.end_time) && (
+                            <button onClick={e=>{e.stopPropagation();handleApprove(b.id)}}
+                              className="text-xs text-white bg-emerald-600 px-2.5 py-1.5 rounded-xl flex items-center gap-1">
+                              <Check size={11} />อนุมัติ
+                            </button>
+                          )}
                           <button onClick={e=>{e.stopPropagation();handleReject(b.id)}}
                             className="text-xs text-red-400 border border-red-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1">
                             <X size={11} />ปฏิเสธ

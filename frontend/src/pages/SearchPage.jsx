@@ -1421,7 +1421,17 @@ export default function SearchPage({ embedded = false }) {
     setTermName(buildTermName(yearBE, termNum))
   }
 
-  useEffect(() => { if (bookingType === 'term') applyAcademicTerm(getDefaultAcademicYearBE(), getDefaultTermNumber()) }, [bookingType])
+  // เติมช่วงเทอมปัจจุบันให้อัตโนมัติแค่ "ครั้งแรก" ที่ผู้ใช้เข้าโหมดทั้งเทอม
+  // เท่านั้น (ให้มีค่าเริ่มต้นแทนที่จะเป็นช่องว่าง) — ถ้าปล่อยให้ effect นี้ยิง
+  // ทุกครั้งที่ bookingType เปลี่ยนกลับมาเป็น 'term' จะทับวันที่ที่ผู้ใช้เพิ่งตั้ง
+  // เองผ่านปฏิทิน/preset ทิ้งไปเงียบๆ ทุกครั้งที่สลับไป "รายวัน" แล้วสลับกลับมา
+  const appliedDefaultTermRef = useRef(false)
+  useEffect(() => {
+    if (bookingType === 'term' && !appliedDefaultTermRef.current) {
+      applyAcademicTerm(getDefaultAcademicYearBE(), getDefaultTermNumber())
+      appliedDefaultTermRef.current = true
+    }
+  }, [bookingType])
 
   const fetchSimilarRooms = async (basePayload) => {
     if (bookingType === 'daily') {

@@ -19,7 +19,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from functools import partial
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect, render, get_object_or_404
 from .ldap_auth import authenticate_ldap
 from .models import (
     User, Building, Room, Facility, RoomFacility,
@@ -681,24 +681,38 @@ class RoomViewSet(viewsets.ModelViewSet):
         ทำให้แต่ละห้องในฟีดโชว์ช่วงเวลาต่างกันจริง แทนที่จะเหลือแต่ห้องที่ว่าง
         ตอนนี้แล้วไปกองที่ "ว่างถึงปิดอาคาร" เวลาเดียวกันหมดทุกใบ)
 
+        คำนวณด้วย datetime เต็ม (ไม่ใช่แค่ .time()) ตลอดทั้งฟังก์ชัน แล้วค่อยตัด
+        กลับเป็น time-of-day ตอน return — เดิมตัดเหลือ .time() ตั้งแต่ query
+        (และกรองแค่ start_time__date=target_date) ทำให้เหตุการณ์ที่เริ่มเมื่อวาน
+        แต่ยังไม่จบ (เช่น ซ่อมบำรุงข้ามคืน) หลุดจากการคำนวณไปเลย และเหตุการณ์ที่
+        เริ่มวันนี้แต่จบข้ามเที่ยงคืนไปวันถัดไปจะได้ (start, end) ที่ end < start
+        กลับหัวกลับหาง ทำให้ merge/cursor logic คำนวณผิด (ห้องที่จริงไม่ว่างข้าม
+        คืนกลับโชว์ว่างยาวไปจนปิดอาคารเฉยๆ)
+
         คำนวณทีเดียวหลายห้อง (3 query รวม แทนที่จะเป็น 3 query ต่อห้อง — กัน N+1
         ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: (from_time, until_time) | None}"""
-        day_end = max(BUILDING_CLOSING_TIME, now_time)
+        now_dt = timezone.localtime()
+        day_start_dt = timezone.make_aware(datetime.combine(target_date, time_type(0, 0)))
+        day_end_dt = timezone.make_aware(datetime.combine(target_date, max(BUILDING_CLOSING_TIME, now_time)))
+        next_day_start_dt = day_start_dt + timedelta(days=1)
+
         busy = {rid: [] for rid in room_ids}
 
+        # ทับซ้อนกับ "วันนี้ทั้งวัน" ไม่ใช่แค่เริ่มวันนี้ — ครอบทั้งเหตุการณ์ที่
+        # เริ่มเมื่อวานแต่ยังไม่จบ และที่เริ่มวันนี้แต่จบวันถัดไป
         booking_rows = Booking.objects.filter(
             room_id__in=room_ids, status__in=['pending', 'approved', 'checked_in'],
-            start_time__date=target_date,
+            start_time__lt=next_day_start_dt, end_time__gt=day_start_dt,
         ).values_list('room_id', 'start_time', 'end_time')
         for room_id, s, e in booking_rows:
-            busy[room_id].append((timezone.localtime(s).time(), timezone.localtime(e).time()))
+            busy[room_id].append((s, e))
 
         maint_rows = MaintenanceBlock.objects.filter(
             room_id__in=room_ids, status__in=['scheduled', 'active'],
-            start_time__date=target_date,
+            start_time__lt=next_day_start_dt, end_time__gt=day_start_dt,
         ).values_list('room_id', 'start_time', 'end_time')
         for room_id, s, e in maint_rows:
-            busy[room_id].append((timezone.localtime(s).time(), timezone.localtime(e).time()))
+            busy[room_id].append((s, e))
 
         target_dow = target_date.weekday()
         term_rows = TermBooking.objects.filter(
@@ -706,7 +720,10 @@ class RoomViewSet(viewsets.ModelViewSet):
             term_start__lte=target_date, term_end__gte=target_date,
         ).values_list('room_id', 'start_time', 'end_time')
         for room_id, s, e in term_rows:
-            busy[room_id].append((s, e))
+            busy[room_id].append((
+                timezone.make_aware(datetime.combine(target_date, s)),
+                timezone.make_aware(datetime.combine(target_date, e)),
+            ))
 
         result = {}
         for room_id in room_ids:
@@ -721,20 +738,23 @@ class RoomViewSet(viewsets.ModelViewSet):
                     merged.append((s, e))
 
             # เดินไล่จาก "ตอนนี้" ผ่านช่วงที่ถูกจองแต่ละช่วง จนเจอช่องว่างแรก
-            cursor = now_time
+            cursor = now_dt
             window = None
             for s, e in merged:
                 if e <= cursor:
                     continue  # ช่วงนี้ผ่านไปแล้ว ไม่เกี่ยวกับ "ถัดจากนี้"
                 if s > cursor:
-                    window = (cursor, min(s, day_end))
+                    window = (cursor, min(s, day_end_dt))
                     break
                 cursor = e  # ตอนนี้ตกอยู่กลางช่วงนี้พอดี ข้ามไปดูช่วงถัดไป
             else:
-                if cursor < day_end:
-                    window = (cursor, day_end)
+                if cursor < day_end_dt:
+                    window = (cursor, day_end_dt)
 
-            result[room_id] = window if (window and window[0] < window[1]) else None
+            if window and window[0] < window[1]:
+                result[room_id] = (timezone.localtime(window[0]).time(), timezone.localtime(window[1]).time())
+            else:
+                result[room_id] = None
 
         return result
 
@@ -1594,52 +1614,62 @@ class BookingViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         if getattr(request.user, 'role', None) not in ['admin', 'staff']:
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
-        booking = self.get_object()
-        if booking.status != 'pending':
-            return Response({'error': 'อนุมัติได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
 
-        old = booking.status
-        booking.status = 'approved'
-        booking.approved_by = request.user
-        booking.save()
-        BookingLog.objects.create(
-            booking=booking, changed_by=request.user,
-            old_status=old, new_status='approved'
-        )
-        Notification.objects.create(
-            user=booking.user, booking=booking,
-            type='booking_approved', title='การจองได้รับการอนุมัติ',
-            message=(f'การจองห้อง {booking.room.name} '
-                     f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
-                     f'ได้รับการอนุมัติแล้ว')
-        )
+        # ล็อกแถว booking ไว้ก่อนเช็ค/เปลี่ยนสถานะ เหมือนที่ perform_create ล็อก
+        # Room — กันแอดมิน 2 คน (หรือดับเบิลคลิก) กด approve/reject บน booking
+        # เดียวกันพร้อมกันแล้วได้ผลลัพธ์ขัดแย้งกัน (อีเมลอนุมัติ+ปฏิเสธซ้อนกัน)
+        with transaction.atomic():
+            booking = get_object_or_404(Booking.objects.select_for_update(), pk=pk)
+            if booking.status != 'pending':
+                return Response({'error': 'อนุมัติได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
+            if booking.end_time <= timezone.now():
+                return Response({'error': 'ไม่สามารถอนุมัติได้ เวลาที่จองผ่านไปแล้ว'}, status=400)
+
+            old = booking.status
+            booking.status = 'approved'
+            booking.approved_by = request.user
+            booking.save()
+            BookingLog.objects.create(
+                booking=booking, changed_by=request.user,
+                old_status=old, new_status='approved'
+            )
+            Notification.objects.create(
+                user=booking.user, booking=booking,
+                type='booking_approved', title='การจองได้รับการอนุมัติ',
+                message=(f'การจองห้อง {booking.room.name} '
+                         f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                         f'ได้รับการอนุมัติแล้ว')
+            )
         return Response({'message': 'อนุมัติการจองแล้ว'})
 
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
         if getattr(request.user, 'role', None) not in ['admin', 'staff']:
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
-        booking = self.get_object()
-        if booking.status != 'pending':
-            return Response({'error': 'ปฏิเสธได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
 
         reason = (request.data.get('reason') or '').strip()
-        old = booking.status
-        booking.status = 'rejected'
-        booking.approved_by = request.user
-        booking.reject_reason = reason
-        booking.save()
-        BookingLog.objects.create(
-            booking=booking, changed_by=request.user,
-            old_status=old, new_status='rejected', remark=reason
-        )
-        Notification.objects.create(
-            user=booking.user, booking=booking,
-            type='booking_rejected', title='การจองถูกปฏิเสธ',
-            message=(f'การจองห้อง {booking.room.name} '
-                     f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
-                     f'ถูกปฏิเสธ' + (f' เหตุผล: {reason}' if reason else ''))
-        )
+        # ล็อกแถว booking เหมือนกับ approve() ด้านบน — ดู comment ที่นั่น
+        with transaction.atomic():
+            booking = get_object_or_404(Booking.objects.select_for_update(), pk=pk)
+            if booking.status != 'pending':
+                return Response({'error': 'ปฏิเสธได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
+
+            old = booking.status
+            booking.status = 'rejected'
+            booking.approved_by = request.user
+            booking.reject_reason = reason
+            booking.save()
+            BookingLog.objects.create(
+                booking=booking, changed_by=request.user,
+                old_status=old, new_status='rejected', remark=reason
+            )
+            Notification.objects.create(
+                user=booking.user, booking=booking,
+                type='booking_rejected', title='การจองถูกปฏิเสธ',
+                message=(f'การจองห้อง {booking.room.name} '
+                         f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                         f'ถูกปฏิเสธ' + (f' เหตุผล: {reason}' if reason else ''))
+            )
         return Response({'message': 'ปฏิเสธการจองแล้ว'})
 
     @action(detail=True, methods=['post'])

@@ -6,6 +6,7 @@ from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.core.mail import send_mail
 from django.conf import settings
+from django.utils.html import escape
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 import pytz
@@ -832,10 +833,13 @@ def send_booking_rejected_email(instance):
 ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
 
+    # escape ก่อนฝังใน HTML — reason เป็นข้อความที่แอดมินพิมพ์เอง (เชื่อไม่ได้)
+    # ถูกส่งเป็นอีเมล HTML ไปหาอีกคน (ผู้จอง) ไม่ escape จะโดน HTML/script
+    # injection ผ่านอีเมลได้ (plain_text ด้านบนไม่ต้อง escape เพราะไม่ใช่ HTML)
     reason_html = f'''
       <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:16px;margin:0 0 24px;">
         <p style="margin:0 0 4px;font-size:13px;color:#991b1b;font-weight:bold;">เหตุผลที่ปฏิเสธ</p>
-        <p style="margin:0;font-size:14px;color:#7f1d1d;">{reason}</p>
+        <p style="margin:0;font-size:14px;color:#7f1d1d;">{escape(reason)}</p>
       </div>
     ''' if reason else ''
 
