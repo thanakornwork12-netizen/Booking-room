@@ -1366,13 +1366,16 @@ export default function SearchPage({ embedded = false }) {
       // มาจากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ตั้งเวลาเริ่มให้ตรงกับตอนนี้แทนที่
       // จะปล่อยว่าง (ค่าเริ่มต้นของ startTime คือ '' ซึ่งจองต่อไม่ได้จนกว่าจะกรอกเอง)
       if (searchState.quickStartTime) setStartTime(searchState.quickStartTime)
-      const fitDuration = pickFittingDuration(searchState.quickStartTime, searchState.quickAvailableUntil)
+      // การ์ดในฟีดหน้าแรกสุ่ม duration ไว้แสดงแล้ว (quickDuration) — ต้องใช้ค่า
+      // เดียวกันตรงนี้ ไม่งั้นตัวเลขที่โฆษณาไว้ในการ์ดจะไม่ตรงกับที่ตั้งจริงหลังกด
+      // (คำนวณ pickFittingDuration ใหม่จะได้ค่ายาวสุดที่พอดีเสมอ ไม่ใช่ค่าที่สุ่มไว้)
+      const fitDuration = searchState.quickDuration ?? pickFittingDuration(searchState.quickStartTime, searchState.quickAvailableUntil)
       if (fitDuration) setDuration(fitDuration)
     }
 
     applyQuickRoom()
     return () => { active = false }
-  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime, searchState.quickAvailableUntil])
+  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime, searchState.quickAvailableUntil, searchState.quickDuration])
 
   // "ดูทั้งหมด" จากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ฟีดนั้นจำกัดแค่ 5 ห้องเป็น
   // ค่า default (today-feed backend) ส่วนนี้เรียก endpoint เดียวกันแบบไม่จำกัด

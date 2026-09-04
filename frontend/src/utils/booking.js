@@ -27,11 +27,25 @@ export const minutesBetween = (startTime, endTime) => {
 // เวลาที่จองไม่ได้จริง (กดแล้วจะชนกับการจองถัดไปที่ backend ปฏิเสธ) — ผู้เรียก
 // ต้องจัดการกรณี null เอง (เช่น ไม่โชว์ปุ่มจองด่วน หรือโชว์ available_until ตรงๆ
 // แทนโดยไม่สัญญาว่าจองได้เต็มช่วงนั้น)
-export const pickFittingDuration = (startTime, availableUntil) => {
-  if (!startTime || !availableUntil) return null
+const fittingHours = (startTime, availableUntil) => {
+  if (!startTime || !availableUntil) return []
   const [sh, sm] = startTime.split(':').map(Number)
   const [uh, um] = availableUntil.split(':').map(Number)
   const hoursFree = (uh * 60 + um - (sh * 60 + sm)) / 60
-  const fitting = DURATIONS.map(d => d.hours).filter(h => h <= hoursFree)
+  return DURATIONS.map(d => d.hours).filter(h => h <= hoursFree)
+}
+
+export const pickFittingDuration = (startTime, availableUntil) => {
+  const fitting = fittingHours(startTime, availableUntil)
   return fitting.length > 0 ? Math.max(...fitting) : null
+}
+
+// ใช้กับฟีด "ห้องว่างวันนี้" หน้าแรกโดยเฉพาะ — เลือก preset แบบสุ่มจากที่พอดี
+// แทนที่จะเอายาวสุดเสมอ (pickFittingDuration) เพราะห้องที่ว่างยาวพอกันหลายห้อง
+// จะโชว์ "จองได้ 3 ชม." เหมือนกันหมดทุกใบ ดูซ้ำ ทั้งที่จริงกดจองสั้นกว่านั้นก็ได้
+// เหมือนกัน — เรียกครั้งเดียวตอนโหลดข้อมูล (ไม่ใช่ในระหว่าง render) แล้วเก็บผลไว้
+// ไม่งั้นตัวเลขจะสุ่มใหม่ทุกครั้งที่ re-render ดูเหมือนกระพริบเปลี่ยนไปมา
+export const pickRandomFittingDuration = (startTime, availableUntil) => {
+  const fitting = fittingHours(startTime, availableUntil)
+  return fitting.length > 0 ? fitting[Math.floor(Math.random() * fitting.length)] : null
 }

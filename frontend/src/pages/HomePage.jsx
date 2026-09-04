@@ -6,7 +6,7 @@ import {
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
-import { addHours, pickFittingDuration, minutesBetween } from '../utils/booking'
+import { addHours, pickRandomFittingDuration, minutesBetween } from '../utils/booking'
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -511,7 +511,13 @@ export default function HomePage() {
       setUser(p.data)
       setBookings(b.data.results || b.data || [])
       setTermBookings(Array.isArray(t.data) ? t.data : (t.data.results || []))
-      setTodayFeed(Array.isArray(feed.data) ? feed.data : [])
+      // สุ่มระยะเวลาแนะนำต่อห้องแค่ครั้งเดียวตอนโหลด ไม่ใช่ตอน render การ์ด —
+      // ดู pickRandomFittingDuration ใน utils/booking.js ว่าทำไมต้องสุ่มตรงนี้
+      const feedRooms = (Array.isArray(feed.data) ? feed.data : []).map(room => ({
+        ...room,
+        pickedHours: pickRandomFittingDuration(room.available_from, room.available_until),
+      }))
+      setTodayFeed(feedRooms)
       if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
     } catch (err) {
       console.error("Load Data Error", err)
@@ -706,7 +712,10 @@ export default function HomePage() {
                 // ว่างสูงสุด (available_until) — ไม่งั้นการ์ดบอกว่างถึง 21:00
                 // แต่กดแล้วฟอร์มจองจริงให้แค่ 3 ชม. (10:51-13:51) ดูเหมือน
                 // การ์ดโกหก ต้องคำนวณ duration แบบเดียวกับตอนกดจริงตั้งแต่ตรงนี้
-                const fitHours = pickFittingDuration(room.available_from, room.available_until)
+                // ค่านี้ถูกสุ่มไว้ครั้งเดียวตอนโหลดข้อมูลแล้ว (room.pickedHours จาก
+                // load()) ไม่ใช่เอายาวสุดที่พอดีเสมอ กันไม่ให้ทุกห้องที่ว่างยาว
+                // พอกันโชว์ "3 ชม." เหมือนกันหมดทุกใบ
+                const fitHours = room.pickedHours
                 const bookUntil = fitHours ? addHours(room.available_from, fitHours) : null
                 // ห้องว่างไม่ถึง 1 ชม. (preset สั้นสุดที่ฟอร์มมีให้) — ห้ามสัญญาว่า
                 // "กดจองได้ถึง X" เพราะ X นั้นจะเกินเวลาที่ห้องว่างจริง กดแล้วจะชน
@@ -728,6 +737,10 @@ export default function HomePage() {
                       // ไม่งั้นจะเห็นเวลาอีกค่าที่ไม่เกี่ยวกันเลย (ค่า default เดิม
                       // ตายตัว 1 ชม. ไม่ได้อิงกับ available_until เลย)
                       quickAvailableUntil: room.available_until,
+                      // ส่ง duration ที่สุ่มไว้แล้วไปด้วย ไม่งั้นหน้าค้นหาจะคำนวณ
+                      // ยาวสุดที่พอดีใหม่เอง (pickFittingDuration) ทำให้ตัวเลขที่
+                      // โฆษณาไว้ในการ์ดกับที่ได้จริงหลังกดไม่ตรงกัน
+                      quickDuration: room.pickedHours,
                     },
                   })}
                   className="w-48 shrink-0 rounded-2xl border border-slate-100 bg-white p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
