@@ -1,14 +1,8 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.utils import timezone
 from datetime import timedelta
-import subprocess
 import sys
 import os
-
-
-def retrain_model():
-    print("🔁 Retraining AI model...")
-    subprocess.run([sys.executable, "ml/saved/forecast.py", "--retrain"])
 
 
 def send_checkin_reminders():
@@ -131,9 +125,6 @@ def start():
         return
 
     scheduler = BackgroundScheduler()
-
-    # เทรน AI ทุกวันตี 3
-    scheduler.add_job(retrain_model, 'cron', hour=3)
 
     # แจ้งเตือน Check-in ก่อน 15 นาที (เช็คทุก 1 นาที)
     scheduler.add_job(send_checkin_reminders, 'interval', minutes=1)
