@@ -516,7 +516,10 @@ class BookingLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = BookingLog
-        fields = ['id', 'old_status', 'new_status', 'changed_by_name', 'changed_at']
+        # remark เก็บเหตุผลที่แอดมินปฏิเสธ (ดู BookingViewSet.reject) — ถ้าไม่ส่ง
+        # กลับมาด้วย หน้าประวัติจะเห็นแค่ว่าสถานะเปลี่ยนเป็น 'rejected' แต่ไม่รู้
+        # เหตุผล ทั้งที่บันทึกไว้แล้ว
+        fields = ['id', 'old_status', 'new_status', 'changed_by_name', 'changed_at', 'remark']
 
 
 # ============================================================

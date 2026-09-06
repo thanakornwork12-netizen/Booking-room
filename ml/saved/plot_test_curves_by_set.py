@@ -66,6 +66,35 @@ def to_rdf(df, room_id):
     return out
 
 
+def actual_boost_rounds(model, winner, set_name):
+    """จำนวนรอบ boosting ที่โมเดล "มีอยู่จริง" ไม่ใช่ค่าที่ตั้งไว้ใน PARAM_SETS
+
+    forecast.py เทรนด้วย early stopping ทั้งสองโมเดล โมเดลจึงมักมีต้นไม้น้อย
+    กว่า n_estimators ที่ตั้งไว้ — ถ้าไล่ predict ตามค่า config จะขอเกินจำนวน
+    ต้นไม้จริง ซึ่ง XGBoost จะโยน "Check failed: end <= model.BoostedRounds()"
+    ทำให้สคริปต์ตายทั้งตัว (LightGBM ไม่ตาย มันคลิปให้เงียบๆ แต่กราฟช่วงท้าย
+    จะเป็นเส้นแบนซ้ำค่าเดิม ซึ่งก็ไม่ถูกอยู่ดี)
+
+    LGBMRegressor มี n_estimators_ ที่สะท้อนจำนวนจริงหลัง early stopping แล้ว
+    ส่วน XGBRegressor ไม่มี ต้องถามจาก booster โดยตรง
+    """
+    if winner == 'lightgbm':
+        n = getattr(model, 'n_estimators_', None)
+        if n:
+            return int(n)
+        booster = getattr(model, 'booster_', None)
+        if booster is not None:
+            return int(booster.num_trees())
+    else:
+        try:
+            return int(model.get_booster().num_boosted_rounds())
+        except Exception:
+            best = getattr(model, 'best_iteration', None)
+            if best is not None:
+                return int(best) + 1
+    return int(PARAM_SETS[set_name][f'{"lgb" if winner == "lightgbm" else "xgb"}_estimators'])
+
+
 def room_test_curve(code, room_id, set_name, train_all, test_all):
     meta_path = os.path.join(SAVED_DIR, f'saved_meta_{set_name}_excel_split', f'{room_id}_meta.pkl')
     if not os.path.exists(meta_path):
@@ -103,10 +132,9 @@ def room_test_curve(code, room_id, set_name, train_all, test_all):
     term_df.index = daily_clipped.index
     feat_df = F.build_features(daily_clipped, term_df, use_log=use_log).dropna()
 
-    calib_len = max(1, int(round(n_train_days * 0.125)))
-    train_end = max(n_train_days - calib_len, F.MIN_TRAIN_ROWS)
+    # สคริปต์นี้ใช้แค่ขอบของ test set (calib_end) — ไม่ต้องคำนวณขอบ train
+    # (ต่างจาก test_from_excel.py ที่ยกโค้ดส่วนนี้มา ซึ่งใช้ train_end จริง)
     calib_end = min(n_train_days, len(feat_df) - 1)
-    train_end = min(train_end, calib_end)
 
     X = feat_df.drop(columns='y')
     y = feat_df['y'].values
@@ -118,7 +146,7 @@ def room_test_curve(code, room_id, set_name, train_all, test_all):
     feat_names = getattr(model, 'feature_name_', None) or getattr(model, 'feature_names_in_', None)
     X_te_sel = X_te[list(feat_names)] if feat_names is not None else X_te
 
-    n_rounds = model.n_estimators_ if hasattr(model, 'n_estimators_') else PARAM_SETS[set_name][f'{"lgb" if winner == "lightgbm" else "xgb"}_estimators']
+    n_rounds = actual_boost_rounds(model, winner, set_name)
     y_eval = np.expm1(y_te) if use_log else y_te.copy()
 
     accs, losses = [], []

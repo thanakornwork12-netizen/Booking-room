@@ -602,6 +602,7 @@ function GuideModal({ open, onClose, onGoBooking }) {
 }
 
 const NOTIF_TYPE_ICON = {
+  booking_pending:   '⏳',
   booking_approved:  '✅',
   booking_rejected:  '❌',
   booking_reminder:  '⏰',
