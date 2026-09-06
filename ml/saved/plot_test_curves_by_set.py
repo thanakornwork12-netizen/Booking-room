@@ -92,6 +92,10 @@ def actual_boost_rounds(model, winner, set_name):
             best = getattr(model, 'best_iteration', None)
             if best is not None:
                 return int(best) + 1
+        # ถามจากโมเดลไม่ได้เลย — คืน None ให้ผู้เรียกข้ามห้องนี้ไป ห้ามคืนค่าจาก
+        # PARAM_SETS เพราะนั่นคือค่าที่ทำให้ XGBoost crash ตั้งแต่แรก (ขอ predict
+        # เกินจำนวนต้นไม้ที่มีจริง) การข้ามหนึ่งห้องดีกว่าทำทั้งสคริปต์ตาย
+        return None
     return int(PARAM_SETS[set_name][f'{"lgb" if winner == "lightgbm" else "xgb"}_estimators'])
 
 
@@ -147,6 +151,9 @@ def room_test_curve(code, room_id, set_name, train_all, test_all):
     X_te_sel = X_te[list(feat_names)] if feat_names is not None else X_te
 
     n_rounds = actual_boost_rounds(model, winner, set_name)
+    if not n_rounds:
+        print(f'   ! ข้าม {code} ({set_name}): หาจำนวนรอบ boosting ของโมเดลไม่ได้')
+        return None
     y_eval = np.expm1(y_te) if use_log else y_te.copy()
 
     accs, losses = [], []

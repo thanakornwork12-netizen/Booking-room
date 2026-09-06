@@ -12,7 +12,7 @@ _recurring_slot_conflicts) ทำให้การจองทั้งเท�
 
 ใช้งาน:
     python manage.py audit_term_dow                 # ดูอย่างเดียว (dry-run)
-    python manage.py audit_term_dow --apply         # แก้จริง
+    python manage.py audit_term_dow --apply --ids 3,7   # แก้จริง (ต้องระบุ --ids)
     python manage.py audit_term_dow --apply --ids 3,7,9   # แก้เฉพาะ id ที่ระบุ
 
 **อ่านผล dry-run ก่อนเสมอ** — รายการที่ถูกสร้างผ่าน Django admin หรือยิง API
@@ -22,7 +22,7 @@ _recurring_slot_conflicts) ทำให้การจองทั้งเท�
 """
 import re
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from booking.models import TermBooking
@@ -41,7 +41,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--apply', action='store_true',
-                            help='แก้ข้อมูลจริง (ค่าเริ่มต้นคือดูอย่างเดียว)')
+                            help='แก้ข้อมูลจริง — ต้องใช้คู่กับ --ids เสมอ (ค่าเริ่มต้นคือดูอย่างเดียว)')
         parser.add_argument('--ids', type=str, default='',
                             help='จำกัดเฉพาะ id ที่ระบุ คั่นด้วย comma เช่น 3,7,9')
         parser.add_argument('--include-inactive', action='store_true',
@@ -85,6 +85,18 @@ class Command(BaseCommand):
             self.stdout.write('ถ้าตรวจแล้วโอเค สั่งแก้ด้วย: python manage.py audit_term_dow --apply --ids <id ที่จะแก้>')
             return
 
+        # บังคับให้ระบุ --ids เสมอตอนแก้จริง: การเลื่อนวันไม่ idempotent (รันซ้ำ
+        # = เลื่อนซ้ำ) และรายการที่สร้างจาก Django admin อาจถูกอยู่แล้ว การเปิดให้
+        # --apply เปล่าๆ กวาดทั้งตารางจึงเสี่ยงทำข้อมูลที่ถูกอยู่แล้วพังโดยไม่มีทาง
+        # ย้อนกลับอัตโนมัติ
+        if not opts['ids']:
+            raise CommandError(
+                'ต้องระบุ --ids ด้วยตอนใช้ --apply (เช่น --apply --ids 3,7)\n'
+                'ดูผล dry-run ก่อนแล้วเลือกเฉพาะ id ที่ยืนยันแล้วว่าวันเพี้ยนจริง — '
+                'คำสั่งนี้ไม่แก้ทั้งตารางให้ เพราะการเลื่อนวันรันซ้ำแล้วเพี้ยนเพิ่ม '
+                'และรายการที่สร้างนอกหน้าเว็บอาจถูกอยู่แล้ว'
+            )
+
         with transaction.atomic():
             for tb in rows:
                 tb.day_of_week = (tb.day_of_week + 6) % 7
@@ -92,3 +104,4 @@ class Command(BaseCommand):
 
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS(f'แก้แล้ว {len(rows)} รายการ'))
+        self.stdout.write(self.style.WARNING('อย่ารันคำสั่งนี้ซ้ำกับ id เดิม — วันจะเลื่อนไปอีกรอบ'))

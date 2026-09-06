@@ -164,7 +164,13 @@ const countTermSessions = (startStr, endStr) => {
   if (!startStr || !endStr) return 0
   const s = new Date(`${startStr}T00:00:00`)
   const e = new Date(`${endStr}T00:00:00`)
-  if (Number.isNaN(s) || Number.isNaN(e) || e < s) return 0
+  // ต้องเช็คผ่าน getTime() — Number.isNaN(dateObject) เป็น false เสมอ
+  // (ไม่มีการ coerce) การเช็คตรงๆ จึงไม่เคยจับ invalid date ได้เลย
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0
+  // ต้องมากกว่า ไม่ใช่ >= : ทั้ง handleSearch และ serializer ฝั่ง backend
+  // ปฏิเสธ term_start >= term_end ถ้านับ 1 คาบตรงนี้ กล่องสรุปจะโฆษณา
+  // "รวม 1 คาบ" ทั้งที่กดค้นหาแล้วจะโดน error
+  if (e <= s) return 0
   return Math.floor((e - s) / (7 * 24 * 60 * 60 * 1000)) + 1
 }
 
@@ -842,8 +848,8 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                               {ACADEMIC_TERM_IDS.map(t => (
                                 <button
                                   key={t}
-                                  onClick={() => applyAcademicTerm(academicYearBE, t)}
-                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${termNumber === t && termStart === getTermDateRange(academicYearBE, t).start && termEnd === getTermDateRange(academicYearBE, t).end ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                                  onClick={() => applyAcademicTerm(academicYearBE, t, termDow)}
+                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${termNumber === t && termEnd === getTermDateRange(academicYearBE, t).end && termStart >= getTermDateRange(academicYearBE, t).start ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'}`}
                                 >
                                   {ACADEMIC_TERM_META[t]?.short}
                                 </button>
@@ -1449,9 +1455,20 @@ export default function SearchPage({ embedded = false }) {
   // convention ของ backend: 0=จันทร์ ดู termDowFromStart)
   const dayOfWeek = termDowFromStart(termStart)
 
-  const applyAcademicTerm = (yearBE, termNum) => {
+  // ปุ่ม preset เทอม 1/2/ฤดูร้อน ตั้งช่วงวันที่ให้ — แต่ตอนนี้ "วันเริ่ม" เป็นตัว
+  // กำหนดวันในสัปดาห์ด้วย ถ้าเอาวันที่ 1 ของเดือนมาใส่ตรงๆ วันที่ผู้ใช้เลือกไว้
+  // จะถูกเปลี่ยนเงียบๆ (เลือกไว้ทุกพุธ กดปุ่มเทอม 1 กลายเป็นทุกจันทร์)
+  // จึงเลื่อนวันเริ่มไปหา "วันเดิมในสัปดาห์" ครั้งแรกที่ตรงกับช่วง preset แทน
+  const applyAcademicTerm = (yearBE, termNum, keepDow = null) => {
     const { start, end } = getTermDateRange(yearBE, termNum)
-    setAcademicYearBE(yearBE); setTermNumber(termNum); setTermStart(start); setTermEnd(end)
+    let nextStart = start
+    if (keepDow != null) {
+      const d = new Date(`${start}T00:00:00`)
+      const shift = (keepDow - termDowFromStart(start) + 7) % 7
+      d.setDate(d.getDate() + shift)
+      nextStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    setAcademicYearBE(yearBE); setTermNumber(termNum); setTermStart(nextStart); setTermEnd(end)
     setTermName(buildTermName(yearBE, termNum))
   }
 
