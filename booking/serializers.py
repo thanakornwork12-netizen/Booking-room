@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 from django.utils import timezone
-from datetime import datetime
+from datetime import datetime, timedelta
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
@@ -325,6 +325,17 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
         if data['term_start'] >= data['term_end']:
             raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
+
+        # ต้องมีคาบเกิดขึ้นจริงอย่างน้อย 1 ครั้งในช่วงที่เลือก — ไม่งั้นจะได้
+        # การจองทั้งเทอมที่ไม่มีคาบไหนเกิดขึ้นเลย (เช่น เลือกทุกวันเสาร์ แต่ช่วง
+        # เทอมคือ จ.-พ.) ซึ่งระบบเดิมรับไว้เงียบๆ โดยไม่มีอะไรผิดพลาดให้เห็น
+        if not any(
+            (data['term_start'] + timedelta(days=i)).weekday() == data['day_of_week']
+            for i in range((data['term_end'] - data['term_start']).days + 1)
+        ):
+            raise serializers.ValidationError(
+                'ช่วงวันที่ที่เลือกไม่มีวันดังกล่าวเลย กรุณาขยายช่วงเทอมหรือเลือกวันเริ่มใหม่'
+            )
 
         attendees = data.get('attendees')
         if attendees is not None:
