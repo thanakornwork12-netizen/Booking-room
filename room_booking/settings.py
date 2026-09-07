@@ -210,6 +210,11 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
+# อีเมลของผู้อนุมัติการจอง — ทุกครั้งที่มีคำขอจองใหม่เข้ามา ระบบจะส่งอีเมล
+# แจ้งไปที่นี่พร้อมลิงก์เข้าหน้าอนุมัติ ตั้งทับได้ด้วย env APPROVER_EMAIL
+# (ว่างไว้ = ปิดการแจ้งเตือนผู้อนุมัติ ระบบยังส่งอีเมลหาผู้จองตามปกติ)
+APPROVER_EMAIL = os.environ.get('APPROVER_EMAIL', 'thanakorn.tho.66@ubu.ac.th')
+
 # ใช้ประกอบลิงก์ในอีเมล (check-in/ยกเลิกเป็น endpoint ฝั่ง backend เอง
 # ส่วน login ต้องพาไปหน้าเว็บฝั่ง frontend)
 SITE_URL     = os.environ.get('SITE_URL', 'http://127.0.0.1:8000')

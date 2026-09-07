@@ -86,6 +86,7 @@ def broadcast_booking_update(sender, instance, created, **kwargs):
 
     if created:
         send_email_after_commit(send_booking_pending_email, instance)
+        send_email_after_commit(send_approval_request_email, instance)
     elif old_status == 'pending' and instance.status == 'approved':
         send_email_after_commit(send_booking_confirmation_email, instance)
     elif old_status == 'pending' and instance.status == 'rejected':
@@ -118,6 +119,7 @@ def broadcast_booking_update(sender, instance, created, **kwargs):
 def send_term_booking_email(sender, instance, created, **kwargs):
     if created:
         send_email_after_commit(send_term_booking_confirmation_email, instance)
+        send_email_after_commit(send_approval_request_email, instance)
 
 
 @receiver(post_save, sender=Notification)
@@ -319,6 +321,112 @@ def send_password_reset_email(user, uidb64, token):
         )
     except Exception as e:
         log_email_error('ส่งอีเมลรีเซ็ตรหัสผ่านไม่สำเร็จ', e)
+
+
+def send_approval_request_email(instance):
+    """แจ้งผู้อนุมัติ (settings.APPROVER_EMAIL) ว่ามีคำขอจองใหม่เข้ามา
+
+    ใช้ได้ทั้ง Booking (จองรายวัน) และ TermBooking (จองทั้งเทอม) — สองโมเดลนี้
+    เก็บวัน/เวลาคนละแบบ จึงแยกสร้างบรรทัดรายละเอียดตามชนิดของ instance
+    """
+    approver_email = (getattr(settings, 'APPROVER_EMAIL', '') or '').strip()
+    if not approver_email:
+        logger.info('ไม่ได้ตั้ง APPROVER_EMAIL — ข้ามการแจ้งผู้อนุมัติ')
+        return
+
+    is_term = isinstance(instance, TermBooking)
+    requester = instance.user.get_full_name() or instance.user.username
+    requester_email = get_recipient_email(instance.user) or '-'
+    admin_url = f'{FRONTEND_URL}/admin/dashboard'
+
+    if is_term:
+        kind_label = 'จองทั้งเทอม'
+        subject_line = instance.subject_name
+        when_rows = [
+            ('วัน', f'ทุกวัน{instance.get_day_of_week_display()}'),
+            ('เวลา', f'{instance.start_time:%H:%M} - {instance.end_time:%H:%M} น.'),
+            ('ช่วงเทอม', f'{instance.term_start} ถึง {instance.term_end}'),
+        ]
+    else:
+        start_thai = instance.start_time.astimezone(THAI_TZ)
+        end_thai   = instance.end_time.astimezone(THAI_TZ)
+        kind_label = 'จองรายวัน'
+        subject_line = instance.title
+        when_rows = [
+            ('วันที่', f'{start_thai:%d/%m/%Y}'),
+            ('เวลา', f'{start_thai:%H:%M} - {end_thai:%H:%M} น.'),
+        ]
+
+    detail_rows = [
+        ('ประเภท', kind_label),
+        ('ห้อง', instance.room.name),
+        ('อาคาร', instance.room.building.name),
+        ('หัวข้อ/วิชา', subject_line),
+        *when_rows,
+        ('ผู้เข้าร่วม', f'{instance.attendees} คน'),
+        ('ผู้ขอจอง', f'{requester} ({requester_email})'),
+    ]
+
+    plain_rows = '\n'.join(f'{label:<12}: {value}' for label, value in detail_rows)
+    plain_text = f"""
+มีคำขอจองห้องใหม่รอการอนุมัติ
+
+{plain_rows}
+
+เข้าไปอนุมัติหรือปฏิเสธได้ที่: {admin_url}
+
+ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+"""
+
+    html_rows = ''.join(
+        f'<tr>'
+        f'<td style="padding:8px 0;color:#6b7280;font-size:14px;width:120px;">{escape(str(label))}</td>'
+        f'<td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{escape(str(value))}</td>'
+        f'</tr>'
+        for label, value in detail_rows
+    )
+    html_message = f"""
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+    <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:28px 32px;">
+      <p style="margin:0;color:#ffffff;font-size:20px;font-weight:700;">มีคำขอจองห้องรอการอนุมัติ</p>
+      <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">{escape(kind_label)}</p>
+    </div>
+    <div style="padding:24px 32px;">
+      <table style="width:100%;border-collapse:collapse;">{html_rows}</table>
+      <a href="{escape(admin_url)}"
+         style="display:block;margin-top:24px;padding:14px;background:#4f46e5;color:#ffffff;text-align:center;
+                text-decoration:none;border-radius:12px;font-weight:700;font-size:15px;">
+        เปิดหน้าอนุมัติการจอง
+      </a>
+    </div>
+    <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+    try:
+        logger.info(
+            'Attempting send_mail to %s (approval request, %s id=%s)',
+            approver_email, 'term' if is_term else 'booking', getattr(instance, 'id', None),
+        )
+        send_mail(
+            subject=f'📋 คำขอ{kind_label}ห้อง {instance.room.name} รอการอนุมัติ',
+            message=plain_text,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            recipient_list=[approver_email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+    except Exception as e:
+        log_email_error('ส่งอีเมลแจ้งผู้อนุมัติไม่สำเร็จ', e)
 
 
 def send_booking_pending_email(instance):
