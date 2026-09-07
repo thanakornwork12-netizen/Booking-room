@@ -622,7 +622,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     const err = validateCustomDuration(val, startTime)
     if (!err) setDuration(Number(val))
   }
-  const { rooms, setSelectedRoom, setSplitPlan, similarRooms } = resultProps
+  const { rooms, setSelectedRoom, setSplitPlan, similarRooms, splitSuggestion } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit } = confirmProps
 
   const isTermMode = bookingType === 'term'
@@ -1069,7 +1069,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                           </div>
                           <h3 className="text-xl font-bold text-slate-900">ไม่พบห้องตรงเงื่อนไข</h3>
                           <p className="mt-2 text-sm text-slate-500">ลองปรับเวลา อาคาร หรือจำนวนผู้เข้าร่วม แล้วค้นหาใหม่อีกครั้ง</p>
-                          {similarRooms.length > 0 && <p className="mt-4 text-xs text-slate-400">ระบบมีแผนสองด้านล่างให้เลือก</p>}
+                          {(similarRooms.length > 0 || splitSuggestion) && <p className="mt-4 text-xs text-slate-400">ระบบมีแผนสองด้านล่างให้เลือก</p>}
                         </div>
                       ) : (
                         visibleRooms.map((room, index) => (
@@ -1101,6 +1101,42 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                       {rooms.length > visibleRooms.length && (
                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-500 shadow-sm">
                           แสดง {visibleRooms.length} จากทั้งหมด {rooms.length} ห้อง
+                        </div>
+                      )}
+
+                      {rooms.length === 0 && splitSuggestion && (
+                        <div className="rounded-[28px] border border-violet-200 bg-white shadow-sm p-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-lg font-bold text-slate-900">สลับห้องกลางเทอม</p>
+                              <p className="text-sm text-slate-500">ไม่มีห้องไหนว่างครบทั้งเทอม แต่จองต่อกัน 2 ช่วงได้</p>
+                            </div>
+                            <span className="shrink-0 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">แนะนำ</span>
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+                              <p className="text-xs font-bold text-violet-700 mb-1">ช่วงแรก</p>
+                              <p className="text-base font-bold text-slate-900 truncate">{splitSuggestion.first_half.room_name}</p>
+                              <p className="text-xs text-slate-500 mt-1">{formatDateShort(splitSuggestion.first_half.term_start)} - {formatDateShort(splitSuggestion.first_half.term_end)}</p>
+                            </div>
+                            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                              <p className="text-xs font-bold text-indigo-700 mb-1">ช่วงหลัง</p>
+                              <p className="text-base font-bold text-slate-900 truncate">{splitSuggestion.second_half.room_name}</p>
+                              <p className="text-xs text-slate-500 mt-1">{formatDateShort(splitSuggestion.second_half.term_start)} - {formatDateShort(splitSuggestion.second_half.term_end)}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // เลือกแผนสลับห้อง = ไม่ได้เลือกห้องเดี่ยว ต้องล้าง
+                              // selectedRoom ไม่งั้นหน้ายืนยันจะสับสนว่าจองแบบไหน
+                              setSelectedRoom(null); setSplitPlan(splitSuggestion); setTitle('')
+                              setStep(3)
+                            }}
+                            className={`mt-4 w-full rounded-2xl bg-gradient-to-r ${accentBg} px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 active:scale-95 transition-all`}
+                          >
+                            เลือกแผนนี้ <ChevronRight size={16} />
+                          </button>
                         </div>
                       )}
 
@@ -1307,6 +1343,9 @@ export default function SearchPage({ embedded = false }) {
   const [selectedEquipments, setSelectedEquipments] = useState([])
   const [similarRooms, setSimilarRooms] = useState([])
   const [splitPlan, setSplitPlan] = useState(null)
+  // แผนสลับห้องที่ระบบ "แนะนำ" — แค่แสดงเป็นตัวเลือกในหน้าผลค้นหา ยังไม่ใช่
+  // แผนที่ผู้ใช้เลือก (splitPlan) จนกว่าจะกดเลือกเอง ดูคอมเมนต์ใน handleSearch
+  const [splitSuggestion, setSplitSuggestion] = useState(null)
   const [equipmentPresets, setEquipmentPresets] = useState(FALLBACK_EQUIPMENT_PRESETS)
 
   const onCancelSplit = () => { setSplitPlan(null); setStep(2) }
@@ -1325,6 +1364,7 @@ export default function SearchPage({ embedded = false }) {
     setSelectedEquipments([])
     setSimilarRooms([])
     setSplitPlan(null)
+    setSplitSuggestion(null)
     setError('')
   }
 
@@ -1567,20 +1607,22 @@ export default function SearchPage({ embedded = false }) {
         .map(room => ({ ...room, suitability_score: scoreFallbackRoom(room, { attendees, building, bookingType, selectedEquipments, equipmentPresets }).score }))
         .sort((a, b) => b.suitability_score - a.suitability_score || a.capacity - b.capacity)
 
+      // จองทั้งเทอมแล้วไม่มีห้องไหนว่างครบทั้งเทอม: เดิมระบบเด้งไปหน้ายืนยัน
+      // แผนสลับห้องทันที ผู้ใช้ไม่ได้เลือกเอง ตอนนี้ดึงทั้งแผนสลับห้องและห้อง
+      // ใกล้เคียงมาแสดงคู่กันในหน้าผลค้นหา (step 2) ให้ผู้ใช้กดเลือกเอง
+      // เหมือนแผนสองของการจองรายวัน
+      let splitRec = null
       if (bookingType === 'term' && filtered.length === 0) {
-        const splitRec = await fetchSplitRecommendation(payload)
-        if (splitRec?.recommended_split?.first_half && splitRec?.recommended_split?.second_half) {
-          setRooms([])
-          setSimilarRooms([])
-          setSplitPlan(splitRec.recommended_split)
-          setStep(3)
-          return
+        const rec = await fetchSplitRecommendation(payload)
+        if (rec?.recommended_split?.first_half && rec?.recommended_split?.second_half) {
+          splitRec = rec.recommended_split
         }
       }
 
       const similar = filtered.length === 0 ? await fetchSimilarRooms(payload) : []
 
-      setRooms(filtered); setSimilarRooms(similar); setSplitPlan(null)
+      setRooms(filtered); setSimilarRooms(similar)
+      setSplitPlan(null); setSplitSuggestion(splitRec)
       setStep(2)
     } catch (err) {
       setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
@@ -1625,7 +1667,7 @@ export default function SearchPage({ embedded = false }) {
       step={step} setStep={setStep} navigate={navigate} location={location.pathname}
       bookingType={bookingType} setBookingType={setBookingType}
       formProps={{ attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings, termStart, setTermStart, termEnd, setTermEnd, applyAcademicTerm, academicYearBE, termNumber }}
-      resultProps={{ rooms, setSelectedRoom, setSplitPlan, similarRooms }}
+      resultProps={{ rooms, setSelectedRoom, setSplitPlan, similarRooms, splitSuggestion, setSplitSuggestion }}
       confirmProps={{ selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit }}
       onReset={handleReset}
       embedded={embedded}
