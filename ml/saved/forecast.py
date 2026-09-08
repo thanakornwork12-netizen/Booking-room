@@ -1135,11 +1135,22 @@ def build_features(daily, term_df=None, use_log: bool = False):
     df['diff_7_1']  = df['lag_7'] - df['lag_1']
     df['pct_chg_7'] = df['y'].pct_change(7).replace([np.inf, -np.inf], 0).fillna(0)
 
-    t = np.arange(len(df))
-    for period, n_terms in [(7, 3), (365, 4)]:
+    # เข้ารหัสฤดูกาลจาก "ตำแหน่งบนปฏิทิน" ไม่ใช่ "ตำแหน่งแถว" — np.arange(len(df))
+    # ถูกต่อเมื่อ index เป็นวันติดกันครบไม่ขาด ซึ่งจริงเฉพาะตอนเทรน (daily series
+    # ถูก reindex ด้วย freq='D') แต่ตอนพยากรณ์ forecast_dates เริ่มที่ "วันนี้"
+    # ขณะที่ history จบที่วันจองสุดท้าย และ build_features() ถูกเรียกบน
+    # history + แถวอนาคตแถวเดียวโดยไม่มีวันว่างคั่น t จึงขยับแค่ +1 ทั้งที่ปฏิทิน
+    # กระโดดไปหลายเดือน ทำให้เฟสทั้งรอบสัปดาห์และรอบปีเพี้ยนไปทั้งหมด
+    # การผูกกับ dayofweek/dayofyear ทำให้เฟสนิ่งเสมอ ไม่ว่า index จะขาดช่วง
+    # หรือเริ่มที่วันไหน และ sin_7_* กลายเป็นการเข้ารหัส "วันในสัปดาห์" แบบวน
+    # รอบจริง (dow=6 กับ dow=0 อยู่ติดกัน) ซึ่ง df['dow'] แบบ int ดิบให้ไม่ได้
+    for period, n_terms, cycle, pos in [
+        (7, 3, 7.0, idx.dayofweek.to_numpy(dtype=float)),
+        (365, 4, 365.25, idx.dayofyear.to_numpy(dtype=float)),
+    ]:
         for k in range(1, n_terms + 1):
-            df[f'sin_{period}_{k}'] = np.sin(2 * np.pi * k * t / period)
-            df[f'cos_{period}_{k}'] = np.cos(2 * np.pi * k * t / period)
+            df[f'sin_{period}_{k}'] = np.sin(2 * np.pi * k * pos / cycle)
+            df[f'cos_{period}_{k}'] = np.cos(2 * np.pi * k * pos / cycle)
 
     df['ratio_vs_7d']  = (df['lag_1'] / (df['roll_mean_7']  + 1e-6)).clip(0, 5)
     df['ratio_vs_28d'] = (df['lag_1'] / (df['roll_mean_28'] + 1e-6)).clip(0, 5)
