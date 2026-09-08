@@ -31,6 +31,48 @@ from booking.models import Booking
 OUT_DIR = os.path.join(CURRENT_DIR, 'data_split')
 TRAIN_FRAC = 0.80
 
+DOW_TH = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
+
+# คอลัมน์ที่โค้ดอ่านไปใช้จริง (test_from_excel.py, plot_test_curves_by_set.py
+# อ่านตามชื่อคอลัมน์ การเพิ่มคอลัมน์ใหม่จึงไม่กระทบ)
+BASE_COLS = ['room_code', 'building_code', 'room_type', 'date', 'start_time', 'end_time',
+             'duration_hours', 'attendees', 'title', 'status']
+# คอลัมน์อ่านง่ายสำหรับเปิดดูใน Excel — start_time/end_time เป็น datetime เต็ม
+# ซึ่งอ่านยากเวลาเปิดไฟล์ตรวจข้อมูลด้วยตา
+READABLE_COLS = ['เวลาเริ่ม', 'เวลาสิ้นสุด', 'ช่วงเวลา', 'วันในสัปดาห์', 'ข้ามวัน']
+
+
+def period_of_day(hour: int) -> str:
+    """แบ่งช่วงเวลาตามคาบการใช้ห้องจริง (ข้อมูลเริ่ม 08:00 สิ้นสุด 19:00)"""
+    if hour < 12:
+        return 'เช้า'
+    if hour < 16:
+        return 'บ่าย'
+    return 'เย็น'
+
+
+def add_readable_time_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """เติมคอลัมน์เวลาแบบอ่านออกต่อจาก date โดยไม่แตะคอลัมน์เดิม
+
+    start_time/end_time ตัวเดิมยังอยู่ครบ (โค้ดเทรน/ทดสอบใช้ตัวนั้น) คอลัมน์ที่
+    เพิ่มเป็นค่าที่ derive มาทั้งหมด ไม่ใช่ข้อมูลใหม่ — มีไว้ให้เปิดไฟล์แล้วเห็น
+    ทันทีว่าแต่ละรายการจองช่วงไหนของวัน
+    """
+    out = df.copy()
+    start = pd.to_datetime(out['start_time'])
+    end = pd.to_datetime(out['end_time'])
+    out['เวลาเริ่ม'] = start.dt.strftime('%H:%M')
+    out['เวลาสิ้นสุด'] = end.dt.strftime('%H:%M')
+    out['ช่วงเวลา'] = start.dt.hour.map(period_of_day)
+    out['วันในสัปดาห์'] = start.dt.dayofweek.map(lambda d: DOW_TH[d])
+    # การจองที่กินข้ามวัน — expand_bookings_to_daily() ใน forecast.py กระจาย
+    # ชั่วโมงของรายการพวกนี้ไปทุกวันที่มันครอบ แถวที่ติดธงนี้จึงไม่ได้ใช้ชั่วโมง
+    # ทั้งหมดในวันเดียวตามที่ duration_hours แสดง
+    out['ข้ามวัน'] = (end.dt.normalize() > start.dt.normalize()).map({True: 'ใช่', False: ''})
+    cols = list(BASE_COLS)
+    at = cols.index('date') + 1
+    return out[cols[:at] + READABLE_COLS + cols[at:]]
+
 
 def load_real_bookings() -> pd.DataFrame:
     qs = Booking.objects.exclude(status='cancelled').select_related('room', 'room__building').values(
@@ -51,8 +93,7 @@ def load_real_bookings() -> pd.DataFrame:
     df['duration_hours'] = ((df['end_time'] - df['start_time']).dt.total_seconds() / 3600).round(2)
     df['date'] = df['start_time'].dt.date
     df = df.sort_values(['room_code', 'start_time']).reset_index(drop=True)
-    return df[['room_code', 'building_code', 'room_type', 'date', 'start_time', 'end_time',
-               'duration_hours', 'attendees', 'title', 'status']]
+    return add_readable_time_columns(df[BASE_COLS])
 
 
 def split_per_room(df: pd.DataFrame):
