@@ -1,0 +1,6 @@
+A: Train=0.8352  Calib=0.7121  Test=0.8030  BalAcc=0.6091
+B: Train=0.8556  Calib=0.7138  Test=0.8031  BalAcc=0.5927
+C: Train=0.8871  Calib=0.7259  Test=0.8127  BalAcc=0.6203
+D: Train=0.9392  Calib=0.7258  Test=0.8021  BalAcc=0.6131
+Saved CSV: /Users/macthanakorn/room_booking/ml/saved/metrics_plots/adaptive_vs_fixed_by_set_current_direct.csv
+Saved PNG: /Users/macthanakorn/room_booking/ml/saved/metrics_plots/adaptive_vs_fixed_by_set copy_direct.png

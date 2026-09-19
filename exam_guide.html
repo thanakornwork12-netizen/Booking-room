@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>สรุปเตรียมสอบ UBU Room Booking</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mute:#666;--line:#ddd;--hl:#fff6d6;--code:#f3f3f3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161616;--fg:#e8e8e8;--mute:#9a9a9a;--line:#333;--hl:#3a3218;--code:#242424}}
+:root[data-theme="dark"]{--bg:#161616;--fg:#e8e8e8;--mute:#9a9a9a;--line:#333;--hl:#3a3218;--code:#242424}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:22px}h2{font-size:18px;border-bottom:1px solid var(--line);padding-bottom:4px;margin-top:32px}h3{font-size:15px;margin-bottom:4px}
+table{border-collapse:collapse;width:100%;font-size:14px;display:block;overflow-x:auto}td,th{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
+code,pre{background:var(--code);font-size:13px}pre{padding:8px;overflow-x:auto}
+.k{background:var(--hl);padding:6px 10px;border-left:3px solid #d9a400}.m{color:var(--mute);font-size:13px}
+details{border:1px solid var(--line);padding:4px 10px;margin:4px 0}summary{cursor:pointer;font-weight:600}
+</style></head><body>
+<h1>สรุปเตรียมสอบ: ระบบจองห้องอัจฉริยะ UBU (Smart Room Booking)</h1>
+<p class="m">รวมจากโค้ดจริงและ defense_exam_summary.txt (Sep 6) ตัวเลขผลโมเดลมาจากรัน 20260914-214913</p>
+<p><b>สารบัญ:</b> 1 ภาพรวม · 2 สถาปัตยกรรม · 3 ฐานข้อมูล · 4 Auth/Security · 5 Flow การจอง · 6 AI (production) · 7 AI (direct, งานวิจัยล่าสุด) · 8 ผลลัพธ์/Baseline · 9 Deploy · 10 ข้อจำกัด · 11 Future work · 12 คำถามที่น่าจะโดน · 13 ศัพท์</p>
+
+<h2>1. ภาพรวม</h2>
+<p><b>ปัญหา:</b> ไม่รู้ว่าห้องไหนว่าง, จองซ้อนได้, ไม่มีข้อมูลบอกว่าห้องไหนใกล้เต็ม, คนจองแล้วไม่มา (no-show)</p>
+<p><b>ทางแก้:</b></p>
+<ol>
+<li>ระบบจองกลางแบบ real-time ที่กันจองซ้อนระดับฐานข้อมูล</li>
+<li>AI พยากรณ์ demand ล่วงหน้าต่อห้อง แสดงเป็นสี/ระดับ</li>
+<li>แนะนำห้องตามจำนวนคน อุปกรณ์ อาคาร และเวลา</li>
+<li>ยกเลิกผ่านลิงก์ในอีเมลได้โดยไม่ต้องล็อกอิน</li>
+<li>แจ้งเตือนผ่าน WebSocket</li>
+</ol>
+<p><b>ขอบเขต:</b></p>
+<ul>
+<li>จอง 2 แบบ: รายครั้ง (Dynamic) และทั้งเทอม (Term, ซ้ำทุกสัปดาห์)</li>
+<li>4 role: student / lecturer / staff / admin</li>
+<li>AI ครอบคลุม 8 ห้องที่มีข้อมูลพอ (<code>AI_FORECAST_ROOM_IDS</code>): 2C05-06(443), 2C09(445), 2C10-11(446), 2C16-17(447), 3C05-06(448), 1C-MEETING(487), 3C16-17(505), 4C05(506)</li>
+</ul>
+
+<h2>2. สถาปัตยกรรมระบบ</h2>
+<pre>React 19 + Vite (SPA)
+   │ HTTPS REST (JSON, JWT)   │ WebSocket /ws/notifications/
+   ▼                          ▼
+Django + DRF  ── Django Channels (ASGI, daphne)
+   ├─ APScheduler (งานเบื้องหลัง เช่น เตือนก่อนใช้ห้อง ทุก 1 นาที)
+   ├─ ml/saved/ (โมดูล AI แยกจาก business logic)
+   ▼
+PostgreSQL (Neon บน production)
+ภายนอก: Brevo REST API (อีเมล) · LDAP มหาวิทยาลัย (login)</pre>
+<ul>
+<li><b>Client–Server แยก frontend/backend:</b> แยก concern ชัดเจน, SPA ไม่ต้อง reload ทั้งหน้า, API เดียวกันต่อแอปมือถือได้</li>
+<li><b>Channels (ASGI) แทน WSGI:</b> WSGI รองรับแค่ request-response ส่วน WebSocket ต้องใช้ ASGI จึงรันด้วย daphne</li>
+<li><b>Brevo แบบ HTTPS API:</b> Render บล็อก port 587 (SMTP)</li>
+<li><b>API หลัก</b> อยู่ใต้ <code>/api/</code>:
+ <ul>
+ <li>auth: register, login (LDAP), refresh, profile, change/forgot/reset password, delete account</li>
+ <li>dashboard, export/excel, maintenance/slots</li>
+ <li>router ของ ViewSet</li>
+ </ul></li>
+</ul>
+<table><tr><th>ชั้น</th><th>เทคโนโลยี</th></tr>
+<tr><td>Backend</td><td>Django, DRF, simplejwt, Channels+daphne, django-apscheduler, cors-headers, import-export, whitenoise, ldap3, psycopg2</td></tr>
+<tr><td>Frontend</td><td>React 19, Vite, React Router v6, Tailwind v4, axios, lucide-react</td></tr>
+<tr><td>AI</td><td>LightGBM, XGBoost, TensorFlow/Keras (LSTM ในเวอร์ชันเก่า), scikit-learn, pandas, numpy</td></tr>
+<tr><td>Infra</td><td>Render.com (web), Neon (Postgres serverless), Brevo (email)</td></tr></table>
+
+<h2>3. ฐานข้อมูล (Django models)</h2>
+<table><tr><th>ตาราง</th><th>สาระสำคัญ</th></tr>
+<tr><td>User (AbstractUser)</td><td>role, faculty, phone, student_id (unique), avatar</td></tr>
+<tr><td>Building</td><td>name, code (unique)</td></tr>
+<tr><td>Room</td><td>FK Building, floor, capacity, room_type, status (available/occupied/maintenance/disabled), unique (building,name)</td></tr>
+<tr><td>Facility / RoomFacility</td><td>M2M มี quantity</td></tr>
+<tr><td>Booking</td><td>FK User, Room, start/end, status (pending/approved/rejected/cancelled/completed/checked_in), checkin_token UUID, approved_by</td></tr>
+<tr><td>TermBooking</td><td>day_of_week (0=จันทร์), start/end เป็น TimeField, term_start/end, <code>get_weekly_slots()</code></td></tr>
+<tr><td>MaintenanceBlock</td><td>ช่วงปิดซ่อม และ predicted_demand_avg (ให้เลือกปิดตอนที่ AI บอกว่า demand ต่ำ)</td></tr>
+<tr><td>DemandForecast</td><td>unique (room, date, hour), predicted_demand, demand_level, availability, confidence, term/dynamic demand</td></tr>
+<tr><td>Notification</td><td>สร้างเมื่อไหร่ post_save signal ก็ push ผ่าน WebSocket</td></tr>
+<tr><td>BookingLog</td><td>audit trail: old/new status, ผู้กด, เหตุผล</td></tr>
+<tr><td>RoomUsageStat</td><td>สถิติรายวันสำหรับ dashboard</td></tr></table>
+
+<h2>4. Authentication / Security</h2>
+<ul>
+<li><b>Login:</b> ลอง LDAP ก่อน ถ้าไม่ผ่าน fallback ไปบัญชี local
+ <ul>
+ <li>login ผ่าน LDAP แล้วสร้าง/อัปเดต User ให้อัตโนมัติ และเรียก <code>set_unusable_password()</code> (ไม่เก็บรหัสมหาวิทยาลัย)</li>
+ <li>เช็คว่าเป็นบัญชี LDAP ด้วย <code>has_usable_password()</code> เท่านั้น เพราะค่า password ไม่ว่าง (เป็น <code>!xxxx</code>) เคยเป็นบั๊กจริง</li>
+ </ul></li>
+<li><b>JWT:</b> access (อายุสั้น) + refresh (อายุยาว) เก็บ localStorage หรือ sessionStorage ตาม "จำฉันไว้"</li>
+<li><b>สิทธิ์:</b>
+ <ul>
+ <li>staff/admin เท่านั้นที่เข้า Admin Dashboard ได้</li>
+ <li>สมัครเองเลือก role admin ไม่ได้ (เคยเป็นช่องโหว่: ยิง API พร้อม role=admin แล้วผ่าน แก้แล้ว)</li>
+ <li>เมื่ออนุมัติ ระบบแจ้ง approver ทางอีเมลและให้ role admin แก่บัญชีนั้น (commit fc54c6e)</li>
+ </ul></li>
+<li><b>Reset password:</b> ใช้ <code>PasswordResetTokenGenerator</code> (token หมดอายุเมื่อรหัสเปลี่ยน ไม่ต้องมีตาราง token) บัญชี LDAP ให้ติดต่อสำนักคอมฯ แทน</li>
+<li><b>Race condition:</b> ใช้ <code>transaction.atomic()</code> + <code>select_for_update()</code> ล็อกแถว Room ตอนจอง และล็อกแถว Booking ตอน approve/reject</li>
+<li><b>ลิงก์อีเมล:</b> ใช้ UUID สุ่ม (checkin_token) เดาไม่ได้</li>
+<li><b>รู้ไว้:</b> ข้อมูลมี booking title ที่เป็น XSS (stored) ในห้อง 2C05-06 จึงต้อง escape ตอนแสดงผล (React escape ให้อัตโนมัติ ยกเว้นใช้ dangerouslySetInnerHTML)</li>
+</ul>
+
+<h2>5. Flow การจอง</h2>
+<ol>
+<li><b>ค้นหา/แนะนำ</b>
+ <ul>
+ <li>กรองห้องที่ capacity พอ และไม่ทับกับ 3 แหล่ง (Booking, MaintenanceBlock, TermBooking)</li>
+ <li>แนบผล AI แล้วเรียงห้องที่ "ว่างชัวร์" ขึ้นก่อน</li>
+ <li>quick search: พิมพ์ตัวเลขล้วนจะถือเป็นจำนวนคน</li>
+ </ul></li>
+<li><b>จองรายครั้ง:</b> backend ตรวจซ้อนอีกรอบ แล้วสร้างสถานะ <code>pending</code> และส่งอีเมลพร้อมลิงก์ยกเลิก
+ <ul>
+ <li>การเช็ค conflict นับ pending, approved และ checked_in ด้วย (ถ้าไม่นับ pending อาจอนุมัติทับกันได้)</li>
+ </ul></li>
+<li><b>อนุมัติ:</b> admin/staff กด approve หรือ reject (ต้องใส่เหตุผล) แล้วระบบส่งอีเมลผ่าน signal และบันทึก BookingLog
+ <ul>
+ <li>อนุมัติคำขอที่เลยเวลาไปแล้วไม่ได้ แต่ reject ได้</li>
+ </ul></li>
+<li><b>จองทั้งเทอม</b>
+ <ul>
+ <li>เลือกวันคาบแรกกับวันสิ้นเทอม ระบบดึงวันในสัปดาห์ให้เอง</li>
+ <li>ตรวจ conflict ทุกสัปดาห์ ไม่ใช่แค่สัปดาห์แรก</li>
+ <li>ถ้าไม่มีห้องเดียวที่ว่างทั้งเทอม มี <code>split_recommend/split_book</code> (ใช้ห้อง A ครึ่งแรก ห้อง B ครึ่งหลัง)</li>
+ <li>บั๊กที่เคยเจอ: JS นับ 0=อาทิตย์ แต่ Python นับ 0=จันทร์ จึงต้องแปลงก่อนส่ง</li>
+ </ul></li>
+<li><b>ยกเลิกผ่านอีเมล:</b> ใช้ token ไม่ต้องล็อกอิน มาแทนกฎ "เช็คอินภายใน 15 นาที" เดิม</li>
+<li><b>แจ้งเตือน:</b> Notification ถูก post_save แล้วส่งเข้า group <code>user_{id}_notifications</code> ให้กระดิ่งใน frontend เด้งทันที</li>
+</ol>
+
+<h2>6. AI เวอร์ชันที่ใช้งานจริง (production: <code>ml/saved/forecast.py</code>)</h2>
+<div class="k">ต้องแยกให้ออก: <b>production</b> ยังรัน <code>forecast.py</code> (โมเดลรายห้องแบบ recursive) ส่วน <b>งานวิจัยล่าสุด</b> คือ direct forecaster (หัวข้อ 7) ถ้ากรรมการถามว่า "ตัวไหนใช้จริง" ต้องตอบให้ตรง</div>
+<ul>
+<li><b>โจทย์:</b> พยากรณ์ชั่วโมงการใช้ห้องต่อวัน (time series regression) แล้วตัดเป็นระดับ (classification)
+ <ul>
+ <li>ตอนประเมิน: 3 คลาส low / medium / urgent</li>
+ <li>ในแอป: 4 ระดับ low/medium/high/urgent และ availability 4 ค่า likely_available / recommended / book_soon / book_now</li>
+ </ul></li>
+<li><b>ข้อมูล:</b> ประวัติการจองจาก Excel ของสำนักคอมฯ แตก booking ออกเป็นรายวัน (<code>expand_bookings_to_daily</code>, cap 12 ชม./วัน) และรวมช่วงเวลาแบบ interval-union เพื่อให้ booking ซ้ำไม่ถูกนับสองเท่า</li>
+<li><b>Features:</b> lag, rolling mean/std, calendar (dow, month, sin/cos ที่ผูกกับปฏิทินจริง), วันหยุดไทย, peer rooms</li>
+<li><b>โมเดล:</b> LightGBM + XGBoost ต่อห้อง (เดิมมี LSTM เป็น ensemble 3 ตัว แต่ LSTM ได้น้ำหนัก 0% แทบทุกห้อง ตอนนี้จึงเหลือ LGB+XGB)
+ <ul>
+ <li>น้ำหนัก ensemble หาจาก calibration slice</li>
+ <li>ถ้าโมเดลเดี่ยวชนะ blend ก็ใช้ตัวเดียว (เลยเห็น winner 100% บ่อย)</li>
+ </ul></li>
+<li><b>Split:</b> ตัดที่ "วันตัดร่วม" เดียวกันทุกห้องและตัดที่ขอบวัน (<code>split_dataset_from_excel.py</code>) แล้วแบ่ง train เป็น train/calibration ส่วน test ไม่เคยใช้ตัดสินใจอะไร
+ <ul>
+ <li>ก่อนแก้มี 2 รอยรั่ว: (1) เคยแบ่ง 80% แยกรายห้อง ทำให้ช่วงเวลาข้ามห้องคาบเกี่ยวกัน (2) เคยตัดตามจำนวนแถว ทำให้วันเดียวกันอยู่ทั้ง train และ test</li>
+ </ul></li>
+<li><b>Leak ที่เคยแก้ (a019b76):</b> feature <code>diff_1</code>, <code>diff_7</code>, <code>pct_chg_7</code> คำนวณจาก y ของวันเดียวกัน (lag_1 + diff_1 = y) ทำให้ R² ≈ 1.00 หลอก ตัดออกแล้ว</li>
+<li><b>Cold start</b> (ห้องใหม่หรือข้อมูลน้อยจนโมเดลเรียนจากห้องตัวเองไม่ได้): ยืมข้อมูลห้อง <code>room_type</code> เดียวกัน
+ <ul>
+ <li><b>Tier</b> (<code>get_data_tier</code>):
+  <ul>
+  <li>full: ≥200 การจอง และ ≥60 วัน</li>
+  <li>medium: ≥60 การจอง และ ≥21 วัน</li>
+  <li>sparse: ≥14 การจอง และ ≥7 วัน</li>
+  <li>ต่ำกว่านั้นเป็น cold_start</li>
+  </ul></li>
+ <li><b>Seasonal median prior</b> (<code>build_cold_start_prior</code>): ตัวทายสำรองของห้อง cold start
+  <ul>
+  <li>เฉลี่ยชั่วโมงรายวันของห้องประเภทเดียวกัน (ไม่รวมห้องตัวเอง)</li>
+  <li>หามัธยฐานตาม (วันในสัปดาห์, เดือน) ถ้าไม่มีใช้มัธยฐานของวันในสัปดาห์ ถ้ายังไม่มีใช้มัธยฐานรวม</li>
+  <li>ใช้มัธยฐานเพราะทนค่าผิดปกติ ข้อมูลน้อยแต่ยังเสถียร</li>
+  </ul></li>
+ <li><b>Peer profile</b> (<code>fit_peer_profile</code>): <u>feature เสริมของทุกห้อง</u> ไม่ได้ใช้เฉพาะ cold start
+  <ul>
+  <li>มัธยฐานของห้องประเภทเดียวกันตาม (วัน, เดือน) และ (วัน, อยู่ในเทอมหรือไม่)</li>
+  <li>ตัดข้อมูลห้องอื่นที่ <code>cutoff_date</code> เพื่อกัน leak</li>
+  </ul></li>
+ <li>8 ห้องที่ใช้ AI ตอนนี้น่าจะอยู่ tier full ทั้งหมด (ยังไม่ได้รันเช็ก) ถ้าใช่ เส้นทาง cold start มีไว้สำหรับห้องใหม่ในอนาคต</li>
+ <li><b>ตอบกรรมการ:</b> "ห้องใหม่ยังไม่มีประวัติ จึงยืมรูปแบบของห้องประเภทเดียวกันมาทายก่อน พอข้อมูลสะสมถึงเกณฑ์ก็เปลี่ยนไปใช้โมเดลเต็ม"</li>
+ </ul></li>
+<li><b>รันจริง:</b> <code>booking/scheduler.py</code> เรียก <code>forecast.py --retrain</code> แล้วเขียนตาราง DemandForecast ให้ UI อ่าน</li>
+</ul>
+
+<h2>7. AI งานวิจัยล่าสุด: Direct multi-horizon forecaster</h2>
+<p>ไฟล์: <code>direct_forecast.py</code>, <code>train_direct.py</code>, <code>train_direct_sets.py</code>, <code>test_direct.py</code></p>
+<h3>ทำไมเปลี่ยนจาก recursive → direct (คำถามยอดฮิต)</h3>
+<ul>
+<li><b>ปัญหาของ recursive:</b> เทรนแบบทาย 1 วันล่วงหน้า แล้วเอาไปป้อนซ้ำ 14 รอบ
+ <ul>
+ <li>ตอนเทรน <code>lag_1</code> เป็นค่าจริง แต่ตอนใช้งานเป็นค่าที่โมเดลทายเอง error จึงสะสม (train/serve mismatch)</li>
+ <li>วัดแล้วเสียไปประมาณ 4 จุด accuracy</li>
+ </ul></li>
+<li><b>Direct:</b> แต่ละแถวคือ (origin t, horizon h) แล้วทาย y[t+h] ตรง ๆ จากข้อมูลที่รู้ ณ t เท่านั้น
+ <ul>
+ <li>h=14 จึงซื่อตรงเท่ากับ h=1 และการเทรนตรงกับการใช้งานจริง</li>
+ <li>HORIZON = 14 วัน</li>
+ </ul></li>
+</ul>
+<h3>การออกแบบ</h3>
+<ul>
+<li><b>Pooled model</b> ตัวเดียวรวม 8 ห้อง:
+ <ul>
+ <li>ห้องขยับไปพร้อมกัน (weekly corr 0.68–0.93) เพราะปฏิทินการศึกษาเดียวกัน จึงได้ข้อมูลประมาณ 8 เท่า</li>
+ <li>ใส่ room_ix กับ room_scale เป็น feature</li>
+ </ul></li>
+<li><b>Features ~50 ตัว:</b>
+ <ul>
+ <li>lag0/1/2/6/13/20/27</li>
+ <li>rolling mean/std/max (7/14/28/56)</li>
+ <li>peer rooms</li>
+ <li>calendar ของวันเป้าหมาย (dow, month, sin/cos, holiday)</li>
+ <li>ประวัติวันเดียวกันของสัปดาห์ (sdow4/8/12, prev_dow1-4)</li>
+ <li>year_ago</li>
+ <li>multi-day block (blk_*)</li>
+ <li>categorical: dow, room_ix, month</li>
+ </ul></li>
+<li><b>ตัด feature ที่ตรวจแล้วไม่มีประโยชน์:</b>
+ <ul>
+ <li>term_* 18 คอลัมน์เป็นศูนย์ทั้งหมด (ไม่มี term schedule ของ 8 ห้องนี้)</li>
+ <li><code>created_at</code> เป็นเวลา bulk-import (7,251 แถวเวลาเดียวกัน) จึงไม่มี lead-time signal</li>
+ </ul></li>
+<li><b>Quantile regression</b> 10 ตัว (q = 0.05…0.95) ได้การกระจายของค่าพยากรณ์ ไม่ใช่แค่ค่าเดียว</li>
+<li><b>Output 2 ค่า</b> (สองคำถาม สอง loss):
+ <ul>
+ <li><code>argmax_class</code>: เลือกระดับที่มี probability mass มากสุด ใช้กับระดับ/สี (median บนข้อมูลเบ้ขวาจะทาย urgent เป็น low/medium ไปครึ่งหนึ่ง)</li>
+ <li><code>median_forecast</code>: ค่ากลาง ทำให้ MAE ต่ำสุด ใช้แสดงชั่วโมง</li>
+ </ul></li>
+<li><b>Block floor:</b> booking ยาวหลายวันที่เริ่มแล้วถือเป็นข้อเท็จจริง ค่าพยากรณ์ห้ามต่ำกว่าชั่วโมงที่ถูกจองไว้แล้ว (1.9% ของ booking แต่คิดเป็น 16–61% ของชั่วโมง)</li>
+<li><b>Engine:</b> LightGBM กับ XGBoost แข่งกันบน calibration แล้วแต่ละห้องใช้ engine ที่ชนะ</li>
+<li><b>Strategy รายห้อง:</b> argmax_class / median / dow_profile / constant
+ <ul>
+ <li>ต้องชนะ default เกิน <b>2×SE</b> = 2·√(0.25/n) ถึงจะเปลี่ยน</li>
+ <li>เคยเปลี่ยนด้วย margin 0.002 แล้ว test ตก 8 จุด (fleet 0.800 → 0.764)</li>
+ </ul></li>
+<li><b>ไม่มี early stopping:</b> เทรนครบ rounds แล้วอ่าน checkpoint ย้อนหลัง
+ <ul>
+ <li>เลือก round ที่ accuracy ดีสุด และ round ที่ MAE ดีสุดแยกกัน โดยตัดสินบน calibration เท่านั้น</li>
+ <li>calibration = 12.5% ของช่วง train, MIN_HISTORY = 400 วัน</li>
+ </ul></li>
+<li><b>Test:</b> ORIGIN_STEP = 1 ทุกวันเป็น origin ประมาณ 3,100 แถวต่อห้อง (live job รันทุก 14 วัน)</li>
+</ul>
+<h3>Hyperparameter sets (direct) — rounds × lr = 24 เท่ากันทุกชุด</h3>
+<table><tr><th></th><th>A Fast</th><th>B Balanced</th><th>C Wide</th><th>D Overfit probe</th></tr>
+<tr><td>Rounds / LR</td><td>300 / 0.08</td><td>600 / 0.04</td><td>1200 / 0.02</td><td>2400 / 0.01</td></tr>
+<tr><td>LGB leaves / min_child</td><td>15 / 35</td><td>31 / 45</td><td>47 / 70</td><td>127 / 20</td></tr>
+<tr><td>reg α / λ</td><td>0.3 / 0.6</td><td>0.7 / 1.2</td><td>2.0 / 3.5</td><td>0.5 / 0.5</td></tr>
+<tr><td>XGB max_depth / min_child_w</td><td>3 / 5</td><td>5 / 10</td><td>6 / 20</td><td>9 / 3</td></tr>
+<tr><td>Rooms ที่ใช้ LGB / XGB</td><td>3 / 5</td><td>5 / 3</td><td>6 / 2</td><td>6 / 2</td></tr></table>
+<p><b>D มีไว้ทำไม:</b></p>
+<ul>
+<li>calibration curve ของ A–C ขึ้นแล้วแบน ยังไม่เห็นจุด overfit</li>
+<li>D คลาย regularization และเพิ่ม capacity จนโค้งเริ่มลง จึงใช้เป็นหลักฐานว่า "หยุดที่ C เพราะเกินนี้ overfit"</li>
+</ul>
+
+<h2>8. ผลลัพธ์ (direct, test set, เฉลี่ย 8 ห้อง)</h2>
+<table><tr><th>Set</th><th>Train acc</th><th>Calib acc</th><th>Test acc</th><th>Balanced acc</th><th>F1</th><th>MAE (ชม.)</th></tr>
+<tr><td>A</td><td>0.806</td><td>0.727</td><td>0.789</td><td>0.599</td><td>0.770</td><td>1.55</td></tr>
+<tr><td>B</td><td>0.868</td><td>0.722</td><td>0.803</td><td>0.607</td><td>0.787</td><td>1.46</td></tr>
+<tr><td><b>C</b></td><td>0.887</td><td>0.726</td><td><b>0.813</b></td><td><b>0.620</b></td><td><b>0.798</b></td><td><b>1.44</b></td></tr>
+<tr><td>D</td><td>0.939</td><td>0.726</td><td>0.802</td><td>0.613</td><td>0.791</td><td>1.54</td></tr></table>
+<p>ใช้ C: test ดีที่สุดทุก metric ส่วน D มี train สูงสุดแต่ test ตก ซึ่งเป็นหลักฐาน overfit</p>
+<h3>Baseline (ไม่ใช้ ML)</h3>
+<table><tr><th>วิธี</th><th>Test acc</th><th>Balanced acc</th><th>MAE</th></tr>
+<tr><td>naive_lag1 (พรุ่งนี้ = วันนี้)</td><td>0.621</td><td>0.472</td><td>2.69</td></tr>
+<tr><td>snaive_lag7 (= วันเดียวกันสัปดาห์ก่อน)</td><td>0.737</td><td>0.560</td><td>2.07</td></tr>
+<tr><td>โมเดล C (direct)</td><td>0.813</td><td>0.620</td><td>1.44</td></tr>
+<tr><td>โมเดล C (recursive, ผลเก่า Sep 9)</td><td>0.767</td><td>—</td><td>—</td></tr></table>
+<div class="k"><b>จุดอ่อนที่ต้องรู้ก่อนโดนถาม:</b>
+<ul>
+<li>baseline วัดบน 229 วันต่อห้อง (ทาย 1 วันล่วงหน้า) แต่ direct วัดบนประมาณ 3,100 แถวต่อห้อง (horizon 1–14) โปรโตคอลไม่เหมือนกันเป๊ะ</li>
+<li>ยังไม่มี confidence interval หรือ significance test</li>
+<li>ถ้าถูกถาม ตอบตรง ๆ ว่า "ส่วนต่าง +7.5 จุดเป็นการเทียบคร่าว ๆ งานต่อไปคือวัดบนวันเดียวกันแล้ว bootstrap หา CI"</li>
+<li>1C-MEETING ได้ 98.7% ทุกวิธีเพราะแทบไม่มีการจอง (accuracy ถูกดันขึ้นจาก class imbalance) จึงรายงาน balanced accuracy คู่กัน</li>
+</ul></div>
+
+<h2>9. Deploy</h2>
+<ul>
+<li>Render.com (<code>render.yaml</code>) รัน daphne (ASGI) และใช้ whitenoise เสิร์ฟ static</li>
+<li>DB: Neon Postgres (ใช้ <code>dj-database-url</code>), secrets อยู่ใน env (<code>python-dotenv</code>)</li>
+<li>อีเมลผ่าน Brevo API และ CORS ให้ frontend คนละ origin เรียกได้</li>
+<li>โมเดลและ meta (<code>saved_models*</code>, <code>saved_meta*</code>) อยู่ใน .gitignore ไม่ถูก commit</li>
+</ul>
+
+<h2>10. ข้อจำกัด (พูดเองก่อนโดนถาม)</h2>
+<ul>
+<li>มีแค่ 8 ห้องที่ข้อมูลพอ และข้อมูลประมาณ 3 ปี มีรอบปีการศึกษาน้อย</li>
+<li>ไม่มีตารางเรียนจริง (term schedule ว่าง) และไม่มี lead time (created_at เป็นเวลา import)</li>
+<li>Class imbalance: ห้องว่างเยอะ ทำให้ accuracy ดูดีเกินจริง จึงรายงาน balanced accuracy และ F1 ด้วย</li>
+<li>มี booking ซ้ำแบบ exact 67 แถวที่ไม่ได้ลบ (interval-union ช่วยไม่ให้นับซ้ำ)</li>
+<li>Production ยังใช้ recursive ส่วน direct ยังเป็นงานทดลอง</li>
+<li>เทียบกับ baseline ยังไม่มีสถิติทดสอบนัยสำคัญ</li>
+<li>2C09 ระดับการใช้ลดลงครึ่งหนึ่งระหว่าง train กับ test (distribution shift)</li>
+<li>calibration มีหน้าต่างเดียวและตรงกับช่วงปิดเทอม จึงยากกว่า test และแยก set A–D ไม่ออก (ดูคำถามในหัวข้อ 12)</li>
+</ul>
+
+<h2>11. Future work</h2>
+<ul>
+<li>ย้าย production ไปใช้ direct forecaster</li>
+<li>เชื่อมตารางเรียนจริงจากทะเบียน และเก็บ created_at จริงเพื่อได้ lead-time</li>
+<li>ประเมินบนวันเดียวกัน + bootstrap CI + Diebold-Mariano test</li>
+<li>ขยายไปห้องอื่นด้วย cold-start/transfer จาก pooled model</li>
+<li>Retrain อัตโนมัติพร้อม monitoring drift และแอปมือถือ (ใช้ API เดิม)</li>
+</ul>
+
+<h2>12. คำถามที่น่าจะโดน + แนวตอบ</h2>
+<details><summary>ทำไมไม่ใช้ deep learning / LSTM?</summary>
+<ul>
+<li>ลองแล้ว (อยู่ใน ensemble เดิม) แต่ได้น้ำหนัก 0% แทบทุกห้อง</li>
+<li>ข้อมูลรายวันต่อห้องมีแค่หลักร้อยถึงพันแถว ซึ่งน้อยเกินสำหรับ LSTM</li>
+<li>Gradient boosting บนข้อมูลตาราง + lag features ทำได้ดีกว่า เทรนเร็วกว่า และอธิบายได้ (feature importance)</li>
+</ul></details>
+<details><summary>ทำไมใช้ LightGBM และ XGBoost ทั้งคู่?</summary>
+<ul>
+<li>คนละแบบการโตของต้นไม้ (LGB โต leaf-wise, XGB โต level-wise) เหมาะกับห้องต่างกัน</li>
+<li>ให้แข่งกันบน calibration แล้วเลือกรายห้อง ผลคือ C ใช้ LGB 6 ห้อง XGB 2 ห้อง</li>
+</ul></details>
+<details><summary>รู้ได้ไงว่าไม่ overfit?</summary>
+<ul>
+<li>test ไม่เคยถูกใช้ตัดสินใจ ทุกอย่างเลือกบน calibration</li>
+<li>set D (capacity สูงสุด) มี train 0.94 แต่ test ตกเหลือ 0.802 ขณะที่ C ได้ 0.813 จึงเห็นจุดที่ overfit เริ่ม</li>
+</ul></details>
+<details><summary>Data leakage ป้องกันยังไง?</summary>
+<ul>
+<li>ตัดด้วยวันร่วมที่ขอบวัน และ feature ใช้เฉพาะข้อมูล ณ origin</li>
+<li>เคยเจอ leak diff_1 (R² ≈ 1) แล้วแก้ใน a019b76</li>
+<li>sin/cos ผูกกับวันในปฏิทินจริง ไม่ใช่ index ของแถว (c5983a7)</li>
+</ul></details>
+<details><summary>Accuracy 81% ดีจริงไหม เทียบอะไร?</summary>
+<ul>
+<li>เทียบกับ seasonal naive 73.7% และ naive 62.1%</li>
+<li>MAE ลดจาก 2.07 เหลือ 1.44 ชม.</li>
+<li>ยอมรับข้อจำกัดเรื่องโปรโตคอลที่ไม่เท่ากันและไม่มี CI (ดูหัวข้อ 8)</li>
+</ul></details>
+<details><summary>ทำไม accuracy ไม่พอ ต้องมี balanced accuracy?</summary>
+<ul>
+<li>class imbalance: ถ้าทาย "low" ตลอดก็ได้ accuracy สูงในห้องที่ว่าง (เช่น 1C-MEETING)</li>
+<li>balanced accuracy เฉลี่ย recall ของแต่ละคลาส จึงไม่โดนหลอกแบบนั้น</li>
+</ul></details>
+<details><summary>Calibration กับ validation ต่างกันไหม?</summary>
+<ul>
+<li><b>ความหมายทั่วไป:</b>
+ <ul>
+ <li>validation ใช้<i>เลือก</i> hyperparameter/rounds/โมเดล</li>
+ <li>calibration ใช้<i>ปรับค่าที่ทาย</i>ให้ตรงความจริง (Platt, isotonic)</li>
+ <li>test ใช้วัดผลครั้งสุดท้ายเท่านั้น</li>
+ </ul></li>
+<li><b>ในงานนี้ calibration slice ทำทั้งสองอย่าง:</b>
+ <ul>
+ <li>แบบ validation: เลือก LGB/XGB ต่อห้อง, หาน้ำหนัก ensemble, เลือก round จาก checkpoint, เลือก strategy</li>
+ <li>แบบ calibration: <code>fit_prediction_calibration</code> เรียนการแปลงค่าพยากรณ์ให้ตรงค่าจริง</li>
+ </ul></li>
+<li>แบ่งตามเวลา <code>[train | calibration (ท้าย train) | test]</code> ไม่สุ่ม เพราะเป็น time series</li>
+<li><b>ตอบกรรมการ:</b> "calibration ในงานนี้ก็คือ validation set ครับ ใช้เลือกโมเดลและ hyperparameter และใช้ปรับเทียบค่าพยากรณ์ด้วย เลยตั้งชื่อว่า calibration ส่วน test แยกไว้วัดผลอย่างเดียว"</li>
+<li><b>ระวัง:</b> probability calibration (ทาย 70% แล้วเกิดจริงประมาณ 70%, ดูด้วย reliability diagram) งานนี้ยังไม่ได้วัด</li>
+</ul></details>
+<details><summary>ทำไม calibration accuracy (0.726) ต่ำกว่า test (0.813)?</summary>
+<p>ตรวจแล้วด้วย <code>check_calib_vs_test_gap.py</code> (อ่านข้อมูลอย่างเดียว ใช้แถวเดียวกับที่โมเดลถูกให้คะแนน):</p>
+<table><tr><th>วิธี</th><th>Calibration</th><th>Test</th><th>ส่วนต่าง</th></tr>
+<tr><td>ช่วงวันที่</td><td>24 พ.ค. – 9 ก.ย. 2025 (ปิดเทอม → เปิดเทอม)</td><td>11 ก.ย. 2025 – 29 เม.ย. 2026</td><td></td></tr>
+<tr><td>ทายคลาสที่พบบ่อยสุดตลอด</td><td>0.584</td><td>0.638</td><td>+5.4</td></tr>
+<tr><td>ทายเท่ากับสัปดาห์ก่อน</td><td>0.689</td><td>0.753</td><td>+6.4</td></tr>
+<tr><td>โมเดล set C</td><td>0.726</td><td>0.813</td><td>+8.7</td></tr>
+<tr><td>โมเดลชนะวิธีสัปดาห์ก่อน</td><td>+3.7</td><td>+6.0</td><td></td></tr>
+<tr><td>สัดส่วนวัน medium (คลาสที่ยากสุด)</td><td>28%</td><td>19%</td><td></td></tr></table>
+<ul>
+<li>วิธีง่าย ๆ ที่ไม่มีการเรียนรู้ก็ได้บน test สูงกว่า 5–6 จุด แปลว่า <b>test ง่ายกว่าตั้งแต่ต้น</b> ไม่ใช่ข้อมูลรั่ว</li>
+<li>ส่วนที่เหลืออีกราว 2–3 จุด น่าจะมาจาก calibration ใช้ <code>argmax_class</code> ทุกห้อง ขณะที่ test ใช้ strategy รายห้อง รวมกับ noise (ยังไม่ได้พิสูจน์)</li>
+<li><b>ตัดสินใจไม่เปลี่ยนการแบ่ง train/test</b> เพราะผลไม่ได้ผิด และถ้าย้ายหน้าต่างเพื่อให้ตัวเลขดูปกติจะเป็น cherry-picking</li>
+<li><b>ผลข้างเคียงที่ต้องยอมรับ:</b> calibration ของ A–D แทบเท่ากัน (0.722–0.727) จึงแยก set ไม่ออก การที่รู้ว่า C ดีสุดมาจาก test ซึ่งเป็นการทดลองเพื่อรายงานผล ไม่ได้ใช้ test ปรับค่าในโมเดล</li>
+<li><b>Future work:</b> rolling-origin cross-validation (ใช้ calibration หลายหน้าต่างทั้งปี)</li>
+<li><b>ตอบกรรมการ:</b> "calibration ตรงกับช่วงปิดเทอมและเปิดเทอม ซึ่งยากกว่า แม้แต่ baseline ที่ไม่มีการเรียนรู้ก็ได้บนช่วงนี้ต่ำกว่า test 5–6 จุดเหมือนกัน ช่องว่างจึงมาจากความยากของช่วงเวลา ไม่ใช่ข้อมูลรั่ว"</li>
+</ul></details>
+<details><summary>Quantile regression คืออะไร ทำไมใช้?</summary>
+<ul>
+<li>ทาย percentile ต่าง ๆ ด้วย pinball loss จึงได้การกระจายของค่า</li>
+<li>เอาไปคำนวณ probability ของแต่ละระดับได้ แล้วเลือกระดับที่น่าจะเป็นที่สุด ซึ่งตรงกับ metric ที่ใช้วัด</li>
+</ul></details>
+<details><summary>Recursive vs direct ต่างกันยังไง?</summary>
+<p>ดูหัวข้อ 7: recursive ป้อนค่าที่ตัวเองทายกลับเข้าไปจน error สะสม ส่วน direct ทายแต่ละ horizon ตรง ๆ ทำให้ train กับ serve ตรงกัน</p></details>
+<details><summary>ทำไม pooled model ไม่แยกห้อง?</summary>
+<ul>
+<li>ห้องขยับตามปฏิทินเดียวกัน (corr 0.68–0.93) รวมกันแล้วได้ข้อมูลประมาณ 8 เท่า</li>
+<li>ความต่างของแต่ละห้องจับด้วย room_ix, room_scale และ strategy รายห้อง</li>
+</ul></details>
+<details><summary>จองพร้อมกัน 2 คนเกิดอะไร?</summary>
+<p><code>select_for_update</code> ล็อกแถว Room ใน transaction ทำให้คนที่สองต้องรอ แล้วจะเห็นว่าห้องไม่ว่าง</p></details>
+<details><summary>ทำไม WebSocket ไม่ใช้ polling?</summary>
+<p>push ทันที ไม่ต้องยิง request ซ้ำ ๆ จึงประหยัด server ต้องใช้ ASGI/Channels</p></details>
+<details><summary>ความปลอดภัยรหัสผ่าน LDAP?</summary>
+<p>ไม่เก็บรหัส (<code>unusable password</code>) ตรวจกับ LDAP ทุกครั้งที่ login</p></details>
+<details><summary>JWT เก็บ localStorage ไม่เสี่ยง XSS เหรอ?</summary>
+<ul>
+<li>เสี่ยงถ้ามี XSS จึงลดความเสี่ยงด้วย access token อายุสั้นและ React escape output อัตโนมัติ</li>
+<li>ทางที่ดีกว่าคือ httpOnly cookie (ใส่เป็น future work)</li>
+</ul></details>
+<details><summary>ทำไม early stopping ไม่ใช้?</summary>
+<ul>
+<li>early stopping ดู pinball loss ของ quantile ทีละตัว ซึ่งเป็นแค่ตัวแทนของสิ่งที่เราสนใจ</li>
+<li>เราจึงเทรนครบแล้วประเมิน ensemble ทั้งชุดที่ checkpoint ด้วย metric จริง (accuracy, MAE) แล้วเลือก round</li>
+</ul></details>
+<details><summary>ทำไมต้องมี margin 2×SE ตอนเลือก strategy?</summary>
+<ul>
+<li>calibration มีประมาณ 109 วัน จึงมี SE ราว 0.048 ชนะกันไม่กี่ทศนิยมถือเป็น noise</li>
+<li>เคยทำให้ test ตก 8 จุดมาแล้ว</li>
+</ul></details>
+<details><summary>AI ช่วยผู้ใช้/แอดมินจริงยังไง?</summary>
+<ul>
+<li>ผู้ใช้เห็นสี "ควรรีบจอง" และห้องที่ว่างถูกเรียงขึ้นก่อน</li>
+<li>แอดมินเลือกช่วงปิดซ่อมตอนที่ demand ต่ำ (MaintenanceBlock.predicted_demand_avg)</li>
+</ul></details>
+
+<h2>13. ศัพท์ที่อาจโดนให้อธิบาย</h2>
+<table>
+<tr><td>Gradient boosting</td><td>ต่อต้นไม้ทีละต้น แต่ละต้นแก้ residual ของต้นก่อน โดยคุมด้วย learning rate</td></tr>
+<tr><td>Learning rate × rounds</td><td>lr ต่ำต้องใช้ rounds มาก ทุกชุดใช้ rounds×lr = 24 เพื่อให้เทียบกันได้</td></tr>
+<tr><td>num_leaves / max_depth</td><td>capacity ของต้นไม้ ยิ่งมากยิ่งจำข้อมูลได้เยอะ ทำให้ overfit ง่าย</td></tr>
+<tr><td>reg_alpha / reg_lambda</td><td>L1 / L2 penalty บนน้ำหนักใบ ยิ่งมากยิ่งเรียบ</td></tr>
+<tr><td>min_child_samples</td><td>จำนวนตัวอย่างขั้นต่ำต่อใบ กันไม่ให้แตกใบจาก noise</td></tr>
+<tr><td>Calibration set</td><td>ส่วนท้ายของ train ทำหน้าที่ validation (เลือก model/round/strategy) และปรับเทียบค่าพยากรณ์ ทำให้ test ยังบริสุทธิ์</td></tr>
+<tr><td>Pinball loss</td><td>loss ของ quantile regression ลงโทษไม่สมมาตรตาม q</td></tr>
+<tr><td>MAE / R² / sMAPE</td><td>error เฉลี่ยเป็นชั่วโมง / สัดส่วน variance ที่อธิบายได้ / % error แบบสมมาตร</td></tr>
+<tr><td>Balanced accuracy</td><td>ค่าเฉลี่ย recall ของแต่ละคลาส</td></tr>
+<tr><td>Seasonal naive</td><td>ทายค่าจากรอบฤดูก่อน (สัปดาห์ก่อน) เป็น baseline ขั้นต่ำที่ต้องชนะ</td></tr>
+<tr><td>Data leakage</td><td>ข้อมูลอนาคตหรือเฉลยหลุดเข้า feature ทำให้คะแนนหลอก</td></tr>
+<tr><td>Overfitting</td><td>train ดีแต่ test แย่ ดูจากช่อง train-test gap และโค้ง calibration ที่ตกลง</td></tr>
+<tr><td>ASGI vs WSGI</td><td>ASGI รองรับ async/WebSocket ส่วน WSGI รองรับแค่ HTTP</td></tr>
+<tr><td>JWT</td><td>token ที่มีลายเซ็น server ตรวจได้โดยไม่ต้องเก็บ session</td></tr>
+<tr><td>select_for_update</td><td>ล็อกแถวใน DB จนกว่า transaction จบ</td></tr>
+</table>
+</body></html>

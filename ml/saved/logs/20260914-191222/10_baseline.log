@@ -1,0 +1,58 @@
+================================================================================
+ BASELINE (ไม่มี deep learning) — threshold จาก meta เซ็ต A
+================================================================================
+
+🏠 2C05-06 (n_test=229)
+   naive_lag1     Acc=0.515  BalAcc=0.453  F1=0.505  R²= -0.678  MAE=3.17h
+   snaive_lag7    Acc=0.729  BalAcc=0.694  F1=0.726  R²= -0.298  MAE=2.34h
+
+🏠 2C09 (n_test=229)
+   naive_lag1     Acc=0.690  BalAcc=0.471  F1=0.682  R²= -0.342  MAE=2.40h
+   snaive_lag7    Acc=0.799  BalAcc=0.564  F1=0.786  R²= -0.353  MAE=1.91h
+
+🏠 2C10-11 (n_test=229)
+   naive_lag1     Acc=0.480  BalAcc=0.432  F1=0.481  R²= -0.811  MAE=3.72h
+   snaive_lag7    Acc=0.664  BalAcc=0.630  F1=0.664  R²= -0.286  MAE=2.54h
+
+🏠 2C16-17 (n_test=229)
+   naive_lag1     Acc=0.511  BalAcc=0.447  F1=0.494  R²= -0.791  MAE=3.90h
+   snaive_lag7    Acc=0.625  BalAcc=0.468  F1=0.619  R²= -0.460  MAE=3.13h
+
+🏠 3C05-06 (n_test=229)
+   naive_lag1     Acc=0.498  BalAcc=0.530  F1=0.496  R²= -0.365  MAE=3.10h
+   snaive_lag7    Acc=0.646  BalAcc=0.616  F1=0.644  R²= -0.176  MAE=2.49h
+
+🏠 1C-MEETING (n_test=156)
+   naive_lag1     Acc=0.987  BalAcc=0.500  F1=0.981  R²= -1.586  MAE=0.39h
+   snaive_lag7    Acc=0.987  BalAcc=0.500  F1=0.981  R²=  0.362  MAE=0.09h
+
+🏠 3C16-17 (n_test=229)
+   naive_lag1     Acc=0.629  BalAcc=0.612  F1=0.621  R²= -0.164  MAE=3.01h
+   snaive_lag7    Acc=0.734  BalAcc=0.660  F1=0.740  R²=  0.041  MAE=2.43h
+
+🏠 4C05 (n_test=232)
+   naive_lag1     Acc=0.655  BalAcc=0.334  F1=0.676  R²= -0.840  MAE=1.84h
+   snaive_lag7    Acc=0.716  BalAcc=0.346  F1=0.715  R²= -0.900  MAE=1.65h
+
+📄 บันทึกแล้ว: /Users/macthanakorn/room_booking/ml/saved/metrics_plots/baseline_results_direct.csv
+
+
+================ สรุป: ค่าเฉลี่ยทุกห้อง ต่อ baseline ================
+             test_accuracy  balanced_accuracy        f1        r2       mae
+baseline                                                                   
+snaive_lag7       0.737413           0.559825  0.734437 -0.258688  2.071986
+naive_lag1        0.620687           0.472288  0.617075 -0.697126  2.690937
+
+================ เทียบกับโมเดลที่เทรนแล้ว (test_only_results.csv) ================
+           test_accuracy  balanced_accuracy        f1        r2       mae
+param_set                                                                
+A               0.802987           0.609050  0.785462  0.158568  1.560160
+B               0.803125           0.592725  0.783162  0.307398  1.440491
+C               0.812725           0.620262  0.798162  0.312491  1.443696
+D               0.802088           0.613088  0.790963  0.235085  1.537453
+
+🏆 baseline ที่ดีที่สุด : snaive_lag7 Acc=0.737 F1=0.734 MAE=2.07h
+🏆 โมเดลที่ดีที่สุด (เซ็ต C) : Acc=0.813 F1=0.798 MAE=1.44h
+📈 ส่วนต่าง : Acc +0.075  MAE ลดลง 0.63h
+
+🏁 เสร็จสิ้น

@@ -1,0 +1,12 @@
+            naive_lag1  snaive_lag7  model
+room                                      
+2C05-06          51.53        72.93  60.26
+2C09             69.00        79.91  86.46
+2C10-11          48.03        66.38  72.05
+2C16-17          51.09        62.45  73.36
+3C05-06          49.78        64.63  65.50
+1C-MEETING       98.72        98.72  98.72
+3C16-17          62.88        73.36  74.24
+4C05             65.52        71.55  82.76
+Mean             62.07        73.74  76.67
+saved /Users/macthanakorn/room_booking/ml/saved/metrics_plots/baseline_vs_model_C.png

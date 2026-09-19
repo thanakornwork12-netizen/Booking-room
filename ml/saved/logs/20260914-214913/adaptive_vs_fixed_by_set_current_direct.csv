@@ -1,0 +1,5 @@
+Set,Rooms,Train Accuracy,Calibration Accuracy,Test Accuracy (Adaptive),Test Balanced Accuracy,Mean Adaptive Weight LGB %,Mean Adaptive Weight XGB %
+A,8,0.8064,0.7267,0.7888,0.5987,37.5,62.5
+B,8,0.8675,0.7218,0.8034,0.6075,62.5,37.5
+C,8,0.8871,0.7259,0.8127,0.6203,75.0,25.0
+D,8,0.9392,0.7258,0.8021,0.6131,75.0,25.0

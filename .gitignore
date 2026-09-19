@@ -12,3 +12,7 @@ ml/saved/saved_meta_*
 /saved_models
 node_modules
 .env
+
+# direct-pipeline models (hundreds of MB) and the blocked-calibration sandbox
+ml/saved/saved_direct_sets/
+ml/saved/blocked_calib/

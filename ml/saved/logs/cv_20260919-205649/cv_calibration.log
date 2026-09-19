@@ -1,0 +1,304 @@
+sets=['A', 'B', 'C', 'D'] folds=[1, 2]
+Loading and aligning the 8 rooms...
+
+==============================================================================
+ FOLD 1: calibration window 2025-02-04 .. 2025-05-27
+  train rows (26362, 52)  calib rows (12040, 52)
+==============================================================================
+
+  SET A - Fast  (300 rounds x lr 0.08)
+   [lightgbm] fitting...
+      q=0.05  fit 300 rounds
+      q=0.15  fit 300 rounds
+      q=0.25  fit 300 rounds
+      q=0.35  fit 300 rounds
+      q=0.45  fit 300 rounds
+      q=0.55  fit 300 rounds
+      q=0.65  fit 300 rounds
+      q=0.75  fit 300 rounds
+      q=0.85  fit 300 rounds
+      q=0.95  fit 300 rounds
+   [lightgbm] calib acc=0.7486 @ round 280
+   [xgboost] fitting...
+      q=0.05  fit 300 rounds
+      q=0.15  fit 300 rounds
+      q=0.25  fit 300 rounds
+      q=0.35  fit 300 rounds
+      q=0.45  fit 300 rounds
+      q=0.55  fit 300 rounds
+      q=0.65  fit 300 rounds
+      q=0.75  fit 300 rounds
+      q=0.85  fit 300 rounds
+      q=0.95  fit 300 rounds
+   [xgboost] calib acc=0.7474 @ round 150
+      2C05-06      -> xgboost   acc=0.7549
+      2C09         -> xgboost   acc=0.7523
+      2C10-11      -> xgboost   acc=0.7484
+      2C16-17      -> lightgbm  acc=0.6678
+      3C05-06      -> lightgbm  acc=0.6905
+      1C-MEETING   -> lightgbm  acc=0.8936
+      3C16-17      -> lightgbm  acc=0.7493
+      4C05         -> lightgbm  acc=0.7725
+  -> set A fold 1: mean calib acc 0.7537  (elapsed 1 min)
+
+  SET B - Balanced  (600 rounds x lr 0.04)
+   [lightgbm] fitting...
+      q=0.05  fit 600 rounds
+      q=0.15  fit 600 rounds
+      q=0.25  fit 600 rounds
+      q=0.35  fit 600 rounds
+      q=0.45  fit 600 rounds
+      q=0.55  fit 600 rounds
+      q=0.65  fit 600 rounds
+      q=0.75  fit 600 rounds
+      q=0.85  fit 600 rounds
+      q=0.95  fit 600 rounds
+   [lightgbm] calib acc=0.7543 @ round 70
+   [xgboost] fitting...
+      q=0.05  fit 600 rounds
+      q=0.15  fit 600 rounds
+      q=0.25  fit 600 rounds
+      q=0.35  fit 600 rounds
+      q=0.45  fit 600 rounds
+      q=0.55  fit 600 rounds
+      q=0.65  fit 600 rounds
+      q=0.75  fit 600 rounds
+      q=0.85  fit 600 rounds
+      q=0.95  fit 600 rounds
+   [xgboost] calib acc=0.7470 @ round 120
+      2C05-06      -> xgboost   acc=0.7536
+      2C09         -> lightgbm  acc=0.7457
+      2C10-11      -> xgboost   acc=0.7490
+      2C16-17      -> lightgbm  acc=0.6796
+      3C05-06      -> lightgbm  acc=0.7004
+      1C-MEETING   -> lightgbm  acc=0.8943
+      3C16-17      -> xgboost   acc=0.7599
+      4C05         -> lightgbm  acc=0.7725
+  -> set B fold 1: mean calib acc 0.7569  (elapsed 3 min)
+
+  SET C - Wide  (1200 rounds x lr 0.02)
+   [lightgbm] fitting...
+      q=0.05  fit 1200 rounds
+      q=0.15  fit 1200 rounds
+      q=0.25  fit 1200 rounds
+      q=0.35  fit 1200 rounds
+      q=0.45  fit 1200 rounds
+      q=0.55  fit 1200 rounds
+      q=0.65  fit 1200 rounds
+      q=0.75  fit 1200 rounds
+      q=0.85  fit 1200 rounds
+      q=0.95  fit 1200 rounds
+   [lightgbm] calib acc=0.7556 @ round 140
+   [xgboost] fitting...
+      q=0.05  fit 1200 rounds
+      q=0.15  fit 1200 rounds
+      q=0.25  fit 1200 rounds
+      q=0.35  fit 1200 rounds
+      q=0.45  fit 1200 rounds
+      q=0.55  fit 1200 rounds
+      q=0.65  fit 1200 rounds
+      q=0.75  fit 1200 rounds
+      q=0.85  fit 1200 rounds
+      q=0.95  fit 1200 rounds
+   [xgboost] calib acc=0.7492 @ round 480
+      2C05-06      -> lightgbm  acc=0.7543
+      2C09         -> lightgbm  acc=0.7523
+      2C10-11      -> xgboost   acc=0.7523
+      2C16-17      -> lightgbm  acc=0.6750
+      3C05-06      -> lightgbm  acc=0.6898
+      1C-MEETING   -> lightgbm  acc=0.8943
+      3C16-17      -> lightgbm  acc=0.7599
+      4C05         -> lightgbm  acc=0.7725
+  -> set C fold 1: mean calib acc 0.7563  (elapsed 9 min)
+
+  SET D - Overfit probe  (2400 rounds x lr 0.01)
+   [lightgbm] fitting...
+      q=0.05  fit 2400 rounds
+      q=0.15  fit 2400 rounds
+      q=0.25  fit 2400 rounds
+      q=0.35  fit 2400 rounds
+      q=0.45  fit 2400 rounds
+      q=0.55  fit 2400 rounds
+      q=0.65  fit 2400 rounds
+      q=0.75  fit 2400 rounds
+      q=0.85  fit 2400 rounds
+      q=0.95  fit 2400 rounds
+   [lightgbm] calib acc=0.7494 @ round 420
+   [xgboost] fitting...
+      q=0.05  fit 2400 rounds
+      q=0.15  fit 2400 rounds
+      q=0.25  fit 2400 rounds
+      q=0.35  fit 2400 rounds
+      q=0.45  fit 2400 rounds
+      q=0.55  fit 2400 rounds
+      q=0.65  fit 2400 rounds
+      q=0.75  fit 2400 rounds
+      q=0.85  fit 2400 rounds
+      q=0.95  fit 2400 rounds
+   [xgboost] calib acc=0.7353 @ round 260
+      2C05-06      -> xgboost   acc=0.7477
+      2C09         -> lightgbm  acc=0.7431
+      2C10-11      -> xgboost   acc=0.7497
+      2C16-17      -> lightgbm  acc=0.6907
+      3C05-06      -> lightgbm  acc=0.6865
+      1C-MEETING   -> lightgbm  acc=0.8629
+      3C16-17      -> lightgbm  acc=0.7665
+      4C05         -> lightgbm  acc=0.7725
+  -> set D fold 1: mean calib acc 0.7525  (elapsed 39 min)
+
+==============================================================================
+ FOLD 2: calibration window 2024-10-18 .. 2025-02-16
+  train rows (14322, 52)  calib rows (12040, 52)
+==============================================================================
+
+  SET A - Fast  (300 rounds x lr 0.08)
+   [lightgbm] fitting...
+      q=0.05  fit 300 rounds
+      q=0.15  fit 300 rounds
+      q=0.25  fit 300 rounds
+      q=0.35  fit 300 rounds
+      q=0.45  fit 300 rounds
+      q=0.55  fit 300 rounds
+      q=0.65  fit 300 rounds
+      q=0.75  fit 300 rounds
+      q=0.85  fit 300 rounds
+      q=0.95  fit 300 rounds
+   [lightgbm] calib acc=0.6220 @ round 290
+   [xgboost] fitting...
+      q=0.05  fit 300 rounds
+      q=0.15  fit 300 rounds
+      q=0.25  fit 300 rounds
+      q=0.35  fit 300 rounds
+      q=0.45  fit 300 rounds
+      q=0.55  fit 300 rounds
+      q=0.65  fit 300 rounds
+      q=0.75  fit 300 rounds
+      q=0.85  fit 300 rounds
+      q=0.95  fit 300 rounds
+   [xgboost] calib acc=0.6031 @ round 300
+      2C05-06      -> xgboost   acc=0.4567
+      2C09         -> lightgbm  acc=0.6704
+      2C10-11      -> lightgbm  acc=0.5341
+      2C16-17      -> xgboost   acc=0.5806
+      3C05-06      -> xgboost   acc=0.5060
+      1C-MEETING   -> lightgbm  acc=0.8900
+      3C16-17      -> lightgbm  acc=0.5020
+      4C05         -> lightgbm  acc=0.8538
+  -> set A fold 2: mean calib acc 0.6242  (elapsed 39 min)
+
+  SET B - Balanced  (600 rounds x lr 0.04)
+   [lightgbm] fitting...
+      q=0.05  fit 600 rounds
+      q=0.15  fit 600 rounds
+      q=0.25  fit 600 rounds
+      q=0.35  fit 600 rounds
+      q=0.45  fit 600 rounds
+      q=0.55  fit 600 rounds
+      q=0.65  fit 600 rounds
+      q=0.75  fit 600 rounds
+      q=0.85  fit 600 rounds
+      q=0.95  fit 600 rounds
+   [lightgbm] calib acc=0.6181 @ round 310
+   [xgboost] fitting...
+      q=0.05  fit 600 rounds
+      q=0.15  fit 600 rounds
+      q=0.25  fit 600 rounds
+      q=0.35  fit 600 rounds
+      q=0.45  fit 600 rounds
+      q=0.55  fit 600 rounds
+      q=0.65  fit 600 rounds
+      q=0.75  fit 600 rounds
+      q=0.85  fit 600 rounds
+      q=0.95  fit 600 rounds
+   [xgboost] calib acc=0.6284 @ round 470
+      2C05-06      -> xgboost   acc=0.4705
+      2C09         -> xgboost   acc=0.6789
+      2C10-11      -> xgboost   acc=0.5570
+      2C16-17      -> xgboost   acc=0.6029
+      3C05-06      -> xgboost   acc=0.5099
+      1C-MEETING   -> lightgbm  acc=0.8900
+      3C16-17      -> lightgbm  acc=0.5165
+      4C05         -> xgboost   acc=0.8538
+  -> set B fold 2: mean calib acc 0.6349  (elapsed 42 min)
+
+  SET C - Wide  (1200 rounds x lr 0.02)
+   [lightgbm] fitting...
+      q=0.05  fit 1200 rounds
+      q=0.15  fit 1200 rounds
+      q=0.25  fit 1200 rounds
+      q=0.35  fit 1200 rounds
+      q=0.45  fit 1200 rounds
+      q=0.55  fit 1200 rounds
+      q=0.65  fit 1200 rounds
+      q=0.75  fit 1200 rounds
+      q=0.85  fit 1200 rounds
+      q=0.95  fit 1200 rounds
+   [lightgbm] calib acc=0.6155 @ round 1200
+   [xgboost] fitting...
+      q=0.05  fit 1200 rounds
+      q=0.15  fit 1200 rounds
+      q=0.25  fit 1200 rounds
+      q=0.35  fit 1200 rounds
+      q=0.45  fit 1200 rounds
+      q=0.55  fit 1200 rounds
+      q=0.65  fit 1200 rounds
+      q=0.75  fit 1200 rounds
+      q=0.85  fit 1200 rounds
+      q=0.95  fit 1200 rounds
+   [xgboost] calib acc=0.6252 @ round 820
+      2C05-06      -> xgboost   acc=0.4744
+      2C09         -> xgboost   acc=0.6769
+      2C10-11      -> xgboost   acc=0.5393
+      2C16-17      -> xgboost   acc=0.5799
+      3C05-06      -> xgboost   acc=0.5139
+      1C-MEETING   -> lightgbm  acc=0.8800
+      3C16-17      -> lightgbm  acc=0.5311
+      4C05         -> xgboost   acc=0.8538
+  -> set C fold 2: mean calib acc 0.6312  (elapsed 47 min)
+
+  SET D - Overfit probe  (2400 rounds x lr 0.01)
+   [lightgbm] fitting...
+      q=0.05  fit 2400 rounds
+      q=0.15  fit 2400 rounds
+      q=0.25  fit 2400 rounds
+      q=0.35  fit 2400 rounds
+      q=0.45  fit 2400 rounds
+      q=0.55  fit 2400 rounds
+      q=0.65  fit 2400 rounds
+      q=0.75  fit 2400 rounds
+      q=0.85  fit 2400 rounds
+      q=0.95  fit 2400 rounds
+   [lightgbm] calib acc=0.6051 @ round 1380
+   [xgboost] fitting...
+      q=0.05  fit 2400 rounds
+      q=0.15  fit 2400 rounds
+      q=0.25  fit 2400 rounds
+      q=0.35  fit 2400 rounds
+      q=0.45  fit 2400 rounds
+      q=0.55  fit 2400 rounds
+      q=0.65  fit 2400 rounds
+      q=0.75  fit 2400 rounds
+      q=0.85  fit 2400 rounds
+      q=0.95  fit 2400 rounds
+   [xgboost] calib acc=0.5999 @ round 1140
+      2C05-06      -> xgboost   acc=0.4692
+      2C09         -> lightgbm  acc=0.6723
+      2C10-11      -> lightgbm  acc=0.5446
+      2C16-17      -> xgboost   acc=0.5911
+      3C05-06      -> xgboost   acc=0.5132
+      1C-MEETING   -> lightgbm  acc=0.7843
+      3C16-17      -> xgboost   acc=0.4649
+      4C05         -> lightgbm  acc=0.8406
+  -> set D fold 2: mean calib acc 0.6100  (elapsed 75 min)
+
+=== calibration accuracy per window, and the CV mean ===
+     fold_1  fold_2  fold_0_current  cv_mean   cv_sd   train    test
+set                                                                 
+A    0.7537  0.6242          0.7267   0.7015  0.0683  0.8064  0.7888
+B    0.7569  0.6349          0.7218   0.7045  0.0628  0.8675  0.8034
+C    0.7563  0.6312          0.7259   0.7045  0.0653  0.8871  0.8127
+D    0.7524  0.6100          0.7258   0.6961  0.0757  0.9392  0.8021
+
+saved /Users/macthanakorn/room_booking/ml/saved/metrics_plots/cv_calibration_direct.csv
+saved /Users/macthanakorn/room_booking/ml/saved/metrics_plots/cv_calibration_direct_summary.csv
+total 75 min — test numbers are unchanged by design

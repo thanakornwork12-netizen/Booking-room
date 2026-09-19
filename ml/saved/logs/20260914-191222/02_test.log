@@ -1,0 +1,116 @@
+test origin step = 1 (matches train sampling)
+
+================================================================================
+ TESTING SET A - Fast  (config=A_fast, rooms per engine={'lightgbm': 3, 'xgboost': 5})
+================================================================================
+✅ 2C05-06........... winner=xgboost    TestAcc=0.773  BalAcc=0.713  F1=0.766  R²=0.440  MAE=1.74h  (strategy=argmax_class, n_test=3101)
+✅ 2C09.............. winner=lightgbm   TestAcc=0.870  BalAcc=0.699  F1=0.856  R²=0.547  MAE=1.29h  (strategy=argmax_class, n_test=3101)
+✅ 2C10-11........... winner=lightgbm   TestAcc=0.753  BalAcc=0.652  F1=0.732  R²=0.506  MAE=1.72h  (strategy=argmax_class, n_test=3101)
+✅ 2C16-17........... winner=lightgbm   TestAcc=0.774  BalAcc=0.704  F1=0.769  R²=0.421  MAE=2.01h  (strategy=argmax_class, n_test=3101)
+✅ 3C05-06........... winner=xgboost    TestAcc=0.714  BalAcc=0.627  F1=0.695  R²=0.449  MAE=1.83h  (strategy=argmax_class, n_test=3101)
+✅ 1C-MEETING........ winner=xgboost    TestAcc=0.987  BalAcc=0.500  F1=0.980  R²=-1.356  MAE=0.39h  (strategy=argmax_class, n_test=2079)
+✅ 3C16-17........... winner=xgboost    TestAcc=0.738  BalAcc=0.642  F1=0.742  R²=0.462  MAE=2.26h  (strategy=argmax_class, n_test=3101)
+✅ 4C05.............. winner=xgboost    TestAcc=0.816  BalAcc=0.335  F1=0.744  R²=-0.201  MAE=1.24h  (strategy=argmax_class, n_test=3143)
+✅ DONE SET A
+
+================================================================================
+ TESTING SET B - Balanced  (config=C_highqual, rooms per engine={'lightgbm': 5, 'xgboost': 3})
+================================================================================
+✅ 2C05-06........... winner=xgboost    TestAcc=0.765  BalAcc=0.701  F1=0.754  R²=0.543  MAE=1.50h  (strategy=argmax_class, n_test=3101)
+✅ 2C09.............. winner=xgboost    TestAcc=0.858  BalAcc=0.620  F1=0.834  R²=0.561  MAE=1.25h  (strategy=argmax_class, n_test=3101)
+✅ 2C10-11........... winner=lightgbm   TestAcc=0.751  BalAcc=0.658  F1=0.735  R²=0.496  MAE=1.68h  (strategy=argmax_class, n_test=3101)
+✅ 2C16-17........... winner=xgboost    TestAcc=0.770  BalAcc=0.625  F1=0.747  R²=0.447  MAE=1.97h  (strategy=argmax_class, n_test=3101)
+✅ 3C05-06........... winner=lightgbm   TestAcc=0.748  BalAcc=0.666  F1=0.731  R²=0.564  MAE=1.54h  (strategy=argmax_class, n_test=3101)
+✅ 1C-MEETING........ winner=lightgbm   TestAcc=0.987  BalAcc=0.500  F1=0.980  R²=-0.438  MAE=0.26h  (strategy=argmax_class, n_test=2079)
+✅ 3C16-17........... winner=lightgbm   TestAcc=0.737  BalAcc=0.640  F1=0.744  R²=0.539  MAE=2.02h  (strategy=argmax_class, n_test=3101)
+✅ 4C05.............. winner=lightgbm   TestAcc=0.809  BalAcc=0.333  F1=0.741  R²=-0.254  MAE=1.30h  (strategy=argmax_class, n_test=3143)
+✅ DONE SET B
+
+================================================================================
+ TESTING SET C - Wide  (config=E_reg_wide, rooms per engine={'lightgbm': 6, 'xgboost': 2})
+================================================================================
+✅ 2C05-06........... winner=xgboost    TestAcc=0.794  BalAcc=0.744  F1=0.789  R²=0.556  MAE=1.54h  (strategy=argmax_class, n_test=3101)
+✅ 2C09.............. winner=lightgbm   TestAcc=0.878  BalAcc=0.706  F1=0.861  R²=0.606  MAE=1.25h  (strategy=argmax_class, n_test=3101)
+✅ 2C10-11........... winner=xgboost    TestAcc=0.768  BalAcc=0.665  F1=0.752  R²=0.533  MAE=1.72h  (strategy=argmax_class, n_test=3101)
+✅ 2C16-17........... winner=lightgbm   TestAcc=0.757  BalAcc=0.680  F1=0.754  R²=0.433  MAE=1.98h  (strategy=argmax_class, n_test=3101)
+✅ 3C05-06........... winner=lightgbm   TestAcc=0.759  BalAcc=0.671  F1=0.740  R²=0.592  MAE=1.52h  (strategy=argmax_class, n_test=3101)
+✅ 1C-MEETING........ winner=lightgbm   TestAcc=0.987  BalAcc=0.500  F1=0.980  R²=-0.608  MAE=0.31h  (strategy=argmax_class, n_test=2079)
+✅ 3C16-17........... winner=lightgbm   TestAcc=0.749  BalAcc=0.663  F1=0.770  R²=0.565  MAE=1.94h  (strategy=median, n_test=3101)
+✅ 4C05.............. winner=lightgbm   TestAcc=0.809  BalAcc=0.333  F1=0.741  R²=-0.176  MAE=1.29h  (strategy=argmax_class, n_test=3143)
+✅ DONE SET C
+
+================================================================================
+ TESTING SET D - Overfit probe  (config=H_lowreg, rooms per engine={'lightgbm': 6, 'xgboost': 2})
+================================================================================
+✅ 2C05-06........... winner=lightgbm   TestAcc=0.780  BalAcc=0.729  F1=0.776  R²=0.520  MAE=1.59h  (strategy=argmax_class, n_test=3101)
+✅ 2C09.............. winner=lightgbm   TestAcc=0.850  BalAcc=0.670  F1=0.837  R²=0.600  MAE=1.28h  (strategy=argmax_class, n_test=3101)
+✅ 2C10-11........... winner=lightgbm   TestAcc=0.761  BalAcc=0.688  F1=0.754  R²=0.495  MAE=1.77h  (strategy=argmax_class, n_test=3101)
+✅ 2C16-17........... winner=xgboost    TestAcc=0.765  BalAcc=0.673  F1=0.760  R²=0.441  MAE=2.05h  (strategy=argmax_class, n_test=3101)
+✅ 3C05-06........... winner=xgboost    TestAcc=0.772  BalAcc=0.686  F1=0.754  R²=0.589  MAE=1.63h  (strategy=argmax_class, n_test=3101)
+✅ 1C-MEETING........ winner=lightgbm   TestAcc=0.966  BalAcc=0.490  F1=0.970  R²=-1.161  MAE=0.49h  (strategy=argmax_class, n_test=2079)
+✅ 3C16-17........... winner=lightgbm   TestAcc=0.726  BalAcc=0.642  F1=0.744  R²=0.519  MAE=2.13h  (strategy=median, n_test=3101)
+✅ 4C05.............. winner=lightgbm   TestAcc=0.796  BalAcc=0.327  F1=0.734  R²=-0.122  MAE=1.36h  (strategy=argmax_class, n_test=3143)
+✅ DONE SET D
+
+
+================ SUMMARY (direct model, rolling 14-day forecasts on dataset_test.xlsx) ================
+param_set       room   winner  pred_calibrated  test_accuracy  balanced_accuracy  n_true_classes     f1        r2      mae  n_test  origin_step               evaluation_mode
+        A    2C05-06  xgboost            False         0.7730             0.7134               3 0.7662  0.439834 1.741872    3101            1 direct_14d_multihorizon_step1
+        A       2C09 lightgbm            False         0.8700             0.6987               3 0.8558  0.547309 1.294783    3101            1 direct_14d_multihorizon_step1
+        A    2C10-11 lightgbm            False         0.7533             0.6524               3 0.7319  0.505512 1.716418    3101            1 direct_14d_multihorizon_step1
+        A    2C16-17 lightgbm            False         0.7739             0.7035               3 0.7689  0.420848 2.007220    3101            1 direct_14d_multihorizon_step1
+        A    3C05-06  xgboost            False         0.7136             0.6271               3 0.6948  0.449124 1.826656    3101            1 direct_14d_multihorizon_step1
+        A 1C-MEETING  xgboost            False         0.9865             0.5000               2 0.9798 -1.355627 0.392530    2079            1 direct_14d_multihorizon_step1
+        A    3C16-17  xgboost            False         0.7378             0.6421               3 0.7423  0.462297 2.262641    3101            1 direct_14d_multihorizon_step1
+        A       4C05  xgboost            False         0.8158             0.3352               3 0.7440 -0.200748 1.239156    3143            1 direct_14d_multihorizon_step1
+        B    2C05-06  xgboost            False         0.7652             0.7011               3 0.7545  0.543065 1.495170    3101            1 direct_14d_multihorizon_step1
+        B       2C09  xgboost            False         0.8581             0.6198               3 0.8336  0.560928 1.254900    3101            1 direct_14d_multihorizon_step1
+        B    2C10-11 lightgbm            False         0.7510             0.6578               3 0.7353  0.496351 1.682779    3101            1 direct_14d_multihorizon_step1
+        B    2C16-17  xgboost            False         0.7704             0.6248               3 0.7468  0.447097 1.970509    3101            1 direct_14d_multihorizon_step1
+        B    3C05-06 lightgbm            False         0.7478             0.6659               3 0.7310  0.564097 1.541006    3101            1 direct_14d_multihorizon_step1
+        B 1C-MEETING lightgbm            False         0.9865             0.5000               2 0.9798 -0.437844 0.255990    2079            1 direct_14d_multihorizon_step1
+        B    3C16-17 lightgbm            False         0.7369             0.6399               3 0.7438  0.539451 2.024082    3101            1 direct_14d_multihorizon_step1
+        B       4C05 lightgbm            False         0.8091             0.3325               3 0.7405 -0.253958 1.299491    3143            1 direct_14d_multihorizon_step1
+        C    2C05-06  xgboost            False         0.7939             0.7443               3 0.7889  0.555663 1.537673    3101            1 direct_14d_multihorizon_step1
+        C       2C09 lightgbm            False         0.8781             0.7062               3 0.8606  0.606285 1.250435    3101            1 direct_14d_multihorizon_step1
+        C    2C10-11  xgboost            False         0.7685             0.6647               3 0.7516  0.532763 1.724487    3101            1 direct_14d_multihorizon_step1
+        C    2C16-17 lightgbm            False         0.7575             0.6804               3 0.7540  0.432749 1.975313    3101            1 direct_14d_multihorizon_step1
+        C    3C05-06 lightgbm            False         0.7591             0.6708               3 0.7401  0.592300 1.517954    3101            1 direct_14d_multihorizon_step1
+        C 1C-MEETING lightgbm            False         0.9865             0.5000               2 0.9798 -0.608489 0.305959    2079            1 direct_14d_multihorizon_step1
+        C    3C16-17 lightgbm            False         0.7491             0.6632               3 0.7697  0.564661 1.943431    3101            1 direct_14d_multihorizon_step1
+        C       4C05 lightgbm            False         0.8091             0.3325               3 0.7406 -0.176007 1.294313    3143            1 direct_14d_multihorizon_step1
+        D    2C05-06 lightgbm            False         0.7801             0.7290               3 0.7757  0.519930 1.587680    3101            1 direct_14d_multihorizon_step1
+        D       2C09 lightgbm            False         0.8504             0.6703               3 0.8365  0.600477 1.275493    3101            1 direct_14d_multihorizon_step1
+        D    2C10-11 lightgbm            False         0.7614             0.6878               3 0.7539  0.494633 1.766300    3101            1 direct_14d_multihorizon_step1
+        D    2C16-17  xgboost            False         0.7652             0.6728               3 0.7601  0.441475 2.050138    3101            1 direct_14d_multihorizon_step1
+        D    3C05-06  xgboost            False         0.7717             0.6858               3 0.7541  0.588656 1.632690    3101            1 direct_14d_multihorizon_step1
+        D 1C-MEETING lightgbm            False         0.9663             0.4898               2 0.9696 -1.161075 0.490037    2079            1 direct_14d_multihorizon_step1
+        D    3C16-17 lightgbm            False         0.7259             0.6421               3 0.7440  0.519006 2.133222    3101            1 direct_14d_multihorizon_step1
+        D       4C05 lightgbm            False         0.7957             0.3271               3 0.7338 -0.122422 1.364069    3143            1 direct_14d_multihorizon_step1
+
+📄 Saved: /Users/macthanakorn/room_booking/ml/saved/metrics_plots/test_only_results_direct.csv
+
+📊 Mean test accuracy per set:
+           test_accuracy  balanced_accuracy       mae        r2
+param_set                                                      
+A               0.802987           0.609050  1.560160  0.158568
+B               0.803125           0.592725  1.440491  0.307398
+C               0.812725           0.620262  1.443696  0.312491
+D               0.802088           0.613088  1.537453  0.235085
+
+⚠️  Rooms with <3 label classes present in test (plain accuracy is not meaningful):
+param_set       room  test_accuracy  balanced_accuracy  n_true_classes        r2
+        A 1C-MEETING         0.9865             0.5000               2 -1.355627
+        B 1C-MEETING         0.9865             0.5000               2 -0.437844
+        C 1C-MEETING         0.9865             0.5000               2 -0.608489
+        D 1C-MEETING         0.9663             0.4898               2 -1.161075
+
+📊 Mean excluding those rooms:
+           test_accuracy  balanced_accuracy
+param_set                                  
+A               0.776771           0.624629
+B               0.776929           0.605971
+C               0.787900           0.637443
+D               0.778629           0.630700
+
+🏁 ALL SETS TESTED
