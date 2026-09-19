@@ -6,6 +6,7 @@ each room's meta.pkl says won). Reads straight from saved_meta_*_excel_split/
 Usage: python ml/saved/plot_training_loss_by_set.py
 """
 import os
+import sys
 import glob
 import joblib
 import numpy as np
@@ -17,14 +18,42 @@ BASE_DIR = '/Users/macthanakorn/room_booking'
 SAVED_DIR = os.path.join(BASE_DIR, 'ml', 'saved')
 OUT_PNG = os.path.join(SAVED_DIR, 'metrics_plots', 'training_loss_by_set.png')
 
-SETS = ['A', 'B', 'C', 'D', 'E']
-SET_NAMES = {'A': 'Fast', 'B': 'Balanced', 'C': 'High Quality', 'D': 'Extra Deep', 'E': 'Max Depth'}
+# --direct reads the direct-model sets (saved_meta_{SET}_direct, written by
+# train_direct_sets.py) instead of the recursive pipeline's, and writes a
+# separate file so neither run overwrites the other's figure.
+DIRECT = '--direct' in sys.argv or '--blocked' in sys.argv
+META_SUFFIX = '_direct' if DIRECT else '_excel_split'
+if DIRECT:
+    OUT_PNG = OUT_PNG.replace('.png', '_direct.png')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import blocked_variant  # noqa: E402
+blocked_variant.apply(globals())
+
+# Only A/B/C are trained now: those three vary the training schedule
+# (300/800/1500 trees at lr .05/.03/.01) with capacity held fixed. D/E belong
+# to an older experiment and have no current metas, so leaving them in this
+# list drew empty series.
+# D is a direct-pipeline set only. saved_meta_D_excel_split exists but holds
+# metas from a run that predates the daily-occupancy fix, so pulling it into the
+# recursive figures would put two different datasets in one chart.
+SETS = ['A', 'B', 'C', 'D'] if DIRECT else ['A', 'B', 'C']
+SET_NAMES = ({'A': 'Fast', 'B': 'Balanced', 'C': 'Wide', 'D': 'Overfit probe'} if DIRECT else
+             {'A': 'Fast', 'B': 'Balanced', 'C': 'High Quality', 'D': 'Extra Deep', 'E': 'Max Depth'})
+
+def _x_axis(rounds, values):
+    """Boosting round for each point. Direct-model histories store one point
+    every 10 rounds in 'rounds'; pipeline histories have one per round."""
+    if rounds and len(rounds) == len(values):
+        return rounds
+    return range(1, len(values) + 1)
+
 COLORS = {'A': '#f59e0b', 'B': '#10b981', 'C': '#3b82f6', 'D': '#8b5cf6', 'E': '#ef4444'}
 
 curves = {}
 for set_name in SETS:
-    d = os.path.join(SAVED_DIR, f'saved_meta_{set_name}_excel_split')
+    d = os.path.join(SAVED_DIR, f'saved_meta_{set_name}{META_SUFFIX}')
     per_room_train, per_room_valid = [], []
+    set_rounds = None
     for f in sorted(glob.glob(os.path.join(d, '*_meta.pkl'))):
         m = joblib.load(f)
         weights = m.get('ensemble_weights', {}) or {}
@@ -33,6 +62,7 @@ for set_name in SETS:
         tl = hist.get('train_loss')
         vl = hist.get('valid_loss')
         if tl and vl:
+            set_rounds = set_rounds or hist.get('rounds')
             per_room_train.append(tl)
             per_room_valid.append(vl)
     if per_room_train:
@@ -41,6 +71,7 @@ for set_name in SETS:
         padded_valid = np.array([a + [a[-1]] * (max_len - len(a)) for a in per_room_valid])
         curves[set_name] = {
             'train_mean': padded_train.mean(axis=0),
+            'rounds': set_rounds,
             'valid_mean': padded_valid.mean(axis=0),
         }
 
@@ -59,7 +90,7 @@ for set_name in SETS:
         continue
     c = COLORS[set_name]
     tr = curves[set_name]['train_mean']
-    ax.plot(range(1, len(tr) + 1), tr, color=c, marker='o', markersize=3, linewidth=2,
+    ax.plot(_x_axis(curves[set_name]['rounds'], tr), tr, color=c, marker='o', markersize=3, linewidth=2,
              label=f'{set_name} ({SET_NAMES[set_name]})')
 
 ax.set_title('Train Loss per Round (avg. across 8 rooms)', fontweight='bold')

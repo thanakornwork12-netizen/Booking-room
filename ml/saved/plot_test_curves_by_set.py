@@ -44,17 +44,39 @@ from booking.models import Room
 
 SAVED_DIR = os.path.join(BASE_DIR, 'ml', 'saved')
 METRICS_DIR = F.METRICS_DIR
-TRAIN_XLSX = os.path.join(SAVED_DIR, 'data_split', 'booking_data_train.xlsx')
-TEST_XLSX = os.path.join(SAVED_DIR, 'data_split', 'booking_data_test.xlsx')
+TRAIN_XLSX = os.path.join(SAVED_DIR, 'data_split', 'dataset_train.xlsx')
+TEST_XLSX = os.path.join(SAVED_DIR, 'data_split', 'dataset_test.xlsx')
 ACC_PNG = os.path.join(METRICS_DIR, 'test_curves_by_set.png')
 LOSS_PNG = os.path.join(METRICS_DIR, 'test_loss_by_set.png')
+BOTH_PNG = os.path.join(METRICS_DIR, 'test_curves_and_loss_by_set.png')
+
+# --direct plots the direct-model sets from the test curves that
+# test_direct_sets.py stored in saved_meta_{SET}_direct, and writes separate
+# files so the pipeline figures are kept.
+DIRECT = '--direct' in sys.argv or '--blocked' in sys.argv
+if DIRECT:
+    ACC_PNG = ACC_PNG.replace('.png', '_direct.png')
+    LOSS_PNG = LOSS_PNG.replace('.png', '_direct.png')
+    BOTH_PNG = BOTH_PNG.replace('.png', '_direct.png')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import blocked_variant  # noqa: E402
+blocked_variant.apply(globals())
+CURVE_ROUNDS = {}   # set -> boosting round of each point, when not one per round
 
 ROOM_IDS = {
     '2C05-06': 443, '2C09': 445, '2C10-11': 446, '2C16-17': 447,
     '3C05-06': 448, '1C-MEETING': 487, '3C16-17': 505, '4C05': 506,
 }
-SETS = ['A', 'B', 'C', 'D', 'E']
-SET_NAMES = {'A': 'Fast', 'B': 'Balanced', 'C': 'High Quality', 'D': 'Extra Deep', 'E': 'Max Depth'}
+# Only A/B/C are trained now: those three vary the training schedule
+# (300/800/1500 trees at lr .05/.03/.01) with capacity held fixed. D/E belong
+# to an older experiment and have no current metas, so leaving them in this
+# list drew empty series.
+# D is a direct-pipeline set only. saved_meta_D_excel_split exists but holds
+# metas from a run that predates the daily-occupancy fix, so pulling it into the
+# recursive figures would put two different datasets in one chart.
+SETS = ['A', 'B', 'C', 'D'] if DIRECT else ['A', 'B', 'C']
+SET_NAMES = ({'A': 'Fast', 'B': 'Balanced', 'C': 'Wide', 'D': 'Overfit probe'} if DIRECT else
+             {'A': 'Fast', 'B': 'Balanced', 'C': 'High Quality', 'D': 'Extra Deep', 'E': 'Max Depth'})
 COLORS = {'A': '#f59e0b', 'B': '#10b981', 'C': '#3b82f6', 'D': '#8b5cf6', 'E': '#ef4444'}
 
 
@@ -100,6 +122,22 @@ def actual_boost_rounds(model, winner, set_name):
 
 
 def room_test_curve(code, room_id, set_name, train_all, test_all):
+    if DIRECT:
+        # The pooled direct model cannot be re-run per room like a lgb.pkl;
+        # test_direct_sets.py already scored it every 10 rounds.
+        meta_path = os.path.join(SAVED_DIR, f'saved_meta_{set_name}_direct', f'{room_id}_meta.pkl')
+        if not os.path.exists(meta_path):
+            return None
+        tc = joblib.load(meta_path).get('test_curve')
+        if not tc:
+            return None
+        # Rooms are served by different engines at different round counts, and the
+        # averaged curve is as long as the longest room. Keep that room's rounds:
+        # keeping the last room's left the x-axis shorter than the curve, so it fell
+        # back to point indices and A/D were drawn ~10x too narrow.
+        if len(tc['rounds']) > len(CURVE_ROUNDS.get(set_name, [])):
+            CURVE_ROUNDS[set_name] = tc['rounds']
+        return list(tc['accuracy']), list(tc['loss'])
     meta_path = os.path.join(SAVED_DIR, f'saved_meta_{set_name}_excel_split', f'{room_id}_meta.pkl')
     if not os.path.exists(meta_path):
         return None
@@ -187,18 +225,22 @@ def collect_set(set_name, train_all, test_all):
     return padded_acc.mean(axis=0) * 100, padded_loss.mean(axis=0)
 
 
-def plot_single(curves, ylabel, title, out_png, legend_loc):
+def _style():
     plt.rcParams.update({
         'savefig.facecolor': 'white', 'font.family': 'DejaVu Sans',
         'font.size': 11, 'axes.titlesize': 13, 'legend.fontsize': 9.5,
     })
-    fig, ax = plt.subplots(figsize=(9, 6), dpi=300)
+
+
+def _draw(ax, curves, ylabel, title, legend_loc):
     for set_name in SETS:
         if set_name not in curves:
             continue
         c = COLORS[set_name]
         vals = curves[set_name]
-        ax.plot(range(1, len(vals) + 1), vals, color=c, marker='o', markersize=3, linewidth=2,
+        rounds = CURVE_ROUNDS.get(set_name)
+        xs = rounds if rounds and len(rounds) == len(vals) else range(1, len(vals) + 1)
+        ax.plot(xs, vals, color=c, marker='o', markersize=3, linewidth=2,
                  label=f'{set_name} ({SET_NAMES[set_name]})')
     ax.set_title(title, fontweight='bold')
     ax.set_xlabel('Boosting Round')
@@ -207,6 +249,26 @@ def plot_single(curves, ylabel, title, out_png, legend_loc):
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.grid(alpha=0.25)
+
+
+def plot_single(curves, ylabel, title, out_png, legend_loc):
+    _style()
+    fig, ax = plt.subplots(figsize=(9, 6), dpi=300)
+    _draw(ax, curves, ylabel, title, legend_loc)
+    fig.suptitle('Test Curves by Param Set — Winning Model per Room', fontweight='bold', fontsize=14)
+    fig.tight_layout()
+    plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+    plt.close(fig)
+    print(f'Saved: {out_png}')
+
+
+def plot_both(acc_curves, loss_curves, out_png):
+    """Accuracy on the left, loss on the right, one figure. Both panels come from
+    the same _draw so a set keeps the same colour/label in each."""
+    _style()
+    fig, (ax_acc, ax_loss) = plt.subplots(1, 2, figsize=(17, 6), dpi=300)
+    _draw(ax_acc, acc_curves, 'Accuracy (%)', 'TestAcc per Round (avg. across 8 rooms)', 'lower right')
+    _draw(ax_loss, loss_curves, 'Loss (MAE, hours)', 'Test Loss per Round (avg. across 8 rooms)', 'upper right')
     fig.suptitle('Test Curves by Param Set — Winning Model per Room', fontweight='bold', fontsize=14)
     fig.tight_layout()
     plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -230,6 +292,7 @@ def main():
 
     plot_single(acc_curves, 'Accuracy (%)', 'TestAcc per Round (avg. across 8 rooms)', ACC_PNG, 'lower right')
     plot_single(loss_curves, 'Loss (MAE)', 'Test Loss per Round (avg. across 8 rooms)', LOSS_PNG, 'upper right')
+    plot_both(acc_curves, loss_curves, BOTH_PNG)
 
 
 if __name__ == '__main__':

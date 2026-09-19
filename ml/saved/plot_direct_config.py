@@ -21,6 +21,10 @@ import matplotlib.pyplot as plt
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_ROOT = os.path.join(CURRENT_DIR, 'saved_direct_sets')
 OUT_PNG = os.path.join(CURRENT_DIR, 'metrics_plots', 'model_configuration_direct.png')
+import sys  # noqa: E402
+sys.path.insert(0, CURRENT_DIR)
+import blocked_variant  # noqa: E402
+blocked_variant.apply(globals())
 SETS = ['A', 'B', 'C', 'D']
 
 # Only the hyperparameters that actually distinguish the sets. subsample and
