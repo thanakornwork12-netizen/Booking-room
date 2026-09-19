@@ -1,0 +1,7 @@
+run_id      : 20260919-223633
+variant     : BLOCKED calibration
+started     : Sat Sep 19 22:36:33 +07 2026
+arg         : all sets
+git HEAD    : aaa20cd
+git dirty   : 66 file(s) modified
+finished: Sun Sep 20 00:31:04 +07 2026

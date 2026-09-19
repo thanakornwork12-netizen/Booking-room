@@ -1,0 +1,331 @@
+Loading and aligning the 8 rooms...
+  2C05-06      2024-07-20..2024-07-31  2024-11-14..2024-11-25  2025-03-12..2025-03-23  2025-07-07..2025-07-18
+  2C09         2024-07-20..2024-07-31  2024-11-14..2024-11-25  2025-03-12..2025-03-23  2025-07-07..2025-07-18
+  2C10-11      2024-07-20..2024-07-31  2024-11-14..2024-11-25  2025-03-12..2025-03-23  2025-07-07..2025-07-18
+  2C16-17      2024-07-20..2024-07-31  2024-11-14..2024-11-25  2025-03-12..2025-03-23  2025-07-07..2025-07-18
+  3C05-06      2024-07-26..2024-08-06  2024-11-19..2024-11-30  2025-03-14..2025-03-25  2025-07-08..2025-07-19
+  1C-MEETING   2024-09-17..2024-09-26  2024-12-25..2025-01-03  2025-04-04..2025-04-13  2025-07-12..2025-07-21
+  3C16-17      2024-07-28..2024-08-08  2024-11-20..2024-12-01  2025-03-15..2025-03-26  2025-07-08..2025-07-19
+  4C05         2024-07-28..2024-08-08  2024-11-20..2024-12-01  2025-03-15..2025-03-26  2025-07-08..2025-07-19
+  train rows 29274 (76% of the original 38402)   calib rows 5264   refit rows 50442 (same as original)
+  strategy margin uses 47 calibration days/room (margin 0.146)
+
+==============================================================================
+ SET A - Fast [BLOCKED calibration]  (300 rounds x lr 0.08)
+==============================================================================
+
+   [lightgbm]
+      q=0.05  fit 300 rounds
+      q=0.15  fit 300 rounds
+      q=0.25  fit 300 rounds
+      q=0.35  fit 300 rounds
+      q=0.45  fit 300 rounds
+      q=0.55  fit 300 rounds
+      q=0.65  fit 300 rounds
+      q=0.75  fit 300 rounds
+      q=0.85  fit 300 rounds
+      q=0.95  fit 300 rounds
+      round   100: calib acc=0.6766  mae=2.031h
+      round   200: calib acc=0.6736  mae=2.013h
+      round   300: calib acc=0.6769  mae=1.989h
+      calibration best=0.6797 at round 80; last round within 0.003 of it = 300 -> serving that
+   -> best calib acc=0.6797 @ round 300   best MAE=1.987h @ round 290
+
+   [xgboost]
+      q=0.05  fit 300 rounds
+      q=0.15  fit 300 rounds
+      q=0.25  fit 300 rounds
+      q=0.35  fit 300 rounds
+      q=0.45  fit 300 rounds
+      q=0.55  fit 300 rounds
+      q=0.65  fit 300 rounds
+      q=0.75  fit 300 rounds
+      q=0.85  fit 300 rounds
+      q=0.95  fit 300 rounds
+      round   100: calib acc=0.6827  mae=2.193h
+      round   200: calib acc=0.6818  mae=2.170h
+      round   300: calib acc=0.6810  mae=2.155h
+      calibration best=0.6840 at round 140; last round within 0.003 of it = 300 -> serving that
+   -> best calib acc=0.6840 @ round 300   best MAE=2.152h @ round 280
+
+   set-level winner: xgboost
+   engine per room (calibration only):
+      2C05-06      -> xgboost   (lightgbm=0.665  xgboost=0.705)
+      2C09         -> xgboost   (lightgbm=0.649  xgboost=0.674)
+      2C10-11      -> xgboost   (lightgbm=0.542  xgboost=0.622)
+      2C16-17      -> lightgbm  (lightgbm=0.551  xgboost=0.498)
+      3C05-06      -> lightgbm  (lightgbm=0.646  xgboost=0.615)
+      1C-MEETING   -> xgboost   (lightgbm=0.975  xgboost=0.975)
+      3C16-17      -> lightgbm  (lightgbm=0.555  xgboost=0.525)
+      4C05         -> xgboost   (lightgbm=0.833  xgboost=0.833)
+   strategy per room (calibration only):
+      2C05-06      -> argmax_class  
+      2C09         -> argmax_class    [kept default; best led by 0.037 < 0.096]
+      2C10-11      -> argmax_class  
+      2C16-17      -> argmax_class  
+      3C05-06      -> argmax_class  
+      1C-MEETING   -> argmax_class  
+      3C16-17      -> argmax_class    [kept default; best led by 0.064 < 0.096]
+      4C05         -> argmax_class  
+   refitting lightgbm on the original train+calibration rows (300 / 300 rounds)...
+   refitting xgboost on the original train+calibration rows (300 / 300 rounds)...
+   engine split across rooms: {'lightgbm': 3, 'xgboost': 5}
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/A/model.pkl and /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_meta_A_direct/
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/A
+
+==============================================================================
+ SET B - Balanced [BLOCKED calibration]  (600 rounds x lr 0.04)
+==============================================================================
+
+   [lightgbm]
+      q=0.05  fit 600 rounds
+      q=0.15  fit 600 rounds
+      q=0.25  fit 600 rounds
+      q=0.35  fit 600 rounds
+      q=0.45  fit 600 rounds
+      q=0.55  fit 600 rounds
+      q=0.65  fit 600 rounds
+      q=0.75  fit 600 rounds
+      q=0.85  fit 600 rounds
+      q=0.95  fit 600 rounds
+      round   100: calib acc=0.6740  mae=2.095h
+      round   200: calib acc=0.6742  mae=2.071h
+      round   300: calib acc=0.6742  mae=2.071h
+      round   400: calib acc=0.6742  mae=2.076h
+      round   500: calib acc=0.6742  mae=2.078h
+      round   600: calib acc=0.6769  mae=2.078h
+      calibration best=0.6771 at round 590; last round within 0.003 of it = 600 -> serving that
+   -> best calib acc=0.6771 @ round 600   best MAE=2.067h @ round 270
+
+   [xgboost]
+      q=0.05  fit 600 rounds
+      q=0.15  fit 600 rounds
+      q=0.25  fit 600 rounds
+      q=0.35  fit 600 rounds
+      q=0.45  fit 600 rounds
+      q=0.55  fit 600 rounds
+      q=0.65  fit 600 rounds
+      q=0.75  fit 600 rounds
+      q=0.85  fit 600 rounds
+      q=0.95  fit 600 rounds
+      round   100: calib acc=0.6639  mae=2.148h
+      round   200: calib acc=0.6805  mae=2.110h
+      round   300: calib acc=0.6845  mae=2.123h
+      round   400: calib acc=0.6892  mae=2.129h
+      round   500: calib acc=0.6909  mae=2.134h
+      round   600: calib acc=0.6918  mae=2.137h
+      calibration best=0.6924 at round 570; last round within 0.003 of it = 600 -> serving that
+   -> best calib acc=0.6924 @ round 600   best MAE=2.108h @ round 190
+
+   set-level winner: xgboost
+   engine per room (calibration only):
+      2C05-06      -> xgboost   (lightgbm=0.665  xgboost=0.677)
+      2C09         -> xgboost   (lightgbm=0.640  xgboost=0.737)
+      2C10-11      -> xgboost   (lightgbm=0.558  xgboost=0.604)
+      2C16-17      -> lightgbm  (lightgbm=0.559  xgboost=0.504)
+      3C05-06      -> xgboost   (lightgbm=0.618  xgboost=0.628)
+      1C-MEETING   -> xgboost   (lightgbm=0.975  xgboost=0.975)
+      3C16-17      -> xgboost   (lightgbm=0.567  xgboost=0.576)
+      4C05         -> xgboost   (lightgbm=0.833  xgboost=0.833)
+   strategy per room (calibration only):
+      2C05-06      -> argmax_class  
+      2C09         -> argmax_class  
+      2C10-11      -> argmax_class    [kept default; best led by 0.015 < 0.096]
+      2C16-17      -> argmax_class  
+      3C05-06      -> argmax_class    [kept default; best led by 0.012 < 0.096]
+      1C-MEETING   -> argmax_class  
+      3C16-17      -> argmax_class    [kept default; best led by 0.043 < 0.096]
+      4C05         -> argmax_class  
+   refitting lightgbm on the original train+calibration rows (600 / 310 rounds)...
+   refitting xgboost on the original train+calibration rows (600 / 218 rounds)...
+   engine split across rooms: {'lightgbm': 1, 'xgboost': 7}
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/B/model.pkl and /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_meta_B_direct/
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/B
+
+==============================================================================
+ SET C - Wide [BLOCKED calibration]  (1200 rounds x lr 0.02)
+==============================================================================
+
+   [lightgbm]
+      q=0.05  fit 1200 rounds
+      q=0.15  fit 1200 rounds
+      q=0.25  fit 1200 rounds
+      q=0.35  fit 1200 rounds
+      q=0.45  fit 1200 rounds
+      q=0.55  fit 1200 rounds
+      q=0.65  fit 1200 rounds
+      q=0.75  fit 1200 rounds
+      q=0.85  fit 1200 rounds
+      q=0.95  fit 1200 rounds
+      round   100: calib acc=0.6663  mae=2.212h
+      round   200: calib acc=0.7028  mae=2.096h
+      round   300: calib acc=0.6970  mae=2.074h
+      round   400: calib acc=0.6980  mae=2.075h
+      round   500: calib acc=0.6972  mae=2.074h
+      round   600: calib acc=0.7013  mae=2.075h
+      round   700: calib acc=0.7022  mae=2.078h
+      round   800: calib acc=0.7026  mae=2.079h
+      round   900: calib acc=0.7017  mae=2.080h
+      round  1000: calib acc=0.7026  mae=2.085h
+      round  1100: calib acc=0.7030  mae=2.087h
+      round  1200: calib acc=0.7026  mae=2.089h
+      calibration best=0.7034 at round 190; last round within 0.003 of it = 1200 -> serving that
+   -> best calib acc=0.7034 @ round 1200   best MAE=2.073h @ round 350
+
+   [xgboost]
+      q=0.05  fit 1200 rounds
+      q=0.15  fit 1200 rounds
+      q=0.25  fit 1200 rounds
+      q=0.35  fit 1200 rounds
+      q=0.45  fit 1200 rounds
+      q=0.55  fit 1200 rounds
+      q=0.65  fit 1200 rounds
+      q=0.75  fit 1200 rounds
+      q=0.85  fit 1200 rounds
+      q=0.95  fit 1200 rounds
+      round   100: calib acc=0.6561  mae=2.262h
+      round   200: calib acc=0.6743  mae=2.142h
+      round   300: calib acc=0.6788  mae=2.122h
+      round   400: calib acc=0.6814  mae=2.123h
+      round   500: calib acc=0.6835  mae=2.131h
+      round   600: calib acc=0.6849  mae=2.139h
+      round   700: calib acc=0.6864  mae=2.143h
+      round   800: calib acc=0.6857  mae=2.141h
+      round   900: calib acc=0.6842  mae=2.148h
+      round  1000: calib acc=0.6851  mae=2.150h
+      round  1100: calib acc=0.6859  mae=2.152h
+      round  1200: calib acc=0.6847  mae=2.156h
+      calibration best=0.6864 at round 700; last round within 0.003 of it = 1200 -> serving that
+   -> best calib acc=0.6864 @ round 1200   best MAE=2.118h @ round 330
+
+   set-level winner: lightgbm
+   engine per room (calibration only):
+      2C05-06      -> lightgbm  (lightgbm=0.717  xgboost=0.668)
+      2C09         -> lightgbm  (lightgbm=0.753  xgboost=0.744)
+      2C10-11      -> xgboost   (lightgbm=0.567  xgboost=0.609)
+      2C16-17      -> lightgbm  (lightgbm=0.559  xgboost=0.482)
+      3C05-06      -> lightgbm  (lightgbm=0.628  xgboost=0.597)
+      1C-MEETING   -> lightgbm  (lightgbm=0.975  xgboost=0.975)
+      3C16-17      -> lightgbm  (lightgbm=0.588  xgboost=0.570)
+      4C05         -> lightgbm  (lightgbm=0.833  xgboost=0.833)
+   strategy per room (calibration only):
+      2C05-06      -> argmax_class  
+      2C09         -> argmax_class    [kept default; best led by 0.007 < 0.096]
+      2C10-11      -> argmax_class  
+      2C16-17      -> argmax_class  
+      3C05-06      -> argmax_class    [kept default; best led by 0.028 < 0.096]
+      1C-MEETING   -> argmax_class  
+      3C16-17      -> argmax_class    [kept default; best led by 0.031 < 0.096]
+      4C05         -> argmax_class  
+   refitting lightgbm on the original train+calibration rows (1200 / 402 rounds)...
+   refitting xgboost on the original train+calibration rows (1200 / 379 rounds)...
+   engine split across rooms: {'lightgbm': 7, 'xgboost': 1}
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/C/model.pkl and /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_meta_C_direct/
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/C
+
+==============================================================================
+ SET D - Overfit probe [BLOCKED calibration]  (2400 rounds x lr 0.01)
+==============================================================================
+
+   [lightgbm]
+      q=0.05  fit 2400 rounds
+      q=0.15  fit 2400 rounds
+      q=0.25  fit 2400 rounds
+      q=0.35  fit 2400 rounds
+      q=0.45  fit 2400 rounds
+      q=0.55  fit 2400 rounds
+      q=0.65  fit 2400 rounds
+      q=0.75  fit 2400 rounds
+      q=0.85  fit 2400 rounds
+      q=0.95  fit 2400 rounds
+      round   100: calib acc=0.6068  mae=2.420h
+      round   200: calib acc=0.6689  mae=2.197h
+      round   300: calib acc=0.6942  mae=2.133h
+      round   400: calib acc=0.6980  mae=2.109h
+      round   500: calib acc=0.6972  mae=2.104h
+      round   600: calib acc=0.6959  mae=2.103h
+      round   700: calib acc=0.6968  mae=2.102h
+      round   800: calib acc=0.6957  mae=2.107h
+      round   900: calib acc=0.6954  mae=2.110h
+      round  1000: calib acc=0.6959  mae=2.113h
+      round  1100: calib acc=0.6959  mae=2.113h
+      round  1200: calib acc=0.6950  mae=2.114h
+      round  1300: calib acc=0.6948  mae=2.115h
+      round  1400: calib acc=0.6950  mae=2.116h
+      round  1500: calib acc=0.6946  mae=2.118h
+      round  1600: calib acc=0.6948  mae=2.119h
+      round  1700: calib acc=0.6955  mae=2.119h
+      round  1800: calib acc=0.6952  mae=2.120h
+      round  1900: calib acc=0.6954  mae=2.120h
+      round  2000: calib acc=0.6946  mae=2.122h
+      round  2100: calib acc=0.6950  mae=2.124h
+      round  2200: calib acc=0.6952  mae=2.121h
+      round  2300: calib acc=0.6950  mae=2.122h
+      round  2400: calib acc=0.6944  mae=2.121h
+      calibration best=0.7002 at round 430; last round within 0.003 of it = 510 -> serving that
+   -> best calib acc=0.7002 @ round 510   best MAE=2.101h @ round 660
+
+   [xgboost]
+      q=0.05  fit 2400 rounds
+      q=0.15  fit 2400 rounds
+      q=0.25  fit 2400 rounds
+      q=0.35  fit 2400 rounds
+      q=0.45  fit 2400 rounds
+      q=0.55  fit 2400 rounds
+      q=0.65  fit 2400 rounds
+      q=0.75  fit 2400 rounds
+      q=0.85  fit 2400 rounds
+      q=0.95  fit 2400 rounds
+      round   100: calib acc=0.6044  mae=2.498h
+      round   200: calib acc=0.6619  mae=2.288h
+      round   300: calib acc=0.6775  mae=2.225h
+      round   400: calib acc=0.6775  mae=2.200h
+      round   500: calib acc=0.6767  mae=2.206h
+      round   600: calib acc=0.6760  mae=2.208h
+      round   700: calib acc=0.6786  mae=2.215h
+      round   800: calib acc=0.6812  mae=2.221h
+      round   900: calib acc=0.6818  mae=2.230h
+      round  1000: calib acc=0.6825  mae=2.238h
+      round  1100: calib acc=0.6829  mae=2.244h
+      round  1200: calib acc=0.6862  mae=2.248h
+      round  1300: calib acc=0.6870  mae=2.251h
+      round  1400: calib acc=0.6870  mae=2.252h
+      round  1500: calib acc=0.6862  mae=2.253h
+      round  1600: calib acc=0.6855  mae=2.254h
+      round  1700: calib acc=0.6853  mae=2.255h
+      round  1800: calib acc=0.6849  mae=2.256h
+      round  1900: calib acc=0.6845  mae=2.258h
+      round  2000: calib acc=0.6842  mae=2.259h
+      round  2100: calib acc=0.6838  mae=2.263h
+      round  2200: calib acc=0.6834  mae=2.264h
+      round  2300: calib acc=0.6836  mae=2.265h
+      round  2400: calib acc=0.6840  mae=2.265h
+      calibration best=0.6873 at round 1310; last round within 0.003 of it = 1950 -> serving that
+   -> best calib acc=0.6873 @ round 1950   best MAE=2.199h @ round 420
+
+   set-level winner: lightgbm
+   engine per room (calibration only):
+      2C05-06      -> lightgbm  (lightgbm=0.689  xgboost=0.661)
+      2C09         -> lightgbm  (lightgbm=0.759  xgboost=0.728)
+      2C10-11      -> xgboost   (lightgbm=0.582  xgboost=0.585)
+      2C16-17      -> lightgbm  (lightgbm=0.527  xgboost=0.509)
+      3C05-06      -> lightgbm  (lightgbm=0.647  xgboost=0.622)
+      1C-MEETING   -> lightgbm  (lightgbm=0.975  xgboost=0.975)
+      3C16-17      -> lightgbm  (lightgbm=0.567  xgboost=0.562)
+      4C05         -> lightgbm  (lightgbm=0.833  xgboost=0.833)
+   strategy per room (calibration only):
+      2C05-06      -> argmax_class  
+      2C09         -> argmax_class    [kept default; best led by 0.012 < 0.096]
+      2C10-11      -> argmax_class    [kept default; best led by 0.016 < 0.096]
+      2C16-17      -> argmax_class    [kept default; best led by 0.015 < 0.096]
+      3C05-06      -> argmax_class    [kept default; best led by 0.010 < 0.096]
+      1C-MEETING   -> argmax_class  
+      3C16-17      -> argmax_class    [kept default; best led by 0.052 < 0.096]
+      4C05         -> argmax_class  
+   refitting lightgbm on the original train+calibration rows (586 / 758 rounds)...
+   refitting xgboost on the original train+calibration rows (2242 / 482 rounds)...
+   engine split across rooms: {'lightgbm': 7, 'xgboost': 1}
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/D/model.pkl and /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_meta_D_direct/
+   saved -> /Users/macthanakorn/room_booking/ml/saved/blocked_calib/saved_direct_sets/D
+
+Done. Next:  python ml/saved/blocked_calibration_direct.py --test

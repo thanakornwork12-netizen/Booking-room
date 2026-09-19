@@ -1,0 +1,7 @@
+[--blocked] reading /Users/macthanakorn/room_booking/ml/saved/blocked_calib; outputs renamed *_direct_blocked.*
+A: Train=0.8273  Calib=0.6952  Test=0.7952  BalAcc=0.5996
+B: Train=0.8601  Calib=0.6987  Test=0.7929  BalAcc=0.6014
+C: Train=0.8956  Calib=0.7078  Test=0.8052  BalAcc=0.6097
+D: Train=0.9213  Calib=0.6978  Test=0.8066  BalAcc=0.6117
+Saved CSV: /Users/macthanakorn/room_booking/ml/saved/metrics_plots/adaptive_vs_fixed_by_set_current_direct_blocked.csv
+Saved PNG: /Users/macthanakorn/room_booking/ml/saved/metrics_plots/adaptive_vs_fixed_by_set copy_direct_blocked.png
