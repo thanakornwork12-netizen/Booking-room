@@ -19,4 +19,5 @@ requests
 joblib
 numpy
 pandas
+openpyxl
 scikit-learn

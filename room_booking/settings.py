@@ -13,7 +13,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 # ความปลอดภัย: ใน Production ควรดึงจาก Environment Variable
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-@top1u7dv$mxn%oyw!03)+xq*5nms@isl&bkfvi9lt=o141)sd')
+# render.yaml สร้าง key ให้ในชื่อ SECRET_KEY (generateValue) แต่เดิมอ่านแค่
+# DJANGO_SECRET_KEY — ถ้าไม่ได้ตั้งชื่อนั้นเองใน dashboard ระบบจะใช้ key สำรอง
+# ด้านล่างที่อยู่ใน git ซึ่งใครเห็นโค้ดก็ปลอม JWT ได้ จึงอ่านทั้งสองชื่อ
+# (DJANGO_SECRET_KEY มาก่อน เพื่อไม่ให้ key ที่ตั้งไว้แล้วเปลี่ยน)
+SECRET_KEY = (
+    os.environ.get('DJANGO_SECRET_KEY')
+    or os.environ.get('SECRET_KEY')
+    or 'django-insecure-@top1u7dv$mxn%oyw!03)+xq*5nms@isl&bkfvi9lt=o141)sd'  # ใช้เฉพาะตอนพัฒนาในเครื่อง
+)
 
 # จะ True เมื่อรันในเครื่อง (localhost) และเป็น False เมื่อรันบน Server (Render)
 # ค่า default ตอนไม่มี env var DEBUG เลยต้องเป็น 'False' (fail-safe) ไม่ใช่

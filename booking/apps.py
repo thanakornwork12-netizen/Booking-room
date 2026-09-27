@@ -8,5 +8,6 @@ class BookingConfig(AppConfig):
     def ready(self):
         # import เพื่อลงทะเบียน signal handler (มีผลตอน import) — ห้ามลบแม้ไม่ได้เรียกใช้ตรง ๆ
         import booking.signals  # noqa: F401
+        import booking.checks  # noqa: F401  (ลงทะเบียน check --deploy)
         from .scheduler import start
         start()
