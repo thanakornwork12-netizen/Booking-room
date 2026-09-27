@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
 import { addHours, pickRandomFittingDuration, minutesBetween } from '../utils/booking'
+import { extractErrorMessage } from '../utils/errors'
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -78,18 +79,6 @@ const addHoursToTime = (time, hrs) => {
   const [h, m] = time.split(':').map(Number)
   const total = ((h * 60 + m + hrs * 60) % 1440 + 1440) % 1440
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-}
-
-const extractErrorMessage = (err, fallback) => {
-  const data = err?.response?.data
-  if (!data) return fallback
-  if (typeof data === 'string') return data
-  if (data.detail) return data.detail
-  if (Array.isArray(data.non_field_errors) && data.non_field_errors[0]) return data.non_field_errors[0]
-  const firstKey = Object.keys(data)[0]
-  const firstVal = firstKey && data[firstKey]
-  if (Array.isArray(firstVal) && firstVal[0]) return firstVal[0]
-  return fallback
 }
 
 const TUTORIAL_STEPS = [

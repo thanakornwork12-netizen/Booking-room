@@ -226,6 +226,12 @@ APPROVER_EMAIL = os.environ.get('APPROVER_EMAIL', 'thanakorn.tho.66@ubu.ac.th')
 
 # ใช้ประกอบลิงก์ในอีเมล (check-in/ยกเลิกเป็น endpoint ฝั่ง backend เอง
 # ส่วน login ต้องพาไปหน้าเว็บฝั่ง frontend)
+# เพดานความยาวการจอง — กันจองยาวเป็นปีแล้วห้องถูกกันไว้ตลอด (แค่รออนุมัติก็กันแล้ว)
+# 21 วันครอบทุกการจองในข้อมูลจริง 7,260 รายการ (ยาวสุด ~17 วัน)
+MAX_BOOKING_DAYS = int(os.environ.get('MAX_BOOKING_DAYS', '21'))
+# จองทั้งเทอมยาวสุด 1 ปีการศึกษา
+MAX_TERM_BOOKING_DAYS = int(os.environ.get('MAX_TERM_BOOKING_DAYS', '366'))
+
 SITE_URL     = os.environ.get('SITE_URL', 'http://127.0.0.1:8000')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 

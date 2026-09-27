@@ -3,6 +3,7 @@
 import unicodedata
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -55,10 +56,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     password2  = serializers.CharField(write_only=True)
     student_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
-    # ห้ามสมัครเองแล้วได้สิทธิ์ 'admin' — สิทธิ์แอดมินตั้งใน backend เท่านั้น
-    # (User.ROLE_CHOICES อนุญาต 'admin' อยู่ด้วย ถ้าไม่กันตรงนี้ ModelSerializer
-    # จะ validate role ผ่านหมด เพราะมันเป็น choice ที่ถูกต้องของ model)
-    SELF_REGISTERABLE_ROLES = {'student', 'lecturer', 'staff'}
+    # ห้ามสมัครเองแล้วได้สิทธิ์ 'admin' หรือ 'staff' — ทั้งสองอนุมัติการจอง ดึง
+    # export ข้อมูลผู้ใช้ทุกคน และจัดการห้องได้ แอดมินตั้งให้ใน backend เท่านั้น
+    # (User.ROLE_CHOICES มีทั้งสองอยู่ ถ้าไม่กันตรงนี้ ModelSerializer จะ
+    # validate role ผ่านหมด เพราะเป็น choice ที่ถูกต้องของ model)
+    SELF_REGISTERABLE_ROLES = {'student', 'lecturer'}
 
     class Meta:
         model  = User
@@ -73,6 +75,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         # พิมพ์ใหญ่เล็ก — ไม่งั้นสมัคร 'QA_Test_Bot' หรือ 'ｑａ_test_bot' ปลอมเป็น
         # 'qa_test_bot' ได้ (หน้าตาเหมือนกันในรายการแอดมิน/อีเมล)
         value = unicodedata.normalize('NFKC', value)
+        # username ที่เป็นตัวเลขล้วนคือรหัสนักศึกษา/บุคลากรใน LDAP — ถ้าให้สมัครเอง
+        # ใครก็จองรหัสของคนอื่นไว้ก่อนได้ แล้วระบบจะรวมเป็นบัญชีเดียวกันตอน
+        # เจ้าของล็อกอินผ่าน LDAP เจ้าของตัวจริงไม่ต้องสมัคร ล็อกอินได้เลย
+        if value.isdigit():
+            raise serializers.ValidationError(
+                'รหัสนักศึกษา/บุคลากรใช้เข้าสู่ระบบด้วยรหัสผ่านมหาวิทยาลัยได้เลย ไม่ต้องสมัคร '
+                'หากต้องการสมัครบัญชีแยก กรุณาตั้งชื่อผู้ใช้ที่ไม่ใช่ตัวเลขล้วน'
+            )
         if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError('ชื่อผู้ใช้นี้ถูกใช้แล้ว')
         return value
@@ -329,6 +339,10 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
         if term_start >= term_end:
             raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
+        if (term_end - term_start).days > settings.MAX_TERM_BOOKING_DAYS:
+            raise serializers.ValidationError(
+                f'จองทั้งเทอมได้ยาวสุด {settings.MAX_TERM_BOOKING_DAYS} วัน'
+            )
         if not room.is_active:
             raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
 
@@ -408,6 +422,10 @@ class BookingCreateSerializer(serializers.ModelSerializer):
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+        if end_time - start_time > timedelta(days=settings.MAX_BOOKING_DAYS):
+            raise serializers.ValidationError(
+                f'จองได้ยาวสุด {settings.MAX_BOOKING_DAYS} วันต่อครั้ง หากต้องการใช้ประจำให้จองทั้งเทอม'
+            )
 
         if not room.is_active:
             raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})

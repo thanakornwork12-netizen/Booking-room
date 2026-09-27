@@ -6,6 +6,7 @@ import {
   ShieldCheck as ShieldIcon, Bell, Hash,
 } from 'lucide-react'
 import api from '../api/axios'
+import { extractErrorMessage } from '../utils/errors'
 
 const FACULTIES = [
   'วิทยาศาสตร์','วิศวกรรมศาสตร์','บริหารธุรกิจ',
@@ -13,12 +14,11 @@ const FACULTIES = [
   'เกษตรศาสตร์','ศิลปศาสตร์','สาธารณสุขศาสตร์','เภสัชศาสตร์',
 ]
 
-// ตัวเลือกสถานะตอนสมัคร — ไม่มี "ผู้ดูแลระบบ" ให้เลือกเอง สิทธิ์แอดมินตั้งใน
-// backend เท่านั้น กันคนสมัครแล้วได้สิทธิ์แอดมินเอง
+// ตัวเลือกสถานะตอนสมัคร — ไม่มี "ผู้ดูแลระบบ" และ "เจ้าหน้าที่" ให้เลือกเอง
+// เพราะทั้งสองมีสิทธิ์อนุมัติการจอง/ดึงข้อมูลผู้ใช้ทั้งหมด แอดมินตั้งให้ใน backend
 const ROLE_OPTIONS = [
   { value: 'student', label: 'นักศึกษา' },
   { value: 'lecturer', label: 'อาจารย์' },
-  { value: 'staff', label: 'เจ้าหน้าที่' },
 ]
 
 const ANIM = `
@@ -104,7 +104,7 @@ export default function RegisterPage() {
       await api.post('/auth/register/', form)
       navigate('/login')
     } catch (err) {
-      setError('สมัครสมาชิกไม่สำเร็จ อาจมีชื่อผู้ใช้หรืออีเมลนี้ในระบบแล้ว')
+      setError(extractErrorMessage(err, 'สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่'))
     } finally {
       isSubmittingRef.current = false
       setLoading(false)

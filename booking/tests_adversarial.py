@@ -3,7 +3,6 @@
 รัน:  python manage.py test booking.tests_adversarial --noinput
 """
 import io
-import unittest
 from datetime import datetime, time as time_type, timedelta
 
 from django.contrib.auth import get_user_model
@@ -107,11 +106,36 @@ class WeirdInputTests(AdvBase):
             with self.subTest(url=url):
                 self.assertLess(self.client.get(url).status_code, 500)
 
-    @unittest.expectedFailure  # รอกำหนดนโยบายความยาวสูงสุดของการจอง — ดูรายงาน QA
     def test_booking_forever_is_rejected(self):
         """จองยาวหลายปีทำให้ห้องถูกกันไว้ตลอด (สถานะรออนุมัติก็กันช่วงเวลาแล้ว)"""
         r = self.book(end_time=aware(self.tue + timedelta(days=365 * 5), 15).isoformat())
         self.assertEqual(r.status_code, 400, 'จองห้องยาว 5 ปีได้')
+
+
+class DurationLimitTests(AdvBase):
+    def test_booking_at_limit_ok_one_minute_over_rejected(self):
+        from django.conf import settings
+        start = aware(self.tue, 8)
+        limit = timedelta(days=settings.MAX_BOOKING_DAYS)
+        self.assertEqual(self.book(start_time=start.isoformat(), end_time=(start + limit).isoformat()).status_code, 201)
+        Booking.objects.all().delete()
+        r = self.book(start_time=start.isoformat(), end_time=(start + limit + timedelta(minutes=1)).isoformat())
+        self.assertEqual(r.status_code, 400)
+
+    def test_edit_cannot_stretch_past_limit(self):
+        r = self.book()
+        b = Booking.objects.get()
+        far = aware(self.tue + timedelta(days=400), 15).isoformat()
+        r = self.client.patch(f'/api/bookings/{b.id}/', {'end_time': far}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_term_booking_over_a_year_rejected(self):
+        r = self.client.post('/api/term-bookings/', {
+            'room': self.room.id, 'subject_name': 'วิชายาวนาน', 'attendees': 20, 'day_of_week': 1,
+            'start_time': '10:00', 'end_time': '12:00',
+            'term_start': str(self.tue), 'term_end': str(self.tue + timedelta(days=400)),
+        }, format='json')
+        self.assertEqual(r.status_code, 400)
 
 
 # ── token และการยืนยันตัวตน ────────────────────────────────────────
@@ -242,10 +266,10 @@ class AccountClaimTests(AdvBase):
         ตัวจริงล็อกอินผ่าน LDAP (ระบบรวมเป็นบัญชีเดียวกัน) token ของคนร้ายต้องใช้ไม่ได้"""
         from unittest import mock
         self.client.force_authenticate(user=None)
-        self.client.post('/api/auth/register/', {
-            'username': '6699999999', 'email': 'attacker@example.com', 'password': 'Attack1234',
-            'password2': 'Attack1234', 'role': 'student',
-        }, format='json')
+        # สมัครแบบนี้ผ่าน API ไม่ได้แล้ว (test_register_student_id_username_rejected)
+        # แต่บัญชีเก่าที่สมัครไว้ก่อนแก้ยังมีอยู่ได้ — จำลองด้วยการสร้างตรง
+        User.objects.create_user(username='6699999999', password='Attack1234',
+                                 email='attacker@example.com', role='student')
         login = self.client.post('/api/auth/login/', {'username': '6699999999', 'password': 'Attack1234'},
                                  format='json')
         attacker_access = login.data['access']

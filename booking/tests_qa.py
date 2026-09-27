@@ -86,9 +86,22 @@ class AccountQATests(QABase):
         self.assertEqual(r.status_code, 400)
 
     def test_register_email_username_is_normalised(self):
-        r = self.register(username='6699999999@ubu.ac.th', student_id='6699999999')
+        r = self.register(username='qa.person@ubu.ac.th')
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertTrue(User.objects.filter(username='6699999999').exists())
+        self.assertTrue(User.objects.filter(username='qa.person').exists())
+
+    def test_register_student_id_username_rejected(self):
+        """รหัสนักศึกษาเป็นของบัญชี LDAP — สมัครจองไว้ก่อนไม่ได้ ทั้งแบบตรงและแบบอีเมล"""
+        for name in ('6699999999', '6699999999@ubu.ac.th', '６６９９９９９９９９'):
+            with self.subTest(name=name):
+                r = self.register(username=name)
+                self.assertEqual(r.status_code, 400)
+        self.assertFalse(User.objects.filter(username__contains='99999999').exists())
+
+    def test_register_staff_role_rejected(self):
+        r = self.register(role='staff')
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(User.objects.filter(username='qa_new_user').exists())
 
     def test_register_admin_role_rejected(self):
         self.assertEqual(self.register(role='admin').status_code, 400)
