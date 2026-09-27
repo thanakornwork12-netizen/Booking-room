@@ -21,7 +21,7 @@ nav ol{columns:2;column-gap:24px;padding-left:22px;margin:4px 0}nav li{break-ins
 </style>
 
 <h1>สรุปเตรียมสอบ: ระบบจองห้องอัจฉริยะ UBU (Smart Room Booking)</h1>
-<p class="m">อัปเดต 27 ก.ย. 2569 · ตรวจทุกหัวข้อเทียบกับโค้ดจริงใน repo (commit 8d1a1e8) · ตัวเลขผลโมเดล direct มาจากรัน 20260914-214913 ส่วนผลโมเดล production มาจาก <code>consolidated_results.csv</code></p>
+<p class="m">อัปเดต 27 ก.ย. 2569 · ตรวจทุกหัวข้อเทียบกับโค้ดจริงใน repo (commit b2b4ada) · ตัวเลขผลโมเดล direct มาจากรัน 20260914-214913 ส่วนผลโมเดล production มาจาก <code>consolidated_results.csv</code></p>
 
 <nav><b>สารบัญ</b>
 <ol>
@@ -65,7 +65,7 @@ nav ol{columns:2;column-gap:24px;padding-left:22px;margin:4px 0}nav li{break-ins
 <li>จอง 2 แบบ: <b>รายครั้ง</b> (Dynamic Booking) และ <b>ทั้งเทอม</b> (Term Booking ซ้ำทุกสัปดาห์) และมีแบบ<b>สลับห้อง</b>ครึ่งเทอมแรก/ครึ่งหลัง</li>
 <li>ผู้ใช้ 4 บทบาท: student / lecturer / staff / admin</li>
 <li>AI ครอบคลุม 8 ห้องที่มีข้อมูลพอ (<code>AI_FORECAST_ROOM_IDS</code>): 2C05-06 (443), 2C09 (445), 2C10-11 (446), 2C16-17 (447), 3C05-06 (448), 1C-MEETING (487), 3C16-17 (505), 4C05 (506) ผู้ใช้ทั่วไปค้นหาและจองได้เฉพาะ 8 ห้องนี้ ส่วนแอดมินเห็นทุกห้องเพื่อจัดการข้อมูล</li>
-<li>ข้อมูลประวัติการจองจริงจากสำนักคอมพิวเตอร์และเครือข่าย (นำเข้าจาก Excel) 7,252 รายการ</li>
+<li>ข้อมูลประวัติการจองจริงจากสำนักคอมพิวเตอร์และเครือข่าย (นำเข้าจาก Excel) ราว 7,250 รายการ</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -98,7 +98,7 @@ nav ol{columns:2;column-gap:24px;padding-left:22px;margin:4px 0}nav li{break-ins
 <tr><td>AI</td><td>LightGBM, XGBoost</td><td>โมเดลหลัก (gradient boosting)</td></tr>
 <tr><td></td><td>scikit-learn, pandas, numpy</td><td>เตรียมข้อมูล, metric</td></tr>
 <tr><td></td><td>TensorFlow/Keras</td><td>LSTM ในเวอร์ชันเก่า (ตอนนี้ไม่ได้ใช้แล้ว)</td></tr>
-<tr><td>ฐานข้อมูล</td><td>SQLite (ตอนพัฒนา) · PostgreSQL บน Neon (production)</td><td>สลับอัตโนมัติ: ถ้ามี env <code>DATABASE_URL</code> ใช้ Postgres ไม่มีใช้ไฟล์ <code>db.sqlite3</code></td></tr>
+<tr><td>ฐานข้อมูล</td><td>SQLite (ค่าเริ่มต้น) · PostgreSQL (ในเครื่องผ่าน <code>.env</code> และ Neon บน production)</td><td>สลับอัตโนมัติ: ถ้ามี env <code>DATABASE_URL</code> ใช้ Postgres ไม่มีใช้ไฟล์ <code>db.sqlite3</code> · เครื่องที่พัฒนาอยู่ตอนนี้ตั้ง <code>.env</code> ให้ใช้ PostgreSQL ที่ localhost</td></tr>
 <tr><td>Infra</td><td>Render.com, Neon, Brevo</td><td>โฮสต์เว็บ, Postgres แบบ serverless, ส่งอีเมลผ่าน HTTPS API</td></tr></table></div>
 
 <h3>ทำไมเลือกแบบนี้</h3>
@@ -122,7 +122,7 @@ Django + DRF ─────────────── Django Channels (ASGI
    ├─ APScheduler: เตือนเช็คอิน ทุก 1 นาที
    └─ ml/saved/: โมดูล AI (รันแยกด้วยคำสั่ง แล้วเขียนผลลงตาราง DemandForecast)
    ▼
-SQLite (dev) / PostgreSQL บน Neon (production)
+PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLite ถ้าไม่ได้ตั้ง DATABASE_URL
 ภายนอก: LDAP มหาวิทยาลัย (ล็อกอิน) · Brevo API (อีเมล)</pre>
 
 <h3>ตัวอย่าง: กดจองห้อง 1 ครั้ง เกิดอะไรขึ้นบ้าง</h3>
@@ -146,6 +146,7 @@ SQLite (dev) / PostgreSQL บน Neon (production)
 <tr><td><code>booking/serializers.py</code></td><td>แปลง JSON ↔ model และตรวจความถูกต้องของข้อมูล (กฎการจองส่วนใหญ่อยู่ที่นี่)</td></tr>
 <tr><td><code>booking/views.py</code></td><td>API ทุกตัว: ตรวจสิทธิ์, ล็อก DB, ค้นหา/แนะนำห้อง, อนุมัติ, เช็คอิน, export</td></tr>
 <tr><td><code>booking/overlap.py</code></td><td>ตัวตรวจการจองชนกันกลาง (จองรายครั้ง × รายครั้ง/ทั้งเทอม/ปิดซ่อม) ใช้ทั้งตอนสร้างและตอนแก้ไข</td></tr>
+<tr><td><code>booking/permissions.py</code></td><td>เช็คสิทธิ์ admin/staff ที่เดียว: <code>is_admin_or_staff()</code> และ permission class <code>IsAdminOrStaff</code></td></tr>
 <tr><td><code>booking/urls.py</code></td><td>ผูก URL เข้ากับ view (หัวข้อ 6)</td></tr>
 <tr><td><code>booking/ldap_auth.py</code></td><td>ล็อกอินกับ LDAP มหาวิทยาลัย</td></tr>
 <tr><td><code>booking/signals.py</code></td><td>ทำงานอัตโนมัติหลังบันทึกข้อมูล: อีเมล 8 แบบ + push WebSocket</td></tr>
@@ -257,7 +258,7 @@ SQLite (dev) / PostgreSQL บน Neon (production)
 <li><b>ลบบัญชี:</b> ต้องพิมพ์ชื่อผู้ใช้ตรง + คำว่า DELETE + รหัสผ่าน</li>
 <li><b>จองพร้อมกัน:</b> <code>transaction.atomic()</code> + <code>select_for_update()</code> ล็อกแถว Room ตอนจอง/แก้ไข/ปิดซ่อม และล็อกแถว Booking ตอน approve/reject (กันแอดมินสองคนกดพร้อมกัน)</li>
 <li><b>ลิงก์ในอีเมล:</b> ใช้ UUID สุ่ม (<code>checkin_token</code>) เดาไม่ได้</li>
-<li><b>XSS:</b> React escape ข้อความให้อัตโนมัติ ส่วนหน้า HTML ที่ Python สร้างเอง (หน้าเช็คอิน/ยกเลิกจากลิงก์อีเมล) เคยใส่ชื่อกิจกรรมและชื่อห้องลงหน้าโดยไม่ escape (stored XSS) แก้แล้วด้วย <code>django.utils.html.escape</code> (commit b4333c9)</li>
+<li><b>XSS:</b> React escape ข้อความให้อัตโนมัติ ส่วนหน้า HTML ที่ Python สร้างเอง (หน้าเช็คอิน/ยกเลิกจากลิงก์อีเมล) เคยใส่ชื่อกิจกรรมและชื่อห้องลงหน้าโดยไม่ escape (stored XSS) แก้แล้วด้วย <code>django.utils.html.escape</code> (commit b4333c9) · ในข้อมูลมีการจองจริง 1 รายการที่ชื่อกิจกรรมเป็น <code>&lt;script&gt;alert(document.cookie)&lt;/script&gt;</code> (ห้อง 2C05-06) หลังแก้จะแสดงเป็นข้อความธรรมดา ไม่รัน</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -505,7 +506,7 @@ SQLite (dev) / PostgreSQL บน Neon (production)
 <h2 id="s15">15. Deploy</h2>
 <ul>
 <li>Render.com (<code>render.yaml</code>): build = <code>pip install -r requirements.txt && python manage.py migrate</code> · start = <code>daphne -p $PORT -b 0.0.0.0 room_booking.asgi:application</code> · whitenoise เสิร์ฟไฟล์ static</li>
-<li>DB: Neon Postgres ผ่าน env <code>DATABASE_URL</code> (ตั้งเองใน dashboard ของ Render) · ในเครื่องใช้ <code>db.sqlite3</code></li>
+<li>DB: Neon Postgres ผ่าน env <code>DATABASE_URL</code> (ตั้งเองใน dashboard ของ Render) · ในเครื่องตั้งผ่าน <code>.env</code> ให้ใช้ PostgreSQL ที่ localhost ถ้าไม่ตั้งจะใช้ <code>db.sqlite3</code></li>
 <li>env สำคัญ: <code>DATABASE_URL</code>, <code>BREVO_API_KEY</code>, <code>SECRET_KEY</code> (Render สุ่มให้), <code>DEBUG=False</code>, <code>APPROVER_EMAIL</code>, <code>SITE_URL</code> (ใช้สร้างลิงก์ในอีเมล), <code>FRONTEND_URL</code></li>
 <li>CORS อนุญาตเฉพาะ origin ของ frontend ที่กำหนด</li>
 <li>โมเดลและ meta (<code>saved_models*</code>, <code>saved_meta*</code>) อยู่ใน .gitignore ไม่ถูก commit</li>
@@ -515,10 +516,12 @@ SQLite (dev) / PostgreSQL บน Neon (production)
 <h2 id="s16">16. การทดสอบระบบ</h2>
 <ul>
 <li>ใช้ Django <code>TestCase</code> + DRF <code>APIClient</code> ยิง API จริงบนฐานข้อมูลทดสอบที่สร้างแยกทุกครั้ง (ไม่แตะข้อมูลจริง)</li>
-<li>รันทั้งหมด: <code>python manage.py test booking</code> → <b>93 เคส ผ่านทั้งหมด</b></li>
+<li>รันทั้งหมด: <code>python manage.py test booking --noinput</code> → <b>112 เคส ผ่านทั้งหมด</b> (<code>--noinput</code> ให้ลบฐานทดสอบที่ค้างจากรอบก่อนเองโดยไม่ถามยืนยัน)</li>
 <li><code>tests_blocktest.py</code>: แผนทดสอบ T01–T30 ตามเอกสาร Block Test (สมัคร, ล็อกอิน, จอง, อนุมัติ, เช็คอิน, ยกเลิก, จองทั้งเทอม) ผลกรอกไว้ใน <code>Test_Cases_BlockTest_Result.xlsx</code></li>
 <li><code>tests_booking_edge.py</code>: เคสขอบของการจอง (ข้อมูลผิดรูปแบบ, การทับทุกแบบ, แก้ไขการจอง, สิทธิ์, เรื่องเวลา)</li>
 <li><code>tests_security.py</code>: การ escape หน้า HTML จากลิงก์อีเมล และช่วงปิดซ่อมข้ามวัน</li>
+<li><code>tests_admin.py</code>: สิทธิ์ของ endpoint แอดมิน (export, dashboard, สถิติ, จัดการห้อง), วงจรช่วงปิดซ่อม, เกณฑ์ระดับความต้องการ, ลำดับสถานะห้อง</li>
+<li><code>tests_email.py</code>: อีเมลเตือนเช็คอิน (ส่งครั้งเดียว, ส่งเฉพาะในช่วงเวลา) และอีเมลตอนจอง</li>
 </ul>
 <h3>บั๊กที่พบจากการทดสอบและแก้แล้ว</h3>
 <div class="tw"><table><tr><th>บั๊ก</th><th>ผลกระทบ</th><th>วิธีแก้</th></tr>
@@ -533,7 +536,7 @@ SQLite (dev) / PostgreSQL บน Neon (production)
 <h2 id="s17">17. ให้ตรงกับเล่มวิทยานิพนธ์</h2>
 <div class="w"><b>จุดที่เล่มกับระบบจริงอาจไม่ตรงกัน ต้องตอบให้สอดคล้อง</b>
 <ul>
-<li><b>ฐานข้อมูล:</b> บทคัดย่อเขียน SQLite · ระบบจริงใช้ SQLite ตอนพัฒนาในเครื่อง และ PostgreSQL (Neon) บน production สลับกันด้วย env <code>DATABASE_URL</code> ตอบแบบนี้ได้เลย</li>
+<li><b>ฐานข้อมูล:</b> บทคัดย่อเขียน SQLite · ระบบรองรับทั้งสองแบบ ค่าเริ่มต้นเป็น SQLite และสลับเป็น PostgreSQL เมื่อตั้ง env <code>DATABASE_URL</code> ซึ่ง production (Neon) และเครื่องที่พัฒนาอยู่ตอนนี้ใช้ PostgreSQL ถ้าเล่มจะคง SQLite ไว้ ควรเพิ่มว่า production ใช้ PostgreSQL</li>
 <li><b>Weighted Averaging:</b> ระบบคำนวณการถ่วงน้ำหนักจริง แต่ผลคือโมเดลเดี่ยวชนะ blend ทุกกรณี (น้ำหนัก 100/0 ครบ 56 แถว) อย่าเขียนหรือพูดว่า "Weighted Averaging ลดความคลาดเคลื่อนได้อย่างมีนัยสำคัญเมื่อเทียบกับแบบจำลองเดี่ยว" ให้พูดว่า "เปรียบเทียบการถ่วงน้ำหนักกับโมเดลเดี่ยว แล้วระบบเลือกแบบที่ดีที่สุดรายห้อง ผลคือโมเดลเดี่ยวดีกว่าในข้อมูลชุดนี้"</li>
 <li><b>"อย่างมีนัยสำคัญ":</b> ยังไม่มีการทดสอบนัยสำคัญทางสถิติ อย่าใช้คำนี้กับผลของงานเราเอง</li>
 <li><b>บทที่ 1:</b> ปิดย่อหน้าเป็นคำถามวิจัย "Weighted Averaging ให้ผลดีกว่าโมเดลเดี่ยวหรือไม่" ผลที่ออกมาจึงเป็นคำตอบ ไม่ขัดกับบทนำ</li>
@@ -620,7 +623,7 @@ SQLite (dev) / PostgreSQL บน Neon (production)
 </ul></details>
 <details><summary>ทดสอบระบบยังไง เจออะไรบ้าง?</summary>
 <ul>
-<li>เขียนเทสต์อัตโนมัติ 93 เคสยิง API จริงบนฐานข้อมูลทดสอบแยก ครอบคลุมแผน T01–T30 เคสขอบของการจอง และความปลอดภัย ผ่านทั้งหมด</li>
+<li>เขียนเทสต์อัตโนมัติ 112 เคสยิง API จริงบนฐานข้อมูลทดสอบแยก ครอบคลุมแผน T01–T30 เคสขอบของการจอง ความปลอดภัย สิทธิ์แอดมิน และอีเมล ผ่านทั้งหมด</li>
 <li>จากการทดสอบเจอและแก้บั๊ก 5 ตัว เช่น แก้ไขการจองแล้วข้ามการตรวจ, ช่วงปิดซ่อมข้ามวันทับคาบเรียน, XSS ในหน้าจากลิงก์อีเมล (หัวข้อ 16)</li>
 </ul></details>
 <details><summary>ทำไมรหัสผ่านผิดได้ 400 ไม่ใช่ 401?</summary>
