@@ -1102,28 +1102,7 @@ class RoomViewSet(viewsets.ModelViewSet):
 # ============================================================
 # TERM BOOKING ViewSet
 # ============================================================
-def _recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
-    """
-    เช็คว่าเหตุการณ์ครั้งเดียว (Booking/MaintenanceBlock ที่มี start/end เป็น
-    datetime จริง) ชนกับ slot รายสัปดาห์ของ TermBooking (day_of_week +
-    start_time/end_time ซ้ำทุกสัปดาห์ตลอด [term_start, term_end]) ไหม
-    """
-    if local_start.date() == local_end.date():
-        d = local_start.date()
-        if not (term_start <= d <= term_end):
-            return False
-        if d.weekday() != day_of_week:
-            return False
-        return local_start.time() < end_time and local_end.time() > start_time
-    # เหตุการณ์ข้ามวัน (เช่น ปิดซ่อมบำรุงยาวหลายวัน) — ถือว่าชนถ้ามีวันไหน
-    # ในช่วงตรงกับ day_of_week และอยู่ในช่วงเทอม (ระมัดระวังไว้ก่อน ไม่เช็ค
-    # เวลาละเอียดในกรณีนี้ เพราะห้องถูกกันทั้งวันอยู่แล้วในทางปฏิบัติ)
-    cur = local_start.date()
-    while cur <= local_end.date():
-        if term_start <= cur <= term_end and cur.weekday() == day_of_week:
-            return True
-        cur += timedelta(days=1)
-    return False
+from .overlap import find_booking_conflict, recurring_slot_conflicts as _recurring_slot_conflicts
 
 
 class TermBookingViewSet(viewsets.ModelViewSet):
@@ -1552,7 +1531,9 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Booking.objects.filter(user=user).select_related('user', 'room__building')
 
     def get_serializer_class(self):
-        return BookingCreateSerializer if self.action == 'create' else BookingSerializer
+        if self.action in ('create', 'update', 'partial_update'):
+            return BookingCreateSerializer
+        return BookingSerializer
 
     def perform_create(self, serializer):
         room       = serializer.validated_data['room']
@@ -1567,37 +1548,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             # serializer's own validate() — a plain read with no locking —
             # can't close on its own).
             Room.objects.select_for_update().get(pk=room.pk)
-
-            if Booking.objects.filter(
-                room=room,
-                status__in=['pending', 'approved', 'checked_in'],
-                start_time__lt=end_time,
-                end_time__gt=start_time,
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว (มีคนจองพร้อมกัน)'})
-
-            target_date = start_time.date()
-            target_dow  = target_date.weekday()
-            if TermBooking.objects.filter(
-                room=room,
-                day_of_week=target_dow,
-                status='active',
-                term_start__lte=target_date,
-                term_end__gte=target_date,
-            ).exclude(
-                start_time__gte=end_time.time()
-            ).exclude(
-                end_time__lte=start_time.time()
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้ถูกจองทั้งเทอมในช่วงเวลาดังกล่าวแล้ว'})
-
-            if MaintenanceBlock.objects.filter(
-                room=room,
-                status__in=['scheduled', 'active'],
-                start_time__lt=end_time,
-                end_time__gt=start_time,
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'})
+            self._raise_if_conflict(room, start_time, end_time)
 
             booking = serializer.save(user=self.request.user, status='pending')
             Notification.objects.create(
@@ -1607,6 +1558,34 @@ class BookingViewSet(viewsets.ModelViewSet):
                          f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
                          f'ถูกส่งแล้ว กำลังรอแอดมินอนุมัติ')
             )
+
+    @staticmethod
+    def _raise_if_conflict(room, start_time, end_time, exclude_pk=None):
+        conflict = find_booking_conflict(room, start_time, end_time, exclude_pk=exclude_pk)
+        if conflict is None:
+            return
+        kind, message = conflict
+        if kind == 'booking':
+            message += ' (มีคนจองพร้อมกัน)'
+        raise ValidationError({'detail': message})
+
+    def perform_update(self, serializer):
+        booking = serializer.instance
+        if booking.status not in ('pending', 'approved'):
+            raise ValidationError({'detail': f'แก้ไขไม่ได้ สถานะปัจจุบัน: {booking.get_status_display()}'})
+
+        data       = serializer.validated_data
+        room       = data.get('room', booking.room)
+        start_time = data.get('start_time', booking.start_time)
+        end_time   = data.get('end_time', booking.end_time)
+
+        # ล็อกห้องแล้วตรวจซ้ำ เหมือน perform_create — กันสองคนแก้/จองเข้าช่วง
+        # เดียวกันพร้อมกัน (ถ้าย้ายห้อง ล็อกทั้งห้องเดิมและห้องใหม่)
+        with transaction.atomic():
+            for pk in sorted({booking.room_id, room.pk}):
+                Room.objects.select_for_update().get(pk=pk)
+            self._raise_if_conflict(room, start_time, end_time, exclude_pk=booking.pk)
+            serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         return Response({'error': 'ใช้ปุ่ม cancel แทน'}, status=405)

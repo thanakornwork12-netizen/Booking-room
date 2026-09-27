@@ -3,6 +3,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from datetime import datetime, timedelta
+from .overlap import find_booking_conflict
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     TermBooking, Booking, BookingLog,
@@ -390,22 +391,36 @@ class BookingSerializer(serializers.ModelSerializer):
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
+    """ใช้ทั้งตอนสร้างและตอนแก้ไข (PATCH/PUT) — เดิมตอนแก้ไขใช้ BookingSerializer
+    ที่ไม่มี validate() เลย ผู้จองจึง PATCH เวลาไปทับการจองของคนอื่น ตั้งผู้เข้าร่วม
+    เกินความจุ หรือย้ายไปวันที่ผ่านมาแล้วได้ (ยืนยันด้วย tests_booking_edge ก่อนแก้)"""
+
     class Meta:
         model  = Booking
         fields = ['room', 'title', 'attendees', 'start_time', 'end_time', 'note']
 
+    def _get(self, data, field):
+        # PATCH ส่งมาแค่บางฟิลด์ — ที่เหลือใช้ค่าเดิมของรายการ
+        if field in data:
+            return data[field]
+        return getattr(self.instance, field, None)
+
     def validate(self, data):
-        room       = data['room']
-        start_time = data['start_time']
-        end_time   = data['end_time']
-        attendees  = data.get('attendees')
+        room       = self._get(data, 'room')
+        start_time = self._get(data, 'start_time')
+        end_time   = self._get(data, 'end_time')
+        attendees  = self._get(data, 'attendees')
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
 
-        # ไม่ตรวจตอน instance มีอยู่แล้ว (แก้ไขการจองเดิม) เพราะ start_time
-        # เดิมอาจผ่านไปแล้วโดยชอบธรรมตั้งแต่ตอนสร้าง (เช่น แก้แค่ title)
-        if not self.instance and start_time < timezone.now():
+        if not room.is_active:
+            raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
+
+        # ตอนแก้ไข ตรวจเฉพาะเมื่อเปลี่ยนเวลาเริ่มจริง — start_time เดิมอาจผ่าน
+        # ไปแล้วโดยชอบธรรมตั้งแต่ตอนสร้าง (เช่น แก้แค่ title)
+        time_changed = self.instance is None or 'start_time' in data
+        if time_changed and start_time < timezone.now():
             raise serializers.ValidationError('ไม่สามารถจองเวลาที่ผ่านไปแล้วได้')
 
         if attendees is not None:
@@ -416,52 +431,13 @@ class BookingCreateSerializer(serializers.ModelSerializer):
                     {'attendees': f'จำนวนผู้เข้าร่วมเกินความจุห้อง (ห้องนี้จุได้ {room.capacity} คน)'}
                 )
 
-        # ── ชั้นที่ 1: ตรวจ Dynamic Booking (เบื้องต้น ยังไม่ Lock) ──
-        overlap_dynamic = Booking.objects.filter(
-            room=room,
-            status__in=['pending', 'approved', 'checked_in'],
-            start_time__lt=end_time,
-            end_time__gt=start_time,
+        # ตรวจเบื้องต้นยังไม่ Lock — ตรวจซ้ำใต้ select_for_update ใน views
+        conflict = find_booking_conflict(
+            room, start_time, end_time,
+            exclude_pk=self.instance.pk if self.instance else None,
         )
-        if self.instance:
-            overlap_dynamic = overlap_dynamic.exclude(pk=self.instance.pk)
-        if overlap_dynamic.exists():
-            raise serializers.ValidationError(
-                'ห้องนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว'
-            )
-
-        # ── ชั้นที่ 2: ตรวจ TermBooking (ห้องถูกล็อกตลอดเทอม) ──
-        target_date  = start_time.date()
-        target_dow   = target_date.weekday()
-        overlap_term = TermBooking.objects.filter(
-            room=room,
-            day_of_week=target_dow,
-            status='active',
-            term_start__lte=target_date,
-            term_end__gte=target_date,
-        ).exclude(
-            start_time__gte=end_time.time()
-        ).exclude(
-            end_time__lte=start_time.time()
-        )
-        if overlap_term.exists():
-            tb = overlap_term.first()
-            raise serializers.ValidationError(
-                f'ห้องนี้ถูกจองทั้งเทอมโดย "{tb.subject_name}" '
-                f'({tb.start_time:%H:%M}–{tb.end_time:%H:%M})'
-            )
-
-        # ── ชั้นที่ 3: ตรวจ MaintenanceBlock (ห้องปิดซ่อมบำรุง) ──
-        overlap_maint = MaintenanceBlock.objects.filter(
-            room=room,
-            status__in=['scheduled', 'active'],
-            start_time__lt=end_time,
-            end_time__gt=start_time,
-        )
-        if overlap_maint.exists():
-            raise serializers.ValidationError(
-                'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'
-            )
+        if conflict:
+            raise serializers.ValidationError(conflict[1])
 
         return data
 
