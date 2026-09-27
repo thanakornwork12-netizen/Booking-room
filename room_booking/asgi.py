@@ -41,9 +41,15 @@ class JWTAuthMiddleware(BaseMiddleware):
         try:
             from rest_framework_simplejwt.tokens import AccessToken
             from booking.models import User
+            from booking.authentication import token_matches_user
             access_token = AccessToken(token)
             user_id      = access_token['user_id']
-            return User.objects.get(id=user_id)
+            user = User.objects.get(id=user_id)
+            # ใช้กฎเดียวกับ REST API: บัญชีต้องใช้งานได้ และ token ต้องออกหลัง
+            # การเปลี่ยนรหัสผ่านครั้งล่าสุด
+            if not user.is_active or not token_matches_user(access_token, user):
+                raise ValueError('stale token')
+            return user
         except Exception:
             from django.contrib.auth.models import AnonymousUser
             return AnonymousUser()

@@ -1,5 +1,6 @@
 # booking/serializers.py
 
+import unicodedata
 from datetime import datetime, timedelta
 
 from django.utils import timezone
@@ -68,7 +69,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         # สมัครด้วยอีเมล (6611234567@ubu.ac.th) ให้ได้ username เดียวกับที่
         # LDAP ใช้ (6611234567) — ต้องตัดก่อนตรวจซ้ำ
         value = value.split('@')[0]
-        if User.objects.filter(username=value).exists():
+        # NFKC แปลงตัวอักษรเต็มความกว้าง (ｑａ) เป็นตัวปกติ และเทียบแบบไม่สนตัว
+        # พิมพ์ใหญ่เล็ก — ไม่งั้นสมัคร 'QA_Test_Bot' หรือ 'ｑａ_test_bot' ปลอมเป็น
+        # 'qa_test_bot' ได้ (หน้าตาเหมือนกันในรายการแอดมิน/อีเมล)
+        value = unicodedata.normalize('NFKC', value)
+        if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError('ชื่อผู้ใช้นี้ถูกใช้แล้ว')
         return value
 
@@ -526,7 +531,7 @@ class RoomUsageStatSerializer(serializers.ModelSerializer):
 # LDAP JWT AUTH
 # ============================================================
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
+from .authentication import issue_tokens
 from rest_framework import serializers
 
 from .ldap_auth import authenticate_ldap
@@ -604,12 +609,12 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                 or User.objects.filter(email__iexact=username).first()
             )
 
-            if not user or not user.check_password(password):
+            if not user or not user.check_password(password) or not user.is_active:
                 raise serializers.ValidationError({
                     'detail': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
                 })
 
-            refresh = RefreshToken.for_user(user)
+            refresh = issue_tokens(user)
             return {
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
@@ -678,9 +683,15 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         if not user.role:
             user.role = 'student'
 
-        # IMPORTANT:
-        # ไม่เก็บ password ใน database
-        user.set_unusable_password()
+        if not user.is_active:
+            raise serializers.ValidationError({'detail': 'บัญชีนี้ถูกระงับการใช้งาน'})
+
+        # ไม่เก็บ password ของมหาวิทยาลัยใน database — ตั้ง unusable เฉพาะครั้งแรก
+        # ที่บัญชียังมีรหัสผ่าน local อยู่ (สมัครเองไว้ก่อน หรือบัญชีใหม่) การเปลี่ยน
+        # ตรงนี้ทำให้ token ทุกใบที่ออกก่อนหน้าตาย (booking/authentication.py) —
+        # ถ้าตั้งทุกครั้งที่ล็อกอิน ล็อกอินเครื่องหนึ่งจะเตะอีกเครื่องออกทุกครั้ง
+        if created or user.has_usable_password():
+            user.set_unusable_password()
 
         user.save()
 
@@ -688,7 +699,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         # GENERATE JWT TOKEN
         # =====================================================
 
-        refresh = RefreshToken.for_user(user)
+        refresh = issue_tokens(user)
 
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)

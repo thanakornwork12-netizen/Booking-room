@@ -22,6 +22,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .excel import excel_safe
 from .ldap_auth import authenticate_ldap
 from .models import (
     User, Building, Room, Facility,
@@ -1651,6 +1652,11 @@ class BookingViewSet(viewsets.ModelViewSet):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
         if booking.status == 'cancelled':
             return Response({'error': 'ยกเลิกไปแล้ว'}, status=400)
+        # เดิมยกเลิกรายการที่ถูกปฏิเสธ/เสร็จสิ้นไปแล้วได้ ประวัติเพี้ยนและส่งอีเมล
+        # "ยกเลิกแล้ว" ไปหาผู้จองโดยไม่มีเหตุผล
+        if booking.status not in ACTIVE_BOOKING_STATUSES:
+            return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {booking.get_status_display()}'},
+                            status=400)
         old = booking.status
         booking.status = 'cancelled'
         booking.save()
@@ -1707,9 +1713,13 @@ class BookingViewSet(viewsets.ModelViewSet):
             'status': booking.status,
         })
 
-    # ─── CHECK-IN via Email Link ───────────────────────────────
+    # ─── ลิงก์ในอีเมล: GET = หน้ายืนยัน, POST = ทำจริง ─────────────
+    # โปรแกรมสแกนลิงก์ในอีเมล (Outlook Safe Links ฯลฯ) เปิด GET ให้อัตโนมัติ
+    # ทันทีที่อีเมลมาถึง — ถ้า GET ทำงานจริงเลย อีเมลเตือนที่ส่งก่อนเริ่ม 15
+    # นาที (ตรงกับช่วงเช็คอินพอดี) จะถูกสแกนแล้วเช็คอินแทนผู้จองเอง ระบบกัน
+    # no-show จึงไม่มีผล (ยืนยันด้วย tests_adversarial ก่อนแก้)
     @action(
-        detail=True, methods=['get'],
+        detail=True, methods=['get', 'post'],
         permission_classes=[AllowAny],
         url_path='checkin/(?P<token>[^/.]+)',
     )
@@ -1743,6 +1753,12 @@ class BookingViewSet(viewsets.ModelViewSet):
             return HttpResponse(self._html('❌', '#dc2626', 'เลยเวลาการจองแล้ว',
                                            f'ไม่สามารถ Check-in ได้หลังเวลาสิ้นสุด ({end_thai.strftime("%H:%M")} น.) ครับ'), status=400)
 
+        if request.method == 'GET':
+            return HttpResponse(self._confirm_html(
+                request, booking, icon='📍', color='#16a34a',
+                heading='ยืนยัน Check-in?', button='✅ Check-in ตอนนี้',
+            ))
+
         booking.checked_in    = True
         booking.checked_in_at = now
         booking.status        = 'checked_in'
@@ -1760,7 +1776,6 @@ class BookingViewSet(viewsets.ModelViewSet):
             f'หัวข้อ: {escape(booking.title)}<br><br>ขอให้ประชุมได้ดีนะครับ 🎉'
         ))
 
-    # ─── CANCEL via Email Link (GET = หน้ายืนยัน, POST = ยกเลิกจริง) ──
     @action(
         detail=True, methods=['get', 'post'],
         permission_classes=[AllowAny],
@@ -1775,43 +1790,16 @@ class BookingViewSet(viewsets.ModelViewSet):
         if booking.status == 'cancelled':
             return HttpResponse(self._html('❌', '#6b7280', 'ยกเลิกไปแล้ว',
                                            f'การจองห้อง {escape(booking.room.name)} ถูกยกเลิกไปแล้วครับ'))
-        if booking.status in ['checked_in', 'completed']:
+        if booking.status not in ('pending', 'approved'):
             return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้',
                                            f'สถานะปัจจุบัน: {booking.get_status_display()}'), status=400)
 
-        # GET → แสดงหน้ายืนยัน
         if request.method == 'GET':
-            start_thai   = booking.start_time.astimezone(THAI_TZ)
-            end_thai     = booking.end_time.astimezone(THAI_TZ)
-            confirm_url  = escape(request.build_absolute_uri())
-            return HttpResponse(f'''
-<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">
-  <div style="background:white;border-radius:16px;padding:48px 40px;text-align:center;max-width:420px;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
-    <div style="font-size:64px;margin-bottom:16px;">🗑️</div>
-    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);border-radius:4px;margin-bottom:20px;"></div>
-    <h1 style="color:#dc2626;margin:0 0 12px;font-size:22px;">ยืนยันการยกเลิกการจอง?</h1>
-    <div style="background:#f9fafb;border-radius:10px;padding:16px;margin:16px 0;text-align:left;font-size:15px;line-height:2;">
-      <p style="margin:0;">🏢 ห้อง: <b>{escape(booking.room.name)}</b></p>
-      <p style="margin:0;">📌 หัวข้อ: {escape(booking.title)}</p>
-      <p style="margin:0;">📅 วันที่: {start_thai.strftime("%d/%m/%Y")}</p>
-      <p style="margin:0;">⏰ เวลา: {start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.</p>
-    </div>
-    <form method="post" action="{confirm_url}">
-      <input type="hidden" name="csrfmiddlewaretoken" value="">
-      <button type="submit"
-        style="background:#dc2626;color:white;border:none;padding:14px 32px;
-               border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;width:100%;margin-bottom:12px;">
-        ✅ ยืนยัน ยกเลิกการจอง
-      </button>
-    </form>
-    <p style="color:#9ca3af;font-size:13px;margin-top:8px;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
-  </div>
-</body>
-</html>''')
+            return HttpResponse(self._confirm_html(
+                request, booking, icon='🗑️', color='#dc2626',
+                heading='ยืนยันการยกเลิกการจอง?', button='✅ ยืนยัน ยกเลิกการจอง',
+            ))
 
-        # POST → ยกเลิกจริง
         old = booking.status
         booking.status = 'cancelled'
         booking.save()
@@ -1825,6 +1813,38 @@ class BookingViewSet(viewsets.ModelViewSet):
             f'หัวข้อ: {escape(booking.title)}<br><br>'
             f'หากต้องการจองใหม่ สามารถเข้าระบบได้เลยครับ'
         ))
+
+    @staticmethod
+    def _confirm_html(request, booking, icon, color, heading, button):
+        """หน้ายืนยันของลิงก์ในอีเมล — แสดงรายละเอียดการจอง + ปุ่ม POST กลับมาที่ URL เดิม"""
+        start_thai  = booking.start_time.astimezone(THAI_TZ)
+        end_thai    = booking.end_time.astimezone(THAI_TZ)
+        confirm_url = escape(request.build_absolute_uri())
+        return f'''
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">
+  <div style="background:white;border-radius:16px;padding:48px 40px;text-align:center;max-width:420px;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
+    <div style="font-size:64px;margin-bottom:16px;">{icon}</div>
+    <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);border-radius:4px;margin-bottom:20px;"></div>
+    <h1 style="color:{color};margin:0 0 12px;font-size:22px;">{heading}</h1>
+    <div style="background:#f9fafb;border-radius:10px;padding:16px;margin:16px 0;text-align:left;font-size:15px;line-height:2;">
+      <p style="margin:0;">🏢 ห้อง: <b>{escape(booking.room.name)}</b></p>
+      <p style="margin:0;">📌 หัวข้อ: {escape(booking.title)}</p>
+      <p style="margin:0;">📅 วันที่: {start_thai.strftime("%d/%m/%Y")}</p>
+      <p style="margin:0;">⏰ เวลา: {start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.</p>
+    </div>
+    <form method="post" action="{confirm_url}">
+      <button type="submit"
+        style="background:{color};color:white;border:none;padding:14px 32px;
+               border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;width:100%;margin-bottom:12px;">
+        {button}
+      </button>
+    </form>
+    <p style="color:#9ca3af;font-size:13px;margin-top:8px;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
+  </div>
+</body>
+</html>'''
 
     @staticmethod
     def _html(icon, color, title, detail):
@@ -2107,6 +2127,9 @@ class ExportExcelView(APIView):
             'forecasts': DemandForecast, 'notifications': Notification, 'stats': RoomUsageStat,
         }
         selected_keys = mapping.keys() if sheets_param == 'all' else sheets_param.split(',')
+        # คอลัมน์ที่ห้ามหลุดออกไปในไฟล์: hash รหัสผ่าน และ token ของลิงก์
+        # เช็คอิน/ยกเลิกในอีเมล (ใครมี token ก็ยกเลิกการจองนั้นได้)
+        hidden_columns = {'users': {'password'}, 'bookings': {'checkin_token'}}
 
         try:
             response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -2122,7 +2145,10 @@ class ExportExcelView(APIView):
                     except Exception:
                         pass
 
-                    data = list(queryset.values())
+                    hidden = hidden_columns.get(key, set())
+                    fields = [f.attname for f in mapping[key]._meta.concrete_fields
+                              if f.attname not in hidden]
+                    data = list(queryset.values(*fields))
                     df   = pd.DataFrame(data)
                     if df.empty:
                         df = pd.DataFrame([{"System Message": "No data found"}])
@@ -2131,7 +2157,7 @@ class ExportExcelView(APIView):
                             if pd.api.types.is_datetime64_any_dtype(df[col]):
                                 df[col] = df[col].dt.tz_localize(None)
                             else:
-                                df[col] = df[col].apply(lambda x: "" if x is None else str(x))
+                                df[col] = df[col].apply(lambda x: "" if x is None else excel_safe(str(x)))
 
                     sheet_name = key.replace('_', ' ').title()[:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)

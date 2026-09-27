@@ -3,6 +3,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.http import HttpResponse
 from import_export.admin import ImportExportModelAdmin
+
+from .excel import safe_frame
 from .models import (
     User, Building, Room, Facility, RoomFacility,
     Booking, BookingLog, DemandForecast,
@@ -26,23 +28,23 @@ def export_combined_data(modeladmin, request, queryset):
             'id', 'title', 'user__username', 'room__name',
             'start_time', 'end_time', 'status', 'checked_in'
         ))
-        pd.DataFrame(bookings_data).to_excel(writer, sheet_name='Bookings', index=False)
+        safe_frame(pd.DataFrame(bookings_data)).to_excel(writer, sheet_name='Bookings', index=False)
 
         # 2. Sheet: All Rooms (รายชื่อห้องและสถานะทั้งหมด)
         rooms_data = list(Room.objects.all().values(
             'name', 'building__name', 'floor', 'capacity', 'room_type', 'status'
         ))
-        pd.DataFrame(rooms_data).to_excel(writer, sheet_name='Rooms', index=False)
+        safe_frame(pd.DataFrame(rooms_data)).to_excel(writer, sheet_name='Rooms', index=False)
 
         # 3. Sheet: All Users (รายชื่อผู้ใช้งานและบทบาท)
         users_data = list(User.objects.all().values(
             'username', 'first_name', 'last_name', 'role', 'faculty', 'email'
         ))
-        pd.DataFrame(users_data).to_excel(writer, sheet_name='Users', index=False)
+        safe_frame(pd.DataFrame(users_data)).to_excel(writer, sheet_name='Users', index=False)
 
         # 4. Sheet: Usage Stats (สถิติการใช้งาน)
         stats_data = list(RoomUsageStat.objects.all().values())
-        pd.DataFrame(stats_data).to_excel(writer, sheet_name='Usage_Statistics', index=False)
+        safe_frame(pd.DataFrame(stats_data)).to_excel(writer, sheet_name='Usage_Statistics', index=False)
 
     return response
 

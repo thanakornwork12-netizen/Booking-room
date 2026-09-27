@@ -4,7 +4,7 @@
 จองทั้งเทอมซ้ำ, จองสลับห้องซ้ำ และการจองซ้ำหลังรายการแรกถูกยกเลิก/ปฏิเสธ
 """
 import threading
-from datetime import datetime, time as time_type, timedelta
+from datetime import time as time_type, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import connection
