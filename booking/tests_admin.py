@@ -110,11 +110,25 @@ class MaintenanceLifecycleTests(TestCase):
             'end_time': end.isoformat(), 'reason': 'ซ่อมบำรุงเชิงป้องกัน',
         }, format='json')
 
-    def test_create_sets_room_status(self):
+    def test_future_block_keeps_room_available(self):
+        """ช่วงซ่อมล่วงหน้าไม่ทำให้ห้องขึ้น "ซ่อมบำรุง" ตั้งแต่วันนี้ (ไม่งั้นห้องหายจากการค้นหา)"""
         r = self.create_block(self.start, self.end)
         self.room.refresh_from_db()
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual(self.room.status, 'maintenance')
+        self.assertEqual(self.room.status, 'available')
+
+    def test_current_block_sets_room_status(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        now = timezone.now()
+        r = self.create_block(now + timedelta(minutes=1), now + timedelta(hours=3))
+        self.assertEqual(r.status_code, 201, r.data)
+        from booking.models import MaintenanceBlock
+        MaintenanceBlock.objects.filter(room=self.room).update(start_time=now - timedelta(minutes=5))
+        # สร้างอีกช่วงที่ครอบตอนนี้ผ่าน API ไม่ได้ (ชนกัน) จึงตรวจที่ status-feed แทน
+        rows = self.client.get('/api/rooms/status-feed/').data
+        state = next(r['state'] for r in rows if r.get('id') == self.room.id or r.get('room_id') == self.room.id)
+        self.assertEqual(state, 'maintenance')
 
     def test_rejects_overlapping_booking(self):
         from booking.models import Booking
@@ -140,6 +154,8 @@ class MaintenanceLifecycleTests(TestCase):
         ids = sorted(row['id'] for row in rows)
         self.assertEqual(len(ids), 2, (first, second))
 
+        self.room.status = 'maintenance'   # จำลองว่าช่วงแรกเริ่มซ่อมไปแล้ว
+        self.room.save(update_fields=['status'])
         r = self.client.post(f'/api/maintenance-blocks/{ids[0]}/complete/')
         self.room.refresh_from_db()
         self.assertEqual(r.status_code, 200)
@@ -198,3 +214,18 @@ class StatusFeedTests(TestCase):
                                end_time=now + timedelta(hours=3), status='pending')
         self.assertEqual(self.state_of(free_room)['state'], 'free')
         self.assertEqual(self.state_of(busy_room)['state'], 'active')
+
+
+class StatusFeedCheckedInTests(StatusFeedTests):
+    def test_checked_in_room_shows_active(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from booking.models import Booking
+        room = self.make_room('R-CHECKIN')
+        now = timezone.now()
+        Booking.objects.create(user=self.user, room=room, title='x', attendees=5,
+                               start_time=now - timedelta(minutes=10),
+                               end_time=now + timedelta(minutes=50), status='checked_in',
+                               checked_in=True)
+        self.assertEqual(self.state_of(room)['state'], 'active',
+                         'ห้องที่เช็คอินแล้วขึ้นว่า "ว่าง"')

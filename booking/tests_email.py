@@ -73,3 +73,24 @@ class EmailTests(TestCase):
         self.assertIn('qa_test_bot@example.com', [to for m in mail.outbox for to in m.to])
         for m in mail.outbox:
             self.assertEqual(m.from_email, settings.DEFAULT_FROM_EMAIL)
+
+
+class SchedulerStartTests(TestCase):
+    """start() ต้องเริ่มงานเมื่อรันเป็นเซิร์ฟเวอร์ รวมถึง daphne ที่ใช้บน production"""
+
+    def run_start(self, argv):
+        from booking import scheduler
+        with mock.patch.object(scheduler.sys, 'argv', argv), \
+             mock.patch.dict(scheduler.os.environ, {'DISABLE_DJANGO_SCHEDULER': '', 'RUN_MAIN': ''}), \
+             mock.patch.object(scheduler, 'BackgroundScheduler') as fake:
+            scheduler.start()
+        return fake.return_value.add_job.called
+
+    def test_starts_under_daphne(self):
+        self.assertTrue(self.run_start(['daphne', '-p', '8000', 'room_booking.asgi:application']))
+
+    def test_starts_under_runserver(self):
+        self.assertTrue(self.run_start(['manage.py', 'runserver']))
+
+    def test_skips_management_commands(self):
+        self.assertFalse(self.run_start(['manage.py', 'migrate']))

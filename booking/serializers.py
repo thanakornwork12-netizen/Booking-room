@@ -10,12 +10,26 @@ from .models import (
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
-from .overlap import find_booking_conflict
+from .overlap import find_booking_conflict, find_term_conflict
 
 
 # ============================================================
 # USER
 # ============================================================
+def _clean_student_id(value, exclude_pk=None):
+    """รหัสนักศึกษา: ว่างได้ (เก็บเป็น None), ต้องเป็นตัวเลขล้วน, ห้ามซ้ำคนอื่น"""
+    if not value:
+        return None
+    if not value.isdigit():
+        raise serializers.ValidationError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
+    taken = User.objects.filter(student_id=value)
+    if exclude_pk is not None:
+        taken = taken.exclude(pk=exclude_pk)
+    if taken.exists():
+        raise serializers.ValidationError('รหัสนักศึกษานี้ถูกใช้สมัครไปแล้ว')
+    return value
+
+
 class UserSerializer(serializers.ModelSerializer):
     """ใช้กับ ProfileView (GET/PATCH /api/auth/profile/) — เป็นการแก้ไข
     ข้อมูลตัวเองของ user เอง ต้องกัน role/username ไม่ให้แก้ได้เองเด็ดขาด
@@ -29,6 +43,10 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'first_name', 'last_name',
                   'email', 'role', 'faculty', 'phone', 'avatar', 'student_id']
         read_only_fields = ['id', 'role', 'username']
+
+    def validate_student_id(self, value):
+        # เดิมตรวจแค่ตอนสมัคร — PATCH โปรไฟล์ตั้ง "65abc123" ได้
+        return _clean_student_id(value, exclude_pk=getattr(self.instance, 'pk', None))
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -46,6 +64,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'first_name', 'last_name', 'email',
                   'password', 'password2', 'role', 'faculty', 'phone', 'student_id']
 
+    def validate_username(self, value):
+        # สมัครด้วยอีเมล (6611234567@ubu.ac.th) ให้ได้ username เดียวกับที่
+        # LDAP ใช้ (6611234567) — ต้องตัดก่อนตรวจซ้ำ
+        value = value.split('@')[0]
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError('ชื่อผู้ใช้นี้ถูกใช้แล้ว')
+        return value
+
     def validate_role(self, value):
         if value not in self.SELF_REGISTERABLE_ROLES:
             raise serializers.ValidationError('สถานะไม่ถูกต้อง')
@@ -55,27 +81,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         if data['password'] != data['password2']:
             raise serializers.ValidationError({'password': 'รหัสผ่านไม่ตรงกัน'})
 
-        student_id = data.get('student_id')
-        if student_id:
-            if not student_id.isdigit():
-                raise serializers.ValidationError({'student_id': 'รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น'})
-            if User.objects.filter(student_id=student_id).exists():
-                raise serializers.ValidationError({'student_id': 'รหัสนักศึกษานี้ถูกใช้สมัครไปแล้ว'})
-        else:
-            data['student_id'] = None
+        try:
+            data['student_id'] = _clean_student_id(data.get('student_id'))
+        except serializers.ValidationError as e:
+            raise serializers.ValidationError({'student_id': e.detail}) from e
 
         return data
 
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
-
-        # Normalize username so users who register with an email
-        # (e.g. '6611234567@ubu.ac.th') will have the same username
-        # as LDAP logins that use the bare student id '6611234567'.
-        username = validated_data.get('username', '')
-        if isinstance(username, str) and '@' in username:
-            validated_data['username'] = username.split('@')[0]
 
         user = User(**validated_data)
         user.set_password(password)
@@ -279,91 +294,64 @@ class TermBookingSerializer(serializers.ModelSerializer):
     def get_total_weeks(self, obj):
         return len(obj.get_weekly_slots())
 
-    def validate(self, data):
-        start   = data.get('start_time')
-        end     = data.get('end_time')
-        room    = data.get('room')
-        dow     = data.get('day_of_week')
-        t_start = data.get('term_start')
-        t_end   = data.get('term_end')
-
-        if start >= end:
-            raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
-        if t_start >= t_end:
-            raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
-
-        overlap = TermBooking.objects.filter(
-            room=room,
-            day_of_week=dow,
-            status='active',
-            term_start__lte=t_end,
-            term_end__gte=t_start,
-        ).exclude(
-            start_time__gte=end
-        ).exclude(
-            end_time__lte=start
-        )
-        if self.instance:
-            overlap = overlap.exclude(pk=self.instance.pk)
-        if overlap.exists():
-            raise serializers.ValidationError(
-                'ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว'
-            )
-        return data
-
-    def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
-        return super().create(validated_data)
-
 
 class TermBookingCreateSerializer(serializers.ModelSerializer):
+    """ใช้ทั้งตอนสร้างและแก้ไข — เดิมตอนแก้ไขใช้ TermBookingSerializer ซึ่ง
+    PATCH บางฟิลด์แล้วพังเป็น 500 (อ่านฟิลด์ที่ไม่ได้ส่งมาเป็น None) และไม่ตรวจ
+    ความจุหรือการทับการจองรายครั้ง/ช่วงปิดซ่อมเลย"""
+
     class Meta:
         model  = TermBooking
         fields = ['room', 'subject_name', 'subject_code', 'attendees',
                   'day_of_week', 'start_time', 'end_time',
                   'term_start', 'term_end', 'term_name', 'note']
 
+    def _get(self, data, field):
+        if field in data:
+            return data[field]
+        return getattr(self.instance, field, None)
+
     def validate(self, data):
-        if data['start_time'] >= data['end_time']:
+        room        = self._get(data, 'room')
+        day_of_week = self._get(data, 'day_of_week')
+        start_time  = self._get(data, 'start_time')
+        end_time    = self._get(data, 'end_time')
+        term_start  = self._get(data, 'term_start')
+        term_end    = self._get(data, 'term_end')
+        attendees   = self._get(data, 'attendees')
+
+        if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
-        if data['term_start'] >= data['term_end']:
+        if term_start >= term_end:
             raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
+        if not room.is_active:
+            raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
 
         # ต้องมีคาบเกิดขึ้นจริงอย่างน้อย 1 ครั้งในช่วงที่เลือก — ไม่งั้นจะได้
         # การจองทั้งเทอมที่ไม่มีคาบไหนเกิดขึ้นเลย (เช่น เลือกทุกวันเสาร์ แต่ช่วง
         # เทอมคือ จ.-พ.) ซึ่งระบบเดิมรับไว้เงียบๆ โดยไม่มีอะไรผิดพลาดให้เห็น
         if not any(
-            (data['term_start'] + timedelta(days=i)).weekday() == data['day_of_week']
-            for i in range((data['term_end'] - data['term_start']).days + 1)
+            (term_start + timedelta(days=i)).weekday() == day_of_week
+            for i in range((term_end - term_start).days + 1)
         ):
             raise serializers.ValidationError(
                 'ช่วงวันที่ที่เลือกไม่มีวันดังกล่าวเลย กรุณาขยายช่วงเทอมหรือเลือกวันเริ่มใหม่'
             )
 
-        attendees = data.get('attendees')
-        if attendees is not None:
-            if attendees < 1:
-                raise serializers.ValidationError({'attendees': 'จำนวนผู้เข้าร่วมต้องมากกว่า 0'})
-            if attendees > data['room'].capacity:
-                raise serializers.ValidationError(
-                    {'attendees': f'จำนวนผู้เข้าร่วมเกินความจุห้อง (ห้องนี้จุได้ {data["room"].capacity} คน)'}
-                )
-
-        overlap = TermBooking.objects.filter(
-            room=data['room'],
-            day_of_week=data['day_of_week'],
-            status='active',
-            term_start__lte=data['term_end'],
-            term_end__gte=data['term_start'],
-        ).exclude(
-            start_time__gte=data['end_time']
-        ).exclude(
-            end_time__lte=data['start_time']
-        )
-        if overlap.exists():
+        if attendees < 1:
+            raise serializers.ValidationError({'attendees': 'จำนวนผู้เข้าร่วมต้องมากกว่า 0'})
+        if attendees > room.capacity:
             raise serializers.ValidationError(
-                'ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว'
+                {'attendees': f'จำนวนผู้เข้าร่วมเกินความจุห้อง (ห้องนี้จุได้ {room.capacity} คน)'}
             )
+
+        # ตรวจเบื้องต้นยังไม่ Lock — ตรวจซ้ำใต้ select_for_update ใน views
+        conflict = find_term_conflict(
+            room, day_of_week, start_time, end_time, term_start, term_end,
+            exclude_pk=self.instance.pk if self.instance else None,
+        )
+        if conflict:
+            raise serializers.ValidationError(conflict)
         return data
 
     def create(self, validated_data):

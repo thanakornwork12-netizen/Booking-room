@@ -77,3 +77,51 @@ def find_booking_conflict(room, start_time, end_time, exclude_pk=None):
         return 'maintenance', 'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'
 
     return None
+
+
+def find_term_conflict(room, day_of_week, start_time, end_time, term_start, term_end, exclude_pk=None):
+    """ข้อความของสิ่งแรกที่ชนกับคาบเรียนรายสัปดาห์ที่จะจอง หรือ None ถ้าว่าง
+
+    ตรวจ 3 แหล่งเหมือนการจองรายครั้ง: คาบทั้งเทอมอื่น, การจองรายครั้ง และ
+    ช่วงปิดซ่อม (สองอย่างหลังไล่ทุกสัปดาห์ในช่วงเทอมผ่าน recurring_slot_conflicts)
+    exclude_pk ใช้ตอนแก้ไข/เปิดคาบเดิมกลับมา ไม่ให้นับตัวเองว่าชน
+    """
+    terms = TermBooking.objects.filter(
+        room=room,
+        day_of_week=day_of_week,
+        status='active',
+        term_start__lte=term_end,
+        term_end__gte=term_start,
+        start_time__lt=end_time,
+        end_time__gt=start_time,
+    )
+    if exclude_pk is not None:
+        terms = terms.exclude(pk=exclude_pk)
+    if terms.exists():
+        return 'ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว'
+
+    def recurring_hit(event):
+        return recurring_slot_conflicts(
+            timezone.localtime(event.start_time), timezone.localtime(event.end_time),
+            day_of_week, start_time, end_time, term_start, term_end,
+        )
+
+    for b in Booking.objects.filter(
+        room=room,
+        status__in=ACTIVE_BOOKING_STATUSES,
+        start_time__date__lte=term_end,
+        end_time__date__gte=term_start,
+    ):
+        if recurring_hit(b):
+            return f'ห้องนี้มีการจองรายวัน "{b.title}" ซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'
+
+    for mb in MaintenanceBlock.objects.filter(
+        room=room,
+        status__in=['scheduled', 'active'],
+        start_time__date__lte=term_end,
+        end_time__date__gte=term_start,
+    ):
+        if recurring_hit(mb):
+            return 'ห้องนี้ปิดซ่อมบำรุงซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'
+
+    return None

@@ -28,7 +28,7 @@ from .models import (
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
-from .overlap import find_booking_conflict, recurring_slot_conflicts
+from .overlap import ACTIVE_BOOKING_STATUSES, find_booking_conflict, find_term_conflict
 from .permissions import IsAdminOrStaff, is_admin_or_staff
 from .serializers import (
     UserSerializer, RegisterSerializer,
@@ -211,6 +211,27 @@ class BuildingViewSet(viewsets.ModelViewSet):
 # staff/admin ยังเห็นห้องทั้งหมดตามปกติ เพื่อจัดการ inventory จริงของมหาวิทยาลัยได้ครบ
 AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
 
+def _query_param(request, name, cast, default=None):
+    """อ่าน query param แล้วแปลงชนิด — ค่าผิดรูปแบบได้ 400 พร้อมบอกชื่อพารามิเตอร์
+    (เดิม int()/float() ตรง ๆ ทำให้ ?min_capacity=abc พังเป็น 500)"""
+    raw = request.query_params.get(name)
+    if raw in (None, ''):
+        return default
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        raise ValidationError({name: 'รูปแบบไม่ถูกต้อง'}) from None
+
+
+def _first_error(errors):
+    """ข้อความแรกจาก serializer.errors (dict/list ซ้อนกันได้) สำหรับแสดงผู้ใช้"""
+    while isinstance(errors, (dict, list)):
+        if not errors:
+            return 'ข้อมูลไม่ถูกต้อง'
+        errors = next(iter(errors.values())) if isinstance(errors, dict) else errors[0]
+    return str(errors)
+
+
 # ค่าเฉลี่ย predicted_demand (0–1) → (demand_level, availability) ไล่จากเกณฑ์สูงลงต่ำ
 DEMAND_LEVEL_THRESHOLDS = (
     (0.70, 'urgent', 'book_now'),
@@ -241,13 +262,13 @@ class RoomViewSet(viewsets.ModelViewSet):
         qs = qs if is_staff else qs.filter(is_active=True, id__in=AI_FORECAST_ROOM_IDS)
         building  = self.request.query_params.get('building')
         room_type = self.request.query_params.get('room_type')
-        capacity  = self.request.query_params.get('min_capacity')
+        capacity  = _query_param(self.request, 'min_capacity', int)
         if building:
             qs = qs.filter(building__code=building)
         if room_type:
             qs = qs.filter(room_type=room_type)
-        if capacity:
-            qs = qs.filter(capacity__gte=int(capacity))
+        if capacity is not None:
+            qs = qs.filter(capacity__gte=capacity)
         return qs
 
     def get_serializer_class(self):
@@ -335,7 +356,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         target_dow  = target_date.weekday()
 
         booked_dynamic = Booking.objects.filter(
-            status__in=['pending', 'approved'],
+            status__in=ACTIVE_BOOKING_STATUSES,
             start_time__lt=end_dt, end_time__gt=start_dt,
         ).values_list('room_id', flat=True)
 
@@ -831,7 +852,7 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         bookings_by_room = {}
         for b in Booking.objects.filter(
-            room_id__in=room_ids, status__in=['pending', 'approved'],
+            room_id__in=room_ids, status__in=ACTIVE_BOOKING_STATUSES,
             start_time__date=today,
         ).values('room_id', 'start_time', 'end_time', 'status'):
             bookings_by_room.setdefault(b['room_id'], []).append(b)
@@ -843,30 +864,37 @@ class RoomViewSet(viewsets.ModelViewSet):
         ).values('room_id', 'start_time', 'end_time'):
             terms_by_room.setdefault(t['room_id'], []).append(t)
 
+        in_maintenance = set(MaintenanceBlock.objects.filter(
+            room_id__in=room_ids, status__in=['scheduled', 'active'],
+            start_time__lte=now, end_time__gt=now,
+        ).values_list('room_id', flat=True))
+
         return Response([
-            self._room_status_entry(room, bookings_by_room.get(room.id, []), terms_by_room.get(room.id, []), now, now_time)
+            self._room_status_entry(room, bookings_by_room.get(room.id, []), terms_by_room.get(room.id, []),
+                                    now, now_time, in_maintenance=room.id in in_maintenance)
             for room in rooms
         ])
 
-    def _room_status_entry(self, room, room_bookings, room_terms, now, now_time):
+    def _room_status_entry(self, room, room_bookings, room_terms, now, now_time, in_maintenance=False):
         room_bookings = sorted(room_bookings, key=lambda b: b['start_time'])
         room_terms = sorted(room_terms, key=lambda t: t['start_time'])
 
-        if room.status == 'maintenance':
+        if room.status == 'maintenance' or in_maintenance:
             state, label = 'maintenance', 'ซ่อมบำรุง'
         elif room.status == 'disabled':
             state, label = 'disabled', 'ปิดใช้งาน'
         else:
+            confirmed = ('approved', 'checked_in')
             active = next((b for b in room_bookings
-                           if b['status'] == 'approved' and b['start_time'] <= now <= b['end_time']), None)
+                           if b['status'] in confirmed and b['start_time'] <= now <= b['end_time']), None)
             term_now = next((t for t in room_terms
                               if t['start_time'] <= now_time < t['end_time']), None)
             upcoming = next((b for b in room_bookings
-                              if b['status'] == 'approved' and now < b['start_time'] <= now + timedelta(minutes=30)), None)
+                              if b['status'] in confirmed and now < b['start_time'] <= now + timedelta(minutes=30)), None)
             pending = next((b for b in room_bookings
                              if b['status'] == 'pending' and b['end_time'] > now), None)
             booked = next((b for b in room_bookings
-                            if b['status'] == 'approved' and b['end_time'] > now and b is not active and b is not upcoming), None)
+                            if b['status'] in confirmed and b['end_time'] > now and b is not active and b is not upcoming), None)
 
             state, label = next(
                 ((state, label) for condition, state, label in (
@@ -1118,8 +1146,8 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.filter(status='active')
 
-        room   = self.request.query_params.get('room')
-        dow    = self.request.query_params.get('day_of_week')
+        room   = _query_param(self.request, 'room', int)
+        dow    = _query_param(self.request, 'day_of_week', int)
         term   = self.request.query_params.get('term_name')
         active = self.request.query_params.get('active_only')
         if room:
@@ -1134,7 +1162,19 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_serializer_class(self):
-        return TermBookingCreateSerializer if self.action == 'create' else TermBookingSerializer
+        if self.action in ('create', 'update', 'partial_update'):
+            return TermBookingCreateSerializer
+        return TermBookingSerializer
+
+    @staticmethod
+    def _lock_and_check(room, day_of_week, start_time, end_time, term_start, term_end,
+                        exclude_pk=None):
+        """เรียกภายใน transaction: ล็อกแถวห้องแล้วตรวจทับซ้ำ (กันสองคนจองพร้อมกัน)"""
+        Room.objects.select_for_update().get(pk=room.pk)
+        conflict = find_term_conflict(room, day_of_week, start_time, end_time,
+                                      term_start, term_end, exclude_pk=exclude_pk)
+        if conflict:
+            raise ValidationError({'detail': conflict})
 
     def perform_create(self, serializer):
         room        = serializer.validated_data['room']
@@ -1145,48 +1185,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         term_end    = serializer.validated_data['term_end']
 
         with transaction.atomic():
-            Room.objects.select_for_update().get(pk=room.pk)
-
-            if TermBooking.objects.filter(
-                room=room,
-                day_of_week=day_of_week,
-                status='active',
-                term_start__lte=term_end,
-                term_end__gte=term_start,
-            ).exclude(
-                start_time__gte=end_time
-            ).exclude(
-                end_time__lte=start_time
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้มีการจองทั้งเทอมซ้อนในช่วงเวลาเดียวกันแล้ว'})
-
-            # เช็คซ้อนกับ Booking รายวัน — Booking.start_time เป็น datetime จริง
-            # ครั้งเดียว ต่างจาก TermBooking ที่ซ้ำทุกสัปดาห์ เลยต้องไล่เช็คทีละ
-            # รายการว่าตรงกับ day_of_week/ช่วงเวลาที่จะจองทั้งเทอมไหม
-            candidate_bookings = Booking.objects.filter(
-                room=room,
-                status__in=['pending', 'approved', 'checked_in'],
-                start_time__date__lte=term_end,
-                end_time__date__gte=term_start,
-            )
-            for b in candidate_bookings:
-                local_start = timezone.localtime(b.start_time)
-                local_end   = timezone.localtime(b.end_time)
-                if recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
-                    raise ValidationError({'detail': f'ห้องนี้มีการจองรายวัน "{b.title}" ซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'})
-
-            candidate_blocks = MaintenanceBlock.objects.filter(
-                room=room,
-                status__in=['scheduled', 'active'],
-                start_time__date__lte=term_end,
-                end_time__date__gte=term_start,
-            )
-            for mb in candidate_blocks:
-                local_start = timezone.localtime(mb.start_time)
-                local_end   = timezone.localtime(mb.end_time)
-                if recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
-                    raise ValidationError({'detail': 'ห้องนี้ปิดซ่อมบำรุงซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'})
-
+            self._lock_and_check(room, day_of_week, start_time, end_time, term_start, term_end)
             term_booking = serializer.save(user=self.request.user, status='active')
             Notification.objects.create(
                 user=self.request.user, term_booking=term_booking,
@@ -1196,6 +1195,26 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                          f'{term_booking.start_time:%H:%M}–{term_booking.end_time:%H:%M} '
                          f'ตั้งแต่ {term_booking.term_start} ถึง {term_booking.term_end}')
             )
+
+    def perform_update(self, serializer):
+        tb = serializer.instance
+        if tb.status != 'active':
+            raise ValidationError({'detail': f'แก้ไขไม่ได้ สถานะปัจจุบัน: {tb.get_status_display()}'})
+        data = serializer.validated_data
+        room = data.get('room', tb.room)
+        with transaction.atomic():
+            if room.pk != tb.room_id:
+                Room.objects.select_for_update().get(pk=tb.room_id)
+            self._lock_and_check(
+                room,
+                data.get('day_of_week', tb.day_of_week),
+                data.get('start_time', tb.start_time),
+                data.get('end_time', tb.end_time),
+                data.get('term_start', tb.term_start),
+                data.get('term_end', tb.term_end),
+                exclude_pk=tb.pk,
+            )
+            serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         tb = self.get_object()
@@ -1216,9 +1235,14 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
         tb = self.get_object()
-        tb.status = 'active'
-        tb.approved_by = request.user
-        tb.save()
+        if tb.status == 'active':
+            return Response({'message': 'การจองทั้งเทอมนี้ใช้งานอยู่แล้ว'})
+        with transaction.atomic():
+            self._lock_and_check(tb.room, tb.day_of_week, tb.start_time, tb.end_time,
+                                 tb.term_start, tb.term_end, exclude_pk=tb.pk)
+            tb.status = 'active'
+            tb.approved_by = request.user
+            tb.save()
         return Response({'message': 'อนุมัติการจองทั้งเทอมแล้ว'})
 
     @action(detail=False, methods=['get'])
@@ -1411,9 +1435,9 @@ class TermBookingViewSet(viewsets.ModelViewSet):
     def split_book(self, request):
         """
         จองทั้งเทอมแบบสลับห้อง — สร้าง TermBooking 2 รายการ (ครึ่งเทอมแรก + ครึ่งเทอมหลัง)
+        แต่ละครึ่งผ่านกฎชุดเดียวกับการจองทั้งเทอมปกติ (ความจุ, วันในสัปดาห์,
+        การทับคาบอื่น/การจองรายครั้ง/ช่วงปิดซ่อม) — เดิมตรวจแค่คาบทั้งเทอมด้วยกัน
         """
-        from django.db import transaction
-
         data = request.data
         required = [
             'subject_name', 'day_of_week', 'start_time', 'end_time',
@@ -1424,76 +1448,40 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         if missing:
             return Response({'error': f'ข้อมูลไม่ครบ: {", ".join(missing)}'}, status=400)
 
-        try:
-            dow = int(data['day_of_week'])
-            start_t = datetime.strptime(str(data['start_time']), '%H:%M').time() \
-                if len(str(data['start_time'])) <= 5 \
-                else datetime.strptime(str(data['start_time']), '%H:%M:%S').time()
-            end_t = datetime.strptime(str(data['end_time']), '%H:%M').time() \
-                if len(str(data['end_time'])) <= 5 \
-                else datetime.strptime(str(data['end_time']), '%H:%M:%S').time()
-            f_start = date_type.fromisoformat(str(data['first_term_start']))
-            f_end   = date_type.fromisoformat(str(data['first_term_end']))
-            s_start = date_type.fromisoformat(str(data['second_term_start']))
-            s_end   = date_type.fromisoformat(str(data['second_term_end']))
-        except (ValueError, TypeError) as e:
-            return Response({'error': f'รูปแบบวันที่/เวลาไม่ถูกต้อง: {e}'}, status=400)
+        note_base = data.get('note', '')
+        halves = []
+        for key, label in (('first', 'เทอมแรก'), ('second', 'เทอมหลัง')):
+            ser = TermBookingCreateSerializer(data={
+                'room':         data[f'{key}_room_id'],
+                'subject_name': data['subject_name'],
+                'subject_code': data.get('subject_code', ''),
+                'attendees':    data.get('attendees', 30),
+                'day_of_week':  data['day_of_week'],
+                'start_time':   data['start_time'],
+                'end_time':     data['end_time'],
+                'term_start':   data[f'{key}_term_start'],
+                'term_end':     data[f'{key}_term_end'],
+                'term_name':    data.get('term_name', ''),
+                'note':         (note_base + f' [{label} — จองสลับห้อง]').strip(),
+            }, context={'request': request})
+            if not ser.is_valid():
+                return Response({'error': f'ห้อง{label}: {_first_error(ser.errors)}',
+                                 'details': ser.errors}, status=400)
+            halves.append(ser)
 
-        if start_t >= end_t or f_start >= f_end or s_start >= s_end:
-            return Response({'error': 'ช่วงวันที่หรือเวลาไม่ถูกต้อง'}, status=400)
-        if f_end >= s_start:
+        first, second = (h.validated_data for h in halves)
+        if first['term_end'] >= second['term_start']:
             return Response({'error': 'ช่วงเทอมแรกและเทอมหลังต้องไม่ซ้อนกัน'}, status=400)
 
-        attendees  = int(data.get('attendees', 30))
-        term_name  = data.get('term_name', '')
-        note_base  = data.get('note', '')
-        subject    = data['subject_name']
-        subject_code = data.get('subject_code', '')
-
-        common = {
-            'user': request.user,
-            'subject_name': subject,
-            'subject_code': subject_code,
-            'attendees': attendees,
-            'day_of_week': dow,
-            'start_time': start_t,
-            'end_time': end_t,
-            'term_name': term_name,
-            'status': 'active',
-        }
-
-        def check_overlap(room_id, t_start, t_end):
-            return TermBooking.objects.filter(
-                room_id=room_id,
-                day_of_week=dow,
-                status='active',
-                term_start__lte=t_end,
-                term_end__gte=t_start,
-            ).exclude(start_time__gte=end_t).exclude(end_time__lte=start_t).exists()
-
-        if check_overlap(data['first_room_id'], f_start, f_end):
-            return Response({'error': 'ห้องเทอมแรกมีการจองซ้อนในช่วงเวลานี้แล้ว'}, status=400)
-        if check_overlap(data['second_room_id'], s_start, s_end):
-            return Response({'error': 'ห้องเทอมหลังมีการจองซ้อนในช่วงเวลานี้แล้ว'}, status=400)
-
-        try:
-            with transaction.atomic():
-                tb1 = TermBooking.objects.create(
-                    room_id=data['first_room_id'],
-                    term_start=f_start,
-                    term_end=f_end,
-                    note=(note_base + ' [เทอมแรก — จองสลับห้อง]').strip(),
-                    **common,
-                )
-                tb2 = TermBooking.objects.create(
-                    room_id=data['second_room_id'],
-                    term_start=s_start,
-                    term_end=s_end,
-                    note=(note_base + ' [เทอมหลัง — จองสลับห้อง]').strip(),
-                    **common,
-                )
-        except Exception as e:
-            return Response({'error': str(e)}, status=400)
+        with transaction.atomic():
+            for pk in sorted({first['room'].pk, second['room'].pk}):
+                Room.objects.select_for_update().get(pk=pk)
+            for d, label in ((first, 'เทอมแรก'), (second, 'เทอมหลัง')):
+                conflict = find_term_conflict(d['room'], d['day_of_week'], d['start_time'],
+                                              d['end_time'], d['term_start'], d['term_end'])
+                if conflict:
+                    return Response({'error': f'ห้อง{label}: {conflict}'}, status=400)
+            tb1, tb2 = (h.save(user=request.user, status='active') for h in halves)
 
         for tb in (tb1, tb2):
             Notification.objects.create(
@@ -1886,8 +1874,8 @@ class DemandForecastViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs   = DemandForecast.objects.all().order_by('forecast_date', 'hour')
-        room = self.request.query_params.get('room')
-        date = self.request.query_params.get('date')
+        room = _query_param(self.request, 'room', int)
+        date = _query_param(self.request, 'date', date_type.fromisoformat)
         if room:
             qs = qs.filter(room_id=room)
         if date:
@@ -1906,13 +1894,13 @@ class MaintenanceSlotsView(APIView):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
-        room_id  = request.query_params.get('room')
-        max_dem  = float(request.query_params.get('max_demand', 0.10))
-        min_hrs  = int(request.query_params.get('min_hours', 3))
-        days     = int(request.query_params.get('days', 14))
+        room_id  = _query_param(request, 'room', int)
+        max_dem  = _query_param(request, 'max_demand', float, 0.10)
+        min_hrs  = _query_param(request, 'min_hours', int, 3)
+        days     = _query_param(request, 'days', int, 14)
 
         slots = _find_maintenance_slots(
-            room_id=int(room_id) if room_id else None,
+            room_id=room_id,
             max_demand=max_dem,
             min_consecutive_hours=min_hrs,
             days_ahead=days,
@@ -2010,7 +1998,7 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         if not is_admin_or_staff(self.request.user):
             return qs.none()
-        room = self.request.query_params.get('room')
+        room = _query_param(self.request, 'room', int)
         if room:
             qs = qs.filter(room_id=room)
         return qs.order_by('-start_time')
@@ -2033,8 +2021,12 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
                 created_by=self.request.user,
                 status='scheduled',
             )
-            block.room.status = 'maintenance'
-            block.room.save(update_fields=['status'])
+            # ตั้งสถานะห้องเฉพาะช่วงซ่อมที่เริ่มแล้ว — เดิมตั้งทันทีแม้ช่วงซ่อม
+            # จะอยู่อีกหลายเดือน ห้องจึงหายจากการค้นหา (กรอง status='available')
+            # ไปตลอดจนกว่าจะปิดงาน การกันจองระหว่างซ่อมตรวจจากช่วงเวลาอยู่แล้ว
+            if block.start_time <= timezone.now() < block.end_time:
+                block.room.status = 'maintenance'
+                block.room.save(update_fields=['status'])
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

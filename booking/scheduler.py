@@ -116,10 +116,10 @@ def start():
         return
 
     argv = ' '.join(sys.argv).lower()
+    # daphne คือเซิร์ฟเวอร์ที่ใช้จริงบน Render (render.yaml) — เดิมไม่อยู่ในรายการนี้
+    # งานเตือนเช็คอินจึงไม่เคยเริ่มทำงานบน production
     server_mode = (
-        'runserver' in argv
-        or 'gunicorn' in argv
-        or 'uvicorn' in argv
+        any(name in argv for name in ('runserver', 'gunicorn', 'uvicorn', 'daphne'))
         or os.environ.get('RUN_MAIN') == 'true'
     )
     if not server_mode:
