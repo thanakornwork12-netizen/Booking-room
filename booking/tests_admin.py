@@ -149,3 +149,52 @@ class MaintenanceLifecycleTests(TestCase):
         self.room.refresh_from_db()
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.room.status, 'available')
+
+
+class DemandLevelTests(TestCase):
+    def test_thresholds_at_each_boundary(self):
+        from booking.views import _demand_level_for
+        cases = [
+            (0.95, ('urgent', 'book_now')), (0.70, ('urgent', 'book_now')),
+            (0.69, ('high', 'book_soon')),  (0.50, ('high', 'book_soon')),
+            (0.49, ('medium', 'recommended')), (0.30, ('medium', 'recommended')),
+            (0.29, ('low', 'likely_available')), (0.0, ('low', 'likely_available')),
+        ]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(_demand_level_for(value), expected)
+
+
+class StatusFeedTests(TestCase):
+    """ลำดับความสำคัญของสถานะห้องใน status-feed"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.building = Building.objects.create(name='อาคารเรียนรวม 2C', code='2C')
+        cls.user = User.objects.create_user(username='qa_test_bot', password='x', role='student')
+
+    def state_of(self, room):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        rows = client.get('/api/rooms/status-feed/').data
+        rows = rows.get('rooms', rows) if isinstance(rows, dict) else rows
+        return next(r for r in rows if r.get('id') == room.id or r.get('room_id') == room.id)
+
+    def make_room(self, name):
+        return Room.objects.create(building=self.building, name=name, floor=1,
+                                   capacity=40, room_type='ห้องเรียน')
+
+    def test_free_active_and_active_beats_pending(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from booking.models import Booking
+        free_room, busy_room = self.make_room('R-FREE'), self.make_room('R-BUSY')
+        now = timezone.now()
+        Booking.objects.create(user=self.user, room=busy_room, title='x', attendees=5,
+                               start_time=now - timedelta(minutes=30),
+                               end_time=now + timedelta(minutes=30), status='approved')
+        Booking.objects.create(user=self.user, room=busy_room, title='y', attendees=5,
+                               start_time=now + timedelta(hours=2),
+                               end_time=now + timedelta(hours=3), status='pending')
+        self.assertEqual(self.state_of(free_room)['state'], 'free')
+        self.assertEqual(self.state_of(busy_room)['state'], 'active')

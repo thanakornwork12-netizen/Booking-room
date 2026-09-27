@@ -35,22 +35,22 @@ def get_recipient_email(user):
 
 
 def send_email_after_commit(send_func, instance):
-  def run():
-    try:
-      logger.info('Background email thread starting for instance id=%s', getattr(instance, 'id', None))
-      logger.info('EMAIL_HOST=%s EMAIL_PORT=%s EMAIL_BACKEND=%s',
-            getattr(settings, 'EMAIL_HOST', None),
-            getattr(settings, 'EMAIL_PORT', None),
-            getattr(settings, 'EMAIL_BACKEND', None))
-      send_func(instance)
-    except Exception:
-      logger.exception('ส่งอีเมลแบบ background ไม่สำเร็จ')
+    def run():
+        try:
+            logger.info('Background email thread starting for instance id=%s', getattr(instance, 'id', None))
+            logger.info('EMAIL_HOST=%s EMAIL_PORT=%s EMAIL_BACKEND=%s',
+                        getattr(settings, 'EMAIL_HOST', None),
+                        getattr(settings, 'EMAIL_PORT', None),
+                        getattr(settings, 'EMAIL_BACKEND', None))
+            send_func(instance)
+        except Exception:
+            logger.exception('ส่งอีเมลแบบ background ไม่สำเร็จ')
 
-  def _start_thread():
-    logger.info('Starting background email thread (on commit) for instance id=%s', getattr(instance, 'id', None))
-    threading.Thread(target=run, daemon=True).start()
+    def _start_thread():
+        logger.info('Starting background email thread (on commit) for instance id=%s', getattr(instance, 'id', None))
+        threading.Thread(target=run, daemon=True).start()
 
-  transaction.on_commit(_start_thread)
+    transaction.on_commit(_start_thread)
 
 
 def log_email_error(context, error):

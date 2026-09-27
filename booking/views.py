@@ -211,6 +211,21 @@ class BuildingViewSet(viewsets.ModelViewSet):
 # staff/admin ยังเห็นห้องทั้งหมดตามปกติ เพื่อจัดการ inventory จริงของมหาวิทยาลัยได้ครบ
 AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
 
+# ค่าเฉลี่ย predicted_demand (0–1) → (demand_level, availability) ไล่จากเกณฑ์สูงลงต่ำ
+DEMAND_LEVEL_THRESHOLDS = (
+    (0.70, 'urgent', 'book_now'),
+    (0.50, 'high',   'book_soon'),
+    (0.30, 'medium', 'recommended'),
+)
+
+
+def _demand_level_for(avg_pred):
+    for threshold, level, availability in DEMAND_LEVEL_THRESHOLDS:
+        if avg_pred >= threshold:
+            return level, availability
+    return 'low', 'likely_available'
+
+
 # เวลาปิดทำการอาคาร ใช้เป็นเพดานสูงสุดของ "ห้องว่างถึงกี่โมง" ในฟีดหน้าแรก —
 # ไม่งั้นวันที่ไม่มีการจองอะไรต่อแล้ว ทุกห้องจะโชว์ "ว่างถึงเที่ยงคืน" เหมือน
 # กันหมด ดูไม่สมจริง (ดู RoomViewSet._rooms_next_free_window)
@@ -432,10 +447,7 @@ class RoomViewSet(viewsets.ModelViewSet):
                 avg_term = sum(f.term_demand for f in forecasts) / count
                 avg_dyn  = sum(f.dynamic_demand for f in forecasts) / count
                 avg_conf = sum(f.confidence for f in forecasts) / count
-                if avg_pred >= 0.70:   final_level, final_avail = 'urgent', 'book_now'
-                elif avg_pred >= 0.50: final_level, final_avail = 'high',   'book_soon'
-                elif avg_pred >= 0.30: final_level, final_avail = 'medium', 'recommended'
-                else:                  final_level, final_avail = 'low',    'likely_available'
+                final_level, final_avail = _demand_level_for(avg_pred)
                 room_data['forecast'] = {
                     'demand_level': final_level, 'availability': final_avail,
                     'predicted_demand': round(avg_pred, 4), 'term_demand': round(avg_term, 4),
@@ -856,13 +868,17 @@ class RoomViewSet(viewsets.ModelViewSet):
             booked = next((b for b in room_bookings
                             if b['status'] == 'approved' and b['end_time'] > now and b is not active and b is not upcoming), None)
 
-            if active:          state, label = 'active', 'กำลังใช้งาน'
-            elif term_now:      state, label = 'term_active', 'ชั่วโมงเรียน'
-            elif upcoming:      state, label = 'soon', 'จะเริ่มเร็วๆ'
-            elif pending:       state, label = 'pending', 'รออนุมัติ'
-            elif room_terms:    state, label = 'term_today', 'มีตารางสอน'
-            elif booked:        state, label = 'booked', 'ยืนยันแล้ว'
-            else:               state, label = 'free', 'ว่าง'
+            state, label = next(
+                ((state, label) for condition, state, label in (
+                    (active,     'active',      'กำลังใช้งาน'),
+                    (term_now,   'term_active', 'ชั่วโมงเรียน'),
+                    (upcoming,   'soon',        'จะเริ่มเร็วๆ'),
+                    (pending,    'pending',     'รออนุมัติ'),
+                    (room_terms, 'term_today',  'มีตารางสอน'),
+                    (booked,     'booked',      'ยืนยันแล้ว'),
+                ) if condition),
+                ('free', 'ว่าง'),
+            )
 
         return {
             'id': room.id, 'name': room.name,
@@ -1106,9 +1122,12 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         dow    = self.request.query_params.get('day_of_week')
         term   = self.request.query_params.get('term_name')
         active = self.request.query_params.get('active_only')
-        if room:         qs = qs.filter(room_id=room)
-        if dow is not None: qs = qs.filter(day_of_week=dow)
-        if term:         qs = qs.filter(term_name__icontains=term)
+        if room:
+            qs = qs.filter(room_id=room)
+        if dow is not None:
+            qs = qs.filter(day_of_week=dow)
+        if term:
+            qs = qs.filter(term_name__icontains=term)
         if active:
             today = date_type.today()
             qs = qs.filter(status='active', term_start__lte=today, term_end__gte=today)
@@ -1869,8 +1888,10 @@ class DemandForecastViewSet(viewsets.ReadOnlyModelViewSet):
         qs   = DemandForecast.objects.all().order_by('forecast_date', 'hour')
         room = self.request.query_params.get('room')
         date = self.request.query_params.get('date')
-        if room: qs = qs.filter(room_id=room)
-        if date: qs = qs.filter(forecast_date=date)
+        if room:
+            qs = qs.filter(room_id=room)
+        if date:
+            qs = qs.filter(forecast_date=date)
         return qs
 
 
@@ -2101,7 +2122,8 @@ class ExportExcelView(APIView):
 
             with pd.ExcelWriter(response, engine='openpyxl') as writer:
                 for key in selected_keys:
-                    if key not in mapping: continue
+                    if key not in mapping:
+                        continue
                     queryset = mapping[key].objects.all()
                     try:
                         queryset = queryset.order_by('-id')
@@ -2134,7 +2156,7 @@ class ExportExcelView(APIView):
             import traceback
             traceback.print_exc()
             return JsonResponse({'error': str(e)}, status=400)
-        
+
 def login_view(request):
     if request.method == 'POST':
         username = request.POST.get('username', '').strip()

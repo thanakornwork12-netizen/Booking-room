@@ -23,7 +23,7 @@ def export_combined_data(modeladmin, request, queryset):
         # 1. Sheet: Selected Bookings (ข้อมูลการจองที่เลือกในหน้า Admin)
         # เราดึงข้อมูลจาก queryset ที่ผู้ใช้ติ๊กเลือก
         bookings_data = list(queryset.values(
-            'id', 'title', 'user__username', 'room__name', 
+            'id', 'title', 'user__username', 'room__name',
             'start_time', 'end_time', 'status', 'checked_in'
         ))
         pd.DataFrame(bookings_data).to_excel(writer, sheet_name='Bookings', index=False)

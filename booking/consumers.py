@@ -18,7 +18,7 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.group_name = 'room_status'
 
-        
+
         await self.channel_layer.group_add(
             self.group_name,
             self.channel_name
