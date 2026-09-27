@@ -1,6 +1,6 @@
 import json
 import datetime
-from ldap3 import Server, Connection, ALL, SUBTREE, NTLM, AUTO_BIND_TLS_BEFORE_BIND
+from ldap3 import Server, Connection, ALL, SUBTREE, AUTO_BIND_TLS_BEFORE_BIND
 from ldap3.core.exceptions import LDAPSocketReceiveError, LDAPSocketOpenError
 from django.conf import settings
 

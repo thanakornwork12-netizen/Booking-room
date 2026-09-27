@@ -204,7 +204,7 @@ class Booking(models.Model):
         ('rejected',   'ปฏิเสธ'),
         ('cancelled',  'ยกเลิก'),
         ('completed',  'เสร็จสิ้น'),
-        ('checked_in', 'เช็คอินแล้ว'),  # ✅ เพิ่ม
+        ('checked_in', 'เช็คอินแล้ว'),
     ]
 
     user           = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
@@ -217,8 +217,8 @@ class Booking(models.Model):
     note           = models.TextField(blank=True)
     reject_reason  = models.TextField(blank=True)
     checked_in     = models.BooleanField(default=False)
-    checked_in_at  = models.DateTimeField(null=True, blank=True)   # ✅ เพิ่ม
-    checkin_token  = models.UUIDField(default=uuid.uuid4, editable=False)  # ✅ เพิ่ม
+    checked_in_at  = models.DateTimeField(null=True, blank=True)
+    checkin_token  = models.UUIDField(default=uuid.uuid4, editable=False)
     reminded       = models.BooleanField(default=False)
     created_at     = models.DateTimeField(auto_now_add=True)
     updated_at     = models.DateTimeField(auto_now=True)

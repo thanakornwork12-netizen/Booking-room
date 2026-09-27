@@ -1,32 +1,35 @@
-import pandas as pd
 import re
+from datetime import date as date_type, datetime, time as time_type, timedelta
 from difflib import SequenceMatcher
-from django.utils import timezone
-from django.db.models import Count, Q
-from datetime import datetime, date as date_type, time as time_type, timedelta
-from django.http import HttpResponse, JsonResponse
-import io, threading, pytz
-from rest_framework.views import APIView
-from rest_framework import viewsets, status, generics
-from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from functools import partial
+
+import pandas as pd
+import pytz
 from django.contrib.auth import login
-from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.db import transaction
+from django.db.models import Count, Q
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.html import escape
-from functools import partial
-from django.shortcuts import redirect, render, get_object_or_404
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from rest_framework import generics, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from .ldap_auth import authenticate_ldap
 from .models import (
-    User, Building, Room, Facility, RoomFacility,
+    User, Building, Room, Facility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
+from .overlap import find_booking_conflict, recurring_slot_conflicts
+from .permissions import IsAdminOrStaff, is_admin_or_staff
 from .serializers import (
     UserSerializer, RegisterSerializer,
     ChangePasswordSerializer, DeleteAccountSerializer,
@@ -35,7 +38,7 @@ from .serializers import (
     TermBookingSerializer, TermBookingCreateSerializer,
     BookingSerializer, BookingCreateSerializer,
     BookingLogSerializer, DemandForecastSerializer,
-    NotificationSerializer, RoomUsageStatSerializer,
+    NotificationSerializer,
     MaintenanceBlockSerializer, MaintenanceBlockCreateSerializer,
 )
 
@@ -160,7 +163,7 @@ class DeleteAccountView(APIView):
 
 
 def _require_admin_or_staff(request):
-    if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+    if not is_admin_or_staff(request.user):
         raise PermissionDenied('สำหรับผู้ดูแลระบบเท่านั้น')
 
 
@@ -214,24 +217,11 @@ AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
 BUILDING_CLOSING_TIME = time_type(21, 0)
 
 
-class IsAdminOrStaff(BasePermission):
-    """ใช้กับ endpoint ที่ต้องจำกัดแค่ admin/staff เท่านั้น (เช่น export ข้อมูล
-    ทั้งระบบ, จัดการช่วงปิดซ่อมบำรุง) — เขียนเป็น permission class กลาง
-    แทนการเช็ค role อินไลน์กระจายไปแต่ละ view เพราะเคยพลาดมาแล้วจริง:
-    MaintenanceBlockViewSet เช็ค role แค่ใน get_queryset() (ใช้กับ list/
-    retrieve) แต่ create() ของ DRF ModelViewSet ไม่เรียก get_queryset()
-    เลย ทำให้ action สร้างช่วงปิดซ่อมหลุดผ่านไม่ต้องเช็คสิทธิ์อะไรเลย —
-    ยืนยันด้วยการทดสอบจริงว่า student สร้างช่วงปิดซ่อมได้สำเร็จก่อนแก้"""
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated
-                    and getattr(request.user, 'role', None) in ['admin', 'staff'])
-
-
 class RoomViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        is_staff = getattr(self.request.user, 'role', None) in ['admin', 'staff']
+        is_staff = is_admin_or_staff(self.request.user)
         qs = Room.objects.select_related('building')
         qs = qs if is_staff else qs.filter(is_active=True, id__in=AI_FORECAST_ROOM_IDS)
         building  = self.request.query_params.get('building')
@@ -544,8 +534,6 @@ class RoomViewSet(viewsets.ModelViewSet):
         หาห้องว่างใกล้เคียงเมื่อค้นหาปกติไม่เจอหรือไม่มี AI forecast
         ลำดับ: ช่วงเวลาเดิม → ขยายความจุ → ช่วงเวลาใกล้เคียง ±30/60 นาที
         """
-        from datetime import time as time_type, timedelta as td
-
         target_date   = d['date']
         start_time    = d['start_time']
         end_time      = d['end_time']
@@ -609,8 +597,8 @@ class RoomViewSet(viewsets.ModelViewSet):
             offsets = [30, -30, 60, -60]
             seen = {r.id for _, r, _ in all_scored}
             for mins in offsets:
-                new_st = (st_dt + td(minutes=mins)).time()
-                new_et = (st_dt + td(minutes=mins) + duration).time()
+                new_st = (st_dt + timedelta(minutes=mins)).time()
+                new_et = (st_dt + timedelta(minutes=mins) + duration).time()
                 if new_st >= new_et:
                     continue
                 label = f'เวลาใกล้เคียง {new_st.strftime("%H:%M")}–{new_et.strftime("%H:%M")}'
@@ -646,7 +634,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             for days_ahead in (1, 2, 3):
                 if len(enriched) + len(day_suggestions) >= max_results:
                     break
-                other_date = target_date + td(days=days_ahead)
+                other_date = target_date + timedelta(days=days_ahead)
                 blocked_other_day = self._blocked_room_ids(other_date, start_time, end_time)
                 candidates = base_qs.filter(capacity__gte=attendees).exclude(id__in=blocked_other_day)
                 day_scored = []
@@ -659,7 +647,7 @@ class RoomViewSet(viewsets.ModelViewSet):
                     day_scored.append((sc, room))
                 day_scored.sort(key=lambda x: (-x[0], x[1].capacity))
                 day_label = other_date.strftime('%d/%m')
-                for sc, room in day_scored:
+                for _score, room in day_scored:
                     if len(enriched) + len(day_suggestions) >= max_results:
                         break
                     day_enriched = self._enrich_rooms([room], other_date, start_time, end_time, 'dynamic', request)
@@ -1074,7 +1062,7 @@ class RoomViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='admin-status')
     def admin_status(self, request):
         """รายการห้องจริงจาก DB สำหรับ Admin (แทน ALL_ROOMS_DATA mock)"""
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        if not is_admin_or_staff(request.user):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
         rooms = Room.objects.select_related('building')
@@ -1102,9 +1090,6 @@ class RoomViewSet(viewsets.ModelViewSet):
 # ============================================================
 # TERM BOOKING ViewSet
 # ============================================================
-from .overlap import find_booking_conflict, recurring_slot_conflicts as _recurring_slot_conflicts
-
-
 class TermBookingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
@@ -1112,8 +1097,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = TermBooking.objects.select_related('user', 'room__building')
         if user.is_authenticated:
-            user_role = getattr(user, 'role', None)
-            if user_role not in ['admin', 'staff']:
+            if not is_admin_or_staff(user):
                 qs = qs.filter(user=user)
         else:
             qs = qs.filter(status='active')
@@ -1169,7 +1153,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             for b in candidate_bookings:
                 local_start = timezone.localtime(b.start_time)
                 local_end   = timezone.localtime(b.end_time)
-                if _recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
+                if recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
                     raise ValidationError({'detail': f'ห้องนี้มีการจองรายวัน "{b.title}" ซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'})
 
             candidate_blocks = MaintenanceBlock.objects.filter(
@@ -1181,7 +1165,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             for mb in candidate_blocks:
                 local_start = timezone.localtime(mb.start_time)
                 local_end   = timezone.localtime(mb.end_time)
-                if _recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
+                if recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
                     raise ValidationError({'detail': 'ห้องนี้ปิดซ่อมบำรุงซ้อนกับวันและเวลาที่เลือกในบางสัปดาห์'})
 
             term_booking = serializer.save(user=self.request.user, status='active')
@@ -1196,7 +1180,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         tb = self.get_object()
-        if tb.user != request.user and getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        if tb.user != request.user and not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
         if tb.status == 'cancelled':
             return Response({'error': 'ยกเลิกไปแล้ว'}, status=400)
@@ -1210,7 +1194,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
         tb = self.get_object()
         tb.status = 'active'
@@ -1525,8 +1509,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         # AnonymousUser — กด checkin/cancel จาก email
         if not user.is_authenticated:
             return Booking.objects.all().select_related('user', 'room__building')
-        user_role = getattr(user, 'role', None)
-        if user_role in ['admin', 'staff']:
+        if is_admin_or_staff(user):
             return Booking.objects.all().select_related('user', 'room__building')
         return Booking.objects.filter(user=user).select_related('user', 'room__building')
 
@@ -1592,7 +1575,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
 
         # ล็อกแถว booking ไว้ก่อนเช็ค/เปลี่ยนสถานะ เหมือนที่ perform_create ล็อก
@@ -1624,7 +1607,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
 
         reason = (request.data.get('reason') or '').strip()
@@ -1657,8 +1640,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         # get_object() only sees the caller's own bookings, so a non-owner got 404
         # before the 403 check below could run; look up unfiltered like approve/reject.
         booking = get_object_or_404(Booking, pk=pk)
-        user_role = getattr(request.user, 'role', None)
-        if booking.user != request.user and user_role not in ['admin', 'staff']:
+        if booking.user != request.user and not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
         if booking.status == 'cancelled':
             return Response({'error': 'ยกเลิกไปแล้ว'}, status=400)
@@ -1678,9 +1660,7 @@ class BookingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='check_in')
     def check_in(self, request, pk=None):
         booking = self.get_object()
-        user_role = getattr(request.user, 'role', None)
-
-        if booking.user != request.user and user_role not in ['admin', 'staff']:
+        if booking.user != request.user and not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์ Check-in การจองนี้'}, status=403)
         if booking.checked_in:
             return Response({'message': 'Check-in ไปแล้ว', 'checked_in': True})
@@ -1902,7 +1882,7 @@ class MaintenanceSlotsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if getattr(request.user, 'role', None) not in ['admin', 'staff']:
+        if not is_admin_or_staff(request.user):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
         room_id  = request.query_params.get('room')
@@ -2001,7 +1981,7 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if getattr(self.request.user, 'role', None) not in ['admin', 'staff']:
+        if not is_admin_or_staff(self.request.user):
             return qs.none()
         room = self.request.query_params.get('room')
         if room:
@@ -2039,7 +2019,7 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
                 term_end__gte=local_start.date(),
             )
             for tb in candidate_terms:
-                if _recurring_slot_conflicts(
+                if recurring_slot_conflicts(
                     local_start, local_end, tb.day_of_week,
                     tb.start_time, tb.end_time, tb.term_start, tb.term_end,
                 ):
@@ -2092,7 +2072,7 @@ class DashboardView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if request.user.role not in ['admin', 'staff']:
+        if not is_admin_or_staff(request.user):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
         today       = timezone.now().date()

@@ -39,7 +39,7 @@ router.register('maintenance-blocks', MaintenanceBlockViewSet, basename='mainten
 urlpatterns = [
     # Auth
     path('auth/register/', RegisterView.as_view(),           name='register'),
-    path('auth/login/',    LDAPTokenObtainPairView.as_view(), name='login'),    # ← เปลี่ยนตรงนี้
+    path('auth/login/',    LDAPTokenObtainPairView.as_view(), name='login'),    # LDAP ก่อน แล้วค่อยบัญชีในระบบ
     path('auth/refresh/',  TokenRefreshView.as_view(),        name='token_refresh'),
     path('auth/profile/',  ProfileView.as_view(),             name='profile'),
     path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'),

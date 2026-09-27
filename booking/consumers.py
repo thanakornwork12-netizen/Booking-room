@@ -1,9 +1,11 @@
 # booking/consumers.py
-#ไฟลหลักในการส่งข้อมมูล แบบ realtime ใน db
+# WebSocket consumers: สถานะห้อง, แจ้งเตือน, ความคืบหน้าการเทรน (routing.py)
 import json
-from channels.generic.websocket import AsyncWebsocketConsumer
+
 from channels.db import database_sync_to_async
-from django.utils import timezone
+from channels.generic.websocket import AsyncWebsocketConsumer
+
+from .permissions import is_admin_or_staff
 
 
 class RoomStatusConsumer(AsyncWebsocketConsumer):
@@ -172,7 +174,7 @@ class RetrainConsumer(AsyncWebsocketConsumer):
         if not user or not user.is_authenticated:
             await self.close()
             return
-        if user.role not in ['admin', 'staff']:
+        if not is_admin_or_staff(user):
             await self.close()
             return
         await self.channel_layer.group_add('retrain_progress', self.channel_name)

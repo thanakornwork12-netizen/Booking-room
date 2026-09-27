@@ -11,7 +11,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from booking.models import Booking, Building, MaintenanceBlock, Room, TermBooking
+from booking.models import Booking, Building, Room, TermBooking
 
 User = get_user_model()
 
