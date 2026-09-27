@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Clock, Users, Search, X, XCircle,
@@ -338,6 +338,10 @@ function RebookModal({ booking, onClose, onSuccess }) {
   const [attendees, setAttendees] = useState(1)
   const [title, setTitle] = useState('')
   const [loading, setLoading] = useState(false)
+  // ล็อกแบบ sync กันกดยืนยันซ้ำ — state loading ต้องรอ re-render ก่อนปุ่มจะ
+  // disabled ถ้ากดรัวสองครั้ง request ที่สองจะโดน backend ปฏิเสธว่า "ห้องนี้ถูก
+  // จองแล้ว" ผู้ใช้เลยเห็น error ทั้งที่จองสำเร็จ (แบบเดียวกับ SearchPage)
+  const isSubmittingRef = useRef(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -360,9 +364,11 @@ function RebookModal({ booking, onClose, onSuccess }) {
   const today = new Date().toISOString().split('T')[0]
 
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return
     if (!date) { setError('กรุณาเลือกวันที่'); return }
     if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
     if (!title.trim()) { setError('กรุณากรอกหัวข้อ'); return }
+    isSubmittingRef.current = true
     setLoading(true); setError('')
     try {
       await api.post('bookings/', {
@@ -376,6 +382,7 @@ function RebookModal({ booking, onClose, onSuccess }) {
     } catch (err) {
       setError(extractErrorMessage(err, 'จองไม่สำเร็จ กรุณาลองใหม่'))
     } finally {
+      isSubmittingRef.current = false
       setLoading(false)
     }
   }
