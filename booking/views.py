@@ -18,6 +18,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.utils.html import escape
 from functools import partial
 from django.shortcuts import redirect, render, get_object_or_404
 from .ldap_auth import authenticate_ldap
@@ -1674,7 +1675,9 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        booking = self.get_object()
+        # get_object() only sees the caller's own bookings, so a non-owner got 404
+        # before the 403 check below could run; look up unfiltered like approve/reject.
+        booking = get_object_or_404(Booking, pk=pk)
         user_role = getattr(request.user, 'role', None)
         if booking.user != request.user and user_role not in ['admin', 'staff']:
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
@@ -1752,7 +1755,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                                            'ลิงก์นี้ไม่ถูกต้องหรือหมดอายุแล้วครับ'), status=400)
         if booking.checked_in:
             return HttpResponse(self._html('✅', '#16a34a', 'Check-in ไปแล้ว',
-                                           f'คุณ Check-in ห้อง {booking.room.name} ไปแล้วครับ'))
+                                           f'คุณ Check-in ห้อง {escape(booking.room.name)} ไปแล้วครับ'))
         if booking.status != 'approved':
             return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถ Check-in ได้',
                                            f'สถานะการจองปัจจุบัน: {booking.get_status_display()}'), status=400)
@@ -1786,9 +1789,9 @@ class BookingViewSet(viewsets.ModelViewSet):
         end_thai   = booking.end_time.astimezone(THAI_TZ)
         return HttpResponse(self._html(
             '✅', '#16a34a', 'Check-in สำเร็จ!',
-            f'ห้อง <b>{booking.room.name}</b><br>'
+            f'ห้อง <b>{escape(booking.room.name)}</b><br>'
             f'เวลา <b>{start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.</b><br>'
-            f'หัวข้อ: {booking.title}<br><br>ขอให้ประชุมได้ดีนะครับ 🎉'
+            f'หัวข้อ: {escape(booking.title)}<br><br>ขอให้ประชุมได้ดีนะครับ 🎉'
         ))
 
     # ─── CANCEL via Email Link (GET = หน้ายืนยัน, POST = ยกเลิกจริง) ──
@@ -1805,7 +1808,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                                            'ลิงก์นี้ไม่ถูกต้องหรือหมดอายุแล้วครับ'), status=400)
         if booking.status == 'cancelled':
             return HttpResponse(self._html('❌', '#6b7280', 'ยกเลิกไปแล้ว',
-                                           f'การจองห้อง {booking.room.name} ถูกยกเลิกไปแล้วครับ'))
+                                           f'การจองห้อง {escape(booking.room.name)} ถูกยกเลิกไปแล้วครับ'))
         if booking.status in ['checked_in', 'completed']:
             return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้',
                                            f'สถานะปัจจุบัน: {booking.get_status_display()}'), status=400)
@@ -1814,7 +1817,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         if request.method == 'GET':
             start_thai   = booking.start_time.astimezone(THAI_TZ)
             end_thai     = booking.end_time.astimezone(THAI_TZ)
-            confirm_url  = request.build_absolute_uri()
+            confirm_url  = escape(request.build_absolute_uri())
             return HttpResponse(f'''
 <!DOCTYPE html>
 <html>
@@ -1824,8 +1827,8 @@ class BookingViewSet(viewsets.ModelViewSet):
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);border-radius:4px;margin-bottom:20px;"></div>
     <h1 style="color:#dc2626;margin:0 0 12px;font-size:22px;">ยืนยันการยกเลิกการจอง?</h1>
     <div style="background:#f9fafb;border-radius:10px;padding:16px;margin:16px 0;text-align:left;font-size:15px;line-height:2;">
-      <p style="margin:0;">🏢 ห้อง: <b>{booking.room.name}</b></p>
-      <p style="margin:0;">📌 หัวข้อ: {booking.title}</p>
+      <p style="margin:0;">🏢 ห้อง: <b>{escape(booking.room.name)}</b></p>
+      <p style="margin:0;">📌 หัวข้อ: {escape(booking.title)}</p>
       <p style="margin:0;">📅 วันที่: {start_thai.strftime("%d/%m/%Y")}</p>
       <p style="margin:0;">⏰ เวลา: {start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.</p>
     </div>
@@ -1852,8 +1855,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         )
         return HttpResponse(self._html(
             '✅', '#16a34a', 'ยกเลิกการจองสำเร็จ',
-            f'ห้อง <b>{booking.room.name}</b><br>'
-            f'หัวข้อ: {booking.title}<br><br>'
+            f'ห้อง <b>{escape(booking.room.name)}</b><br>'
+            f'หัวข้อ: {escape(booking.title)}<br><br>'
             f'หากต้องการจองใหม่ สามารถเข้าระบบได้เลยครับ'
         ))
 
@@ -2042,20 +2045,26 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
             ).exists():
                 raise ValidationError({'detail': 'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
 
-            target_date = start_time.date()
-            target_dow  = target_date.weekday()
-            if TermBooking.objects.filter(
+            # ช่วงปิดซ่อมบำรุงกินเวลาข้ามวันได้ (start_time/end_time เป็น
+            # DateTimeField) การเช็คจาก weekday ของ start_time วันเดียวจึงมอง
+            # ไม่เห็นคาบเรียนที่อยู่กลางช่วง — ยืนยันด้วยการทดสอบว่าช่วงปิดซ่อม
+            # จันทร์→ศุกร์ ถูกสร้างทับคาบเรียนวันพุธได้จริงก่อนแก้ ใช้
+            # _recurring_slot_conflicts ไล่ทุกวันในช่วง เหมือนที่
+            # TermBookingViewSet.perform_create ใช้ตรวจอีกทิศทางหนึ่ง
+            local_start = timezone.localtime(start_time)
+            local_end   = timezone.localtime(end_time)
+            candidate_terms = TermBooking.objects.filter(
                 room=room,
-                day_of_week=target_dow,
                 status='active',
-                term_start__lte=target_date,
-                term_end__gte=target_date,
-            ).exclude(
-                start_time__gte=end_time.time()
-            ).exclude(
-                end_time__lte=start_time.time()
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
+                term_start__lte=local_end.date(),
+                term_end__gte=local_start.date(),
+            )
+            for tb in candidate_terms:
+                if _recurring_slot_conflicts(
+                    local_start, local_end, tb.day_of_week,
+                    tb.start_time, tb.end_time, tb.term_start, tb.term_end,
+                ):
+                    raise ValidationError({'detail': 'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
 
             if MaintenanceBlock.objects.filter(
                 room=room,
