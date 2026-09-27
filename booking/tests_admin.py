@@ -83,3 +83,69 @@ class AdminEndpointPermissionTests(TestCase):
         self.room.refresh_from_db()
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.room.capacity, 45)
+
+
+class MaintenanceLifecycleTests(TestCase):
+    """สร้าง / ปฏิเสธเมื่อทับ / ปิดงาน ของช่วงซ่อมบำรุง และสถานะห้องที่ตามมา"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.building = Building.objects.create(name='อาคารเรียนรวม 2C', code='2C')
+        cls.admin = User.objects.create_user(
+            username='qa_admin', password='QaAdmin1234', role='admin')
+
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        self.room = Room.objects.create(
+            building=self.building, name='2C09', floor=1, capacity=40, room_type='ห้องเรียน')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+        self.start = timezone.now() + timedelta(days=10)
+        self.end = self.start + timedelta(hours=4)
+
+    def create_block(self, start, end):
+        return self.client.post('/api/maintenance-blocks/', {
+            'room': self.room.id, 'start_time': start.isoformat(),
+            'end_time': end.isoformat(), 'reason': 'ซ่อมบำรุงเชิงป้องกัน',
+        }, format='json')
+
+    def test_create_sets_room_status(self):
+        r = self.create_block(self.start, self.end)
+        self.room.refresh_from_db()
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(self.room.status, 'maintenance')
+
+    def test_rejects_overlapping_booking(self):
+        from booking.models import Booking
+        Booking.objects.create(user=self.admin, room=self.room, title='ประชุม', attendees=5,
+                               start_time=self.start, end_time=self.end, status='approved')
+        r = self.create_block(self.start, self.end)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('ไม่สามารถปิดซ่อมบำรุงได้', str(r.data))
+
+    def test_rejects_overlapping_block(self):
+        self.create_block(self.start, self.end)
+        r = self.create_block(self.start, self.end)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('ปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว', str(r.data))
+
+    def test_complete_and_cancel_restore_room(self):
+        from datetime import timedelta
+        first = self.create_block(self.start, self.end).data
+        second_start = self.end + timedelta(days=1)
+        second = self.create_block(second_start, second_start + timedelta(hours=2)).data
+        blocks = self.client.get('/api/maintenance-blocks/').data
+        rows = blocks['results'] if isinstance(blocks, dict) else blocks
+        ids = sorted(row['id'] for row in rows)
+        self.assertEqual(len(ids), 2, (first, second))
+
+        r = self.client.post(f'/api/maintenance-blocks/{ids[0]}/complete/')
+        self.room.refresh_from_db()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.room.status, 'maintenance', 'ยังเหลืออีกช่วงค้างอยู่')
+
+        r = self.client.post(f'/api/maintenance-blocks/{ids[1]}/cancel/')
+        self.room.refresh_from_db()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.room.status, 'available')

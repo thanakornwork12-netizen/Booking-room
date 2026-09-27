@@ -1,8 +1,9 @@
+import os
+import sys
+from datetime import timedelta
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.utils import timezone
-from datetime import timedelta
-import sys
-import os
 
 
 def send_checkin_reminders():
@@ -36,7 +37,7 @@ def send_checkin_reminders():
             send_mail(
                 subject=f'⏰ อีก 15 นาที! ถึงเวลาใช้ห้อง {booking.room.name}',
                 message=f'ไม่สามารถมาใช้งานได้? กดยกเลิกที่: {cancel_url}',
-                from_email='nookkup47@gmail.com',
+                from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user_email],
                 html_message=f'''
 <!DOCTYPE html>

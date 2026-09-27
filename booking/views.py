@@ -1974,6 +1974,12 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrStaff]
     queryset = MaintenanceBlock.objects.select_related('room__building', 'created_by')
 
+    CONFLICT_MESSAGES = {
+        'booking':     'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
+        'term':        'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
+        'maintenance': 'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว',
+    }
+
     def get_serializer_class(self):
         if self.action == 'create':
             return MaintenanceBlockCreateSerializer
@@ -1996,42 +2002,11 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             Room.objects.select_for_update().get(pk=room.pk)
 
-            if Booking.objects.filter(
-                room=room,
-                status__in=['pending', 'approved', 'checked_in'],
-                start_time__lt=end_time,
-                end_time__gt=start_time,
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
-
-            # ช่วงปิดซ่อมบำรุงกินเวลาข้ามวันได้ (start_time/end_time เป็น
-            # DateTimeField) การเช็คจาก weekday ของ start_time วันเดียวจึงมอง
-            # ไม่เห็นคาบเรียนที่อยู่กลางช่วง — ยืนยันด้วยการทดสอบว่าช่วงปิดซ่อม
-            # จันทร์→ศุกร์ ถูกสร้างทับคาบเรียนวันพุธได้จริงก่อนแก้ ใช้
-            # _recurring_slot_conflicts ไล่ทุกวันในช่วง เหมือนที่
-            # TermBookingViewSet.perform_create ใช้ตรวจอีกทิศทางหนึ่ง
-            local_start = timezone.localtime(start_time)
-            local_end   = timezone.localtime(end_time)
-            candidate_terms = TermBooking.objects.filter(
-                room=room,
-                status='active',
-                term_start__lte=local_end.date(),
-                term_end__gte=local_start.date(),
-            )
-            for tb in candidate_terms:
-                if recurring_slot_conflicts(
-                    local_start, local_end, tb.day_of_week,
-                    tb.start_time, tb.end_time, tb.term_start, tb.term_end,
-                ):
-                    raise ValidationError({'detail': 'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'})
-
-            if MaintenanceBlock.objects.filter(
-                room=room,
-                status__in=['scheduled', 'active'],
-                start_time__lt=end_time,
-                end_time__gt=start_time,
-            ).exists():
-                raise ValidationError({'detail': 'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว'})
+            # ตรวจชุดเดียวกับการจอง (booking/overlap.py) — ครอบคลุมช่วงปิดซ่อม
+            # ที่กินหลายวัน ซึ่งเคยตรวจคาบเรียนแค่วันแรกวันเดียว
+            conflict = find_booking_conflict(room, start_time, end_time)
+            if conflict:
+                raise ValidationError({'detail': self.CONFLICT_MESSAGES[conflict[0]]})
 
             block = serializer.save(
                 created_by=self.request.user,
@@ -2042,27 +2017,24 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
-        block = self.get_object()
-        block.status = 'completed'
-        block.save(update_fields=['status'])
-        if not MaintenanceBlock.objects.filter(
-            room=block.room, status__in=['scheduled', 'active']
-        ).exists():
-            block.room.status = 'available'
-            block.room.save(update_fields=['status'])
+        self._close(self.get_object(), 'completed')
         return Response({'message': 'บำรุงรักษาเสร็จสิ้น'})
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        block = self.get_object()
-        block.status = 'cancelled'
+        self._close(self.get_object(), 'cancelled')
+        return Response({'message': 'ยกเลิกช่วงซ่อมบำรุงแล้ว'})
+
+    @staticmethod
+    def _close(block, status):
+        """ปิดช่วงซ่อม แล้วคืนสถานะห้องเป็น available ถ้าไม่เหลือช่วงที่ยังค้าง"""
+        block.status = status
         block.save(update_fields=['status'])
         if not MaintenanceBlock.objects.filter(
             room=block.room, status__in=['scheduled', 'active']
         ).exists():
             block.room.status = 'available'
             block.room.save(update_fields=['status'])
-        return Response({'message': 'ยกเลิกช่วงซ่อมบำรุงแล้ว'})
 
 
 # ============================================================

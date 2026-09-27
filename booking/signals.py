@@ -233,7 +233,7 @@ def send_welcome_email(user):
         send_mail(
             subject='🎉 ยินดีต้อนรับสู่ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
             message=plain_text,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user_email],
             html_message=html_message,
             fail_silently=False,
@@ -314,7 +314,7 @@ def send_password_reset_email(user, uidb64, token):
         send_mail(
             subject='🔑 รีเซ็ตรหัสผ่าน — ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
             message=plain_text,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user_email],
             html_message=html_message,
             fail_silently=False,
@@ -420,7 +420,7 @@ def send_approval_request_email(instance):
         send_mail(
             subject=f'📋 คำขอ{kind_label}ห้อง {instance.room.name} รอการอนุมัติ',
             message=plain_text,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[approver_email],
             html_message=html_message,
             fail_silently=False,
@@ -555,7 +555,7 @@ def send_booking_pending_email(instance):
       send_mail(
         subject=f'⏳ ได้รับคำขอจองห้อง {instance.room.name} แล้ว รอการอนุมัติ',
         message=plain_text,
-        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+        from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user_email],
         html_message=html_message,
         fail_silently=False,
@@ -706,7 +706,7 @@ def send_booking_confirmation_email(instance):
       send_mail(
         subject=f'✅ ยืนยันการจองห้อง {instance.room.name}',
         message=plain_text,
-        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+        from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user_email],
         html_message=html_message,
         fail_silently=False,
@@ -781,7 +781,7 @@ def send_term_booking_confirmation_email(instance):
       send_mail(
             subject=f'ยืนยันการจองห้องทั้งเทอม {instance.room.name}',
             message=plain_text,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user_email],
             html_message=html_message,
             fail_silently=False,
@@ -900,7 +900,7 @@ def send_booking_cancelled_email(instance):
       send_mail(
             subject=f'❌ การจองห้อง {instance.room.name} ถูกยกเลิกแล้ว',
             message=plain_text,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user_email],
             html_message=html_message,
             fail_silently=False,
@@ -1033,7 +1033,7 @@ def send_booking_rejected_email(instance):
       send_mail(
         subject=f'❌ คำขอจองห้อง {instance.room.name} ถูกปฏิเสธ',
         message=plain_text,
-        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER),
+        from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user_email],
         html_message=html_message,
         fail_silently=False,
