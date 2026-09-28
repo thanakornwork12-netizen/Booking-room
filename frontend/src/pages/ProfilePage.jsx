@@ -13,7 +13,7 @@ const roleLabels = {
   student: 'นักศึกษา',
 }
 
-const inputCls = `w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm
+const inputCls = `w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm
   text-slate-800 outline-none transition-all placeholder:text-slate-400
   focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100
   disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400`
@@ -27,8 +27,6 @@ const isPast = (endTime) => new Date() > new Date(endTime)
 
 const fmtDate = dt => new Date(dt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 const fmtTime = dt => new Date(dt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-
-const HISTORY_PAGE = 5
 
 const firstError = (err, fallback) => {
   const data = err?.response?.data
@@ -53,17 +51,17 @@ function Message({ message }) {
   )
 }
 
-function SectionCard({ icon: Icon, title, right, children }) {
+function SectionCard({ icon: Icon, title, right, children, className = '' }) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-6 py-4">
+    <div className={`flex flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm ${className}`}>
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
         <div className="flex items-center gap-2">
-          <Icon size={17} className="text-blue-600" />
+          <Icon size={16} className="text-blue-600" />
           <span className="text-sm font-bold text-slate-800">{title}</span>
         </div>
         {right}
       </div>
-      <div className="space-y-4 p-6">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-5">{children}</div>
     </div>
   )
 }
@@ -85,7 +83,6 @@ function BookingHistory() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState('')
-  const [shown, setShown]       = useState(HISTORY_PAGE)
   const [busyId, setBusyId]     = useState(null)
 
   useEffect(() => {
@@ -124,6 +121,7 @@ function BookingHistory() {
     <SectionCard
       icon={History}
       title="ประวัติการจอง"
+      className="h-[320px] lg:h-auto lg:min-h-0 lg:flex-1"
       right={!loading && !error && (
         <span className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500">{bookings.length} รายการ</span>
       )}
@@ -135,9 +133,8 @@ function BookingHistory() {
       ) : bookings.length === 0 ? (
         <p className="py-4 text-center text-sm text-slate-400">ยังไม่มีประวัติการจอง</p>
       ) : (
-        <>
-          <div className="divide-y divide-slate-100 rounded-2xl border border-slate-100">
-            {bookings.slice(0, shown).map(b => {
+        <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto rounded-2xl border border-slate-100">
+            {bookings.map(b => {
               const badge = statusBadge(b)
               const approved = b.status === 'approved'
               const finished = approved && isPast(b.end_time)
@@ -145,19 +142,21 @@ function BookingHistory() {
               const showCancel = (approved && !finished && !b.checked_in) || b.status === 'pending'
               const busy = busyId === b.id
               return (
-                <div key={b.id} className="px-4 py-3.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-bold text-slate-800">{b.room_name || `ห้อง #${b.room}`}</p>
-                    <span className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.cls}`}>{badge.label}</span>
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">{b.title}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-400">
-                    <span className="flex items-center gap-1 whitespace-nowrap"><CalendarDays size={11} />{fmtDate(b.start_time)}</span>
-                    <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={11} />{fmtTime(b.start_time)}–{fmtTime(b.end_time)}</span>
-                    <span className="flex items-center gap-1 whitespace-nowrap"><Users size={11} />{b.attendees} คน</span>
+                <div key={b.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-bold text-slate-800">{b.room_name || `ห้อง #${b.room}`}</p>
+                      <span className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.cls}`}>{badge.label}</span>
+                    </div>
+                    <p className="truncate text-xs text-slate-500">{b.title}</p>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-400">
+                      <span className="flex items-center gap-1 whitespace-nowrap"><CalendarDays size={11} />{fmtDate(b.start_time)}</span>
+                      <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={11} />{fmtTime(b.start_time)}–{fmtTime(b.end_time)}</span>
+                      <span className="flex items-center gap-1 whitespace-nowrap"><Users size={11} />{b.attendees} คน</span>
+                    </div>
                   </div>
                   {(showCheckIn || showCancel) && (
-                    <div className="mt-2.5 flex flex-wrap gap-2">
+                    <div className="flex shrink-0 flex-col gap-1.5">
                       {showCheckIn && (
                         <button
                           type="button"
@@ -183,17 +182,7 @@ function BookingHistory() {
                 </div>
               )
             })}
-          </div>
-          {bookings.length > shown && (
-            <button
-              type="button"
-              onClick={() => setShown(n => n + HISTORY_PAGE)}
-              className="w-full rounded-full border border-slate-200 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-            >
-              แสดงเพิ่ม ({bookings.length - shown} รายการ)
-            </button>
-          )}
-        </>
+        </div>
       )}
     </SectionCard>
   )
@@ -233,7 +222,7 @@ function ChangePasswordForm({ canChange }) {
   }
 
   return (
-    <SectionCard icon={KeyRound} title="เปลี่ยนรหัสผ่าน">
+    <SectionCard icon={KeyRound} title="เปลี่ยนรหัสผ่าน" className="shrink-0">
       {!canChange ? (
         <p className="text-sm text-slate-500">
           บัญชีนี้เข้าสู่ระบบด้วยรหัสผ่านของมหาวิทยาลัย (LDAP) กรุณาเปลี่ยนรหัสผ่านที่ระบบของมหาวิทยาลัย
@@ -241,19 +230,19 @@ function ChangePasswordForm({ canChange }) {
       ) : (
         <>
           <Message message={message} />
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-500">รหัสผ่านเดิม</label>
-            <input className={inputCls} type="password" autoComplete="current-password"
-              value={form.old_password} onChange={e => set('old_password', e.target.value)} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-500">รหัสผ่านเดิม</label>
+              <input className={inputCls} type="password" autoComplete="current-password"
+                value={form.old_password} onChange={e => set('old_password', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-500">รหัสผ่านใหม่ (6 ตัวขึ้นไป)</label>
               <input className={inputCls} type="password" autoComplete="new-password"
                 value={form.new_password} onChange={e => set('new_password', e.target.value)} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">ยืนยันรหัสผ่านใหม่</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-500">ยืนยันรหัสผ่านใหม่</label>
               <input className={inputCls} type="password" autoComplete="new-password"
                 value={form.new_password2} onChange={e => set('new_password2', e.target.value)} />
             </div>
@@ -262,7 +251,7 @@ function ChangePasswordForm({ canChange }) {
             type="button"
             onClick={onSubmit}
             disabled={saving}
-            className="flex w-full items-center justify-center gap-2 rounded-full border-2 border-blue-100 py-3 text-sm font-bold text-blue-700 transition-all hover:bg-blue-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:text-slate-300"
+            className="flex w-full items-center justify-center gap-2 rounded-full border-2 border-blue-100 py-2.5 text-sm font-bold text-blue-700 transition-all hover:bg-blue-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:text-slate-300"
           >
             {saving
               ? <><Loader2 size={16} className="animate-spin" /> กำลังเปลี่ยนรหัสผ่าน...</>
@@ -344,7 +333,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6 sm:px-0">
+    <div className="mx-auto w-full max-w-6xl space-y-3 px-4 py-4 sm:px-2">
       <button
         type="button"
         onClick={() => navigate(-1)}
@@ -353,98 +342,100 @@ export default function ProfilePage() {
         <ArrowLeft size={15} /> กลับ
       </button>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
-        <div className="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-600 px-6 py-8 text-white">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl font-bold ring-4 ring-white/20">
-              {initials}
+      {/* จอกว้าง: ซ้ายข้อมูลส่วนตัว ขวาประวัติการจอง+เปลี่ยนรหัสผ่าน ให้เห็นครบในหน้าเดียว
+          คอลัมน์ขวาวางแบบ absolute เพื่อให้สูงเท่าคอลัมน์ซ้ายพอดี รายการจองเลื่อนดูในกล่องแทน */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+          <div className="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-600 px-5 py-4 text-white">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl font-bold ring-4 ring-white/20">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-base font-extrabold">
+                  {[form.first_name, form.last_name].filter(Boolean).join(' ') || profile?.username}
+                </p>
+                <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-semibold">
+                  <ShieldCheck size={12} /> {roleLabel}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-lg font-extrabold">
-                {[form.first_name, form.last_name].filter(Boolean).join(' ') || profile?.username}
-              </p>
-              <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold">
-                <ShieldCheck size={12} /> {roleLabel}
-              </p>
+          </div>
+
+          <div className="space-y-3 p-5">
+            <div className="flex items-center gap-2">
+              <UserRound size={16} className="text-blue-600" />
+              <span className="text-sm font-bold text-slate-800">ข้อมูลส่วนตัว</span>
             </div>
+
+            <Message message={message} />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">ชื่อ</label>
+                <input className={inputCls} value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="ชื่อ" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">นามสกุล</label>
+                <input className={inputCls} value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="นามสกุล" />
+              </div>
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                  <Mail size={13} /> อีเมล
+                </label>
+                <input className={inputCls} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="อีเมล" />
+              </div>
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                  <Phone size={13} /> เบอร์โทรศัพท์
+                </label>
+                <input className={inputCls} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="เบอร์โทรศัพท์" />
+              </div>
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                  <GraduationCap size={13} /> คณะ/หน่วยงาน
+                </label>
+                <input className={inputCls} value={form.faculty} onChange={e => set('faculty', e.target.value)} placeholder="คณะ/หน่วยงาน" />
+              </div>
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                  <IdCard size={13} /> รหัสนักศึกษา
+                </label>
+                <input className={inputCls} value={form.student_id} onChange={e => set('student_id', e.target.value)} placeholder="รหัสนักศึกษา" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-400">ชื่อผู้ใช้ (แก้ไขไม่ได้)</label>
+                <input className={inputCls} value={profile?.username || ''} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-400">สถานะ (แก้ไขไม่ได้)</label>
+                <input className={inputCls} value={roleLabel} disabled />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-blue-700 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-blue-800 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {saving
+                ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</>
+                : <><Save size={16} /> บันทึกการเปลี่ยนแปลง</>}
+            </button>
           </div>
         </div>
 
-        <div className="space-y-5 p-6">
-          <div className="flex items-center gap-2">
-            <UserRound size={17} className="text-blue-600" />
-            <span className="text-sm font-bold text-slate-800">ข้อมูลส่วนตัว</span>
+        <div className="lg:relative">
+          <div className="flex flex-col gap-4 lg:absolute lg:inset-0">
+            <BookingHistory />
+            <ChangePasswordForm canChange={profile?.can_change_password !== false} />
           </div>
-
-          <Message message={message} />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">ชื่อ</label>
-              <input className={inputCls} value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="ชื่อ" />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">นามสกุล</label>
-              <input className={inputCls} value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="นามสกุล" />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-              <Mail size={13} /> อีเมล
-            </label>
-            <input className={inputCls} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="อีเมล" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-              <Phone size={13} /> เบอร์โทรศัพท์
-            </label>
-            <input className={inputCls} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="เบอร์โทรศัพท์" />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                <GraduationCap size={13} /> คณะ/หน่วยงาน
-              </label>
-              <input className={inputCls} value={form.faculty} onChange={e => set('faculty', e.target.value)} placeholder="คณะ/หน่วยงาน" />
-            </div>
-            <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                <IdCard size={13} /> รหัสนักศึกษา
-              </label>
-              <input className={inputCls} value={form.student_id} onChange={e => set('student_id', e.target.value)} placeholder="รหัสนักศึกษา" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-400">ชื่อผู้ใช้ (แก้ไขไม่ได้)</label>
-              <input className={inputCls} value={profile?.username || ''} disabled />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-400">สถานะ (แก้ไขไม่ได้)</label>
-              <input className={inputCls} value={roleLabel} disabled />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-blue-700 py-3 text-sm font-bold text-white shadow-sm transition-all hover:bg-blue-800 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            {saving
-              ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</>
-              : <><Save size={16} /> บันทึกการเปลี่ยนแปลง</>}
-          </button>
         </div>
       </div>
-
-      <BookingHistory />
-
-      <ChangePasswordForm canChange={profile?.can_change_password !== false} />
     </div>
   )
 }
