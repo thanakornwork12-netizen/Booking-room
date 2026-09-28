@@ -22,6 +22,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .authentication import issue_tokens
 from .excel import excel_safe
 from .ldap_auth import authenticate_ldap
 from .models import (
@@ -74,7 +75,14 @@ class ChangePasswordView(APIView):
         user.set_password(serializer.validated_data['new_password'])
         user.save(update_fields=['password'])
 
-        return Response({'detail': 'เปลี่ยนรหัสผ่านสำเร็จ'})
+        # รหัสผ่านใหม่ทำให้ token เดิมใช้ไม่ได้ทันที (ตราประทับใน authentication.py)
+        # ต้องออกชุดใหม่ให้ ไม่งั้นคนที่เพิ่งเปลี่ยนรหัสเองจะถูกเด้งออกจากระบบ
+        refresh = issue_tokens(user)
+        return Response({
+            'detail': 'เปลี่ยนรหัสผ่านสำเร็จ',
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        })
 
 
 class ForgotPasswordView(APIView):

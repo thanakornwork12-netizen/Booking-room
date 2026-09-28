@@ -210,6 +210,13 @@ export function logout() {
 
 export async function changePassword(payload) {
   const res = await api.post('auth/change-password/', payload)
+  // token เดิมใช้ไม่ได้แล้วหลังเปลี่ยนรหัส — เก็บชุดใหม่ที่ backend ออกให้
+  // ไว้ใน storage เดิม (คงสถานะ "จดจำการเข้าสู่ระบบ" ของผู้ใช้ไว้)
+  if (res.data.access && res.data.refresh) {
+    const store = _activeStorage()
+    store.setItem('access_token', res.data.access)
+    store.setItem('refresh_token', res.data.refresh)
+  }
   return res.data
 }
 

@@ -40,11 +40,18 @@ class UserSerializer(serializers.ModelSerializer):
     RegisterSerializer กันเรื่อง role ไว้แล้วจุดหนึ่ง แต่ endpoint นี้ลืมกัน
     อีกจุด) username ก็ล็อกไว้ด้วยเพราะเป็นตัวจับคู่บัญชี LDAP — ถ้าแก้เอง
     รอบหน้า login LDAP จะสร้างบัญชีใหม่ซ้อนแทนที่จะจับคู่บัญชีเดิม"""
+    # บัญชี LDAP ไม่มีรหัสผ่านในระบบนี้ — หน้าโปรไฟล์ใช้ซ่อนฟอร์มเปลี่ยนรหัสผ่าน
+    can_change_password = serializers.SerializerMethodField()
+
     class Meta:
         model  = User
         fields = ['id', 'username', 'first_name', 'last_name',
-                  'email', 'role', 'faculty', 'phone', 'avatar', 'student_id']
+                  'email', 'role', 'faculty', 'phone', 'avatar', 'student_id',
+                  'can_change_password']
         read_only_fields = ['id', 'role', 'username']
+
+    def get_can_change_password(self, obj):
+        return obj.has_usable_password()
 
     def validate_student_id(self, value):
         # เดิมตรวจแค่ตอนสมัคร — PATCH โปรไฟล์ตั้ง "65abc123" ได้
