@@ -1,7 +1,7 @@
 # booking/signals.py
 # ส่ง WebSocket Event อัตโนมัติทุกครั้งที่ Booking เปลี่ยนสถานะ
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.core.mail import send_mail
@@ -45,6 +45,12 @@ def send_email_after_commit(send_func, instance):
             send_func(instance)
         except Exception:
             logger.exception('ส่งอีเมลแบบ background ไม่สำเร็จ')
+        finally:
+            # thread นี้เปิด connection DB ของตัวเอง (อ่าน instance.user/room)
+            # Django ไม่ปิดให้เพราะไม่ใช่ thread ของ request — เดิมค้างไว้ทุกอีเมล
+            # จน DB เทสต์ลบไม่ได้ ("being accessed by other users") และบน Neon
+            # กิน connection limit
+            connection.close()
 
     def _start_thread():
         logger.info('Starting background email thread (on commit) for instance id=%s', getattr(instance, 'id', None))

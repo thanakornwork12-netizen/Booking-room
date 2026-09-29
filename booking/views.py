@@ -104,17 +104,10 @@ class ForgotPasswordView(APIView):
             or User.objects.filter(username=identifier).first()
         )
 
-        if user and not user.has_usable_password():
-            return Response({
-                'detail': (
-                    'บัญชีนี้เข้าสู่ระบบด้วยรหัสนักศึกษา/รหัสผ่านของมหาวิทยาลัย (LDAP) '
-                    'ไม่สามารถรีเซ็ตรหัสผ่านผ่านหน้านี้ได้ กรุณาติดต่อสำนักคอมพิวเตอร์และเครือข่าย '
-                    'โทร. 045-353102 เพื่อรีเซ็ตรหัสผ่าน'
-                ),
-                'ldap_account': True,
-            })
-
-        if user and user.email:
+        # บัญชี LDAP ไม่ส่งอะไร แต่ตอบข้อความเดียวกับกรณีอื่น — เดิมตอบข้อความ
+        # เฉพาะของ LDAP ทำให้ไล่เช็คได้ว่ารหัสนักศึกษาไหนเคยเข้าใช้ระบบ
+        # (หน้า login แสดงคำแนะนำให้ผู้ใช้ LDAP ติดต่อสำนักคอมฯ ไว้อยู่แล้ว)
+        if user and user.email and user.has_usable_password():
             from .signals import send_email_after_commit, send_password_reset_email
             token = default_token_generator.make_token(user)
             uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
@@ -123,7 +116,11 @@ class ForgotPasswordView(APIView):
         # ข้อความเดียวกันไม่ว่าจะเจอบัญชีหรือไม่ กันคนสุ่มเช็คว่าอีเมล/ชื่อผู้ใช้นี้
         # มีอยู่ในระบบไหม
         return Response({
-            'detail': 'หากอีเมลหรือชื่อผู้ใช้นี้มีอยู่ในระบบ เราได้ส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมลแล้ว กรุณาตรวจสอบกล่องอีเมลของคุณ',
+            'detail': (
+                'หากอีเมลหรือชื่อผู้ใช้นี้มีอยู่ในระบบ เราได้ส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมลแล้ว '
+                'กรุณาตรวจสอบกล่องอีเมลของคุณ (บัญชีที่เข้าสู่ระบบด้วยรหัสนักศึกษา/รหัสผ่าน'
+                'มหาวิทยาลัย กรุณาติดต่อสำนักคอมพิวเตอร์และเครือข่าย โทร. 045-353102)'
+            ),
         })
 
 
@@ -1578,13 +1575,42 @@ class BookingViewSet(viewsets.ModelViewSet):
         start_time = data.get('start_time', booking.start_time)
         end_time   = data.get('end_time', booking.end_time)
 
+        # ผู้จองย้ายเวลา/ห้องของรายการที่อนุมัติแล้ว ต้องกลับไปรออนุมัติใหม่ —
+        # เดิมสถานะอนุมัติค้างไว้ จองช่วงสั้นให้ผ่านอนุมัติแล้วค่อยขยายเป็นทั้งวัน
+        # หรือย้ายไปห้องอื่นได้โดยแอดมินไม่รู้ (แอดมิน/สตาฟแก้เองไม่ต้องอนุมัติซ้ำ)
+        needs_reapproval = (
+            booking.status == 'approved'
+            and not is_admin_or_staff(self.request.user)
+            and (room.pk != booking.room_id
+                 or start_time != booking.start_time
+                 or end_time != booking.end_time)
+        )
+
         # ล็อกห้องแล้วตรวจซ้ำ เหมือน perform_create — กันสองคนแก้/จองเข้าช่วง
         # เดียวกันพร้อมกัน (ถ้าย้ายห้อง ล็อกทั้งห้องเดิมและห้องใหม่)
         with transaction.atomic():
             for pk in sorted({booking.room_id, room.pk}):
                 Room.objects.select_for_update().get(pk=pk)
             self._raise_if_conflict(room, start_time, end_time, exclude_pk=booking.pk)
-            serializer.save()
+            if not needs_reapproval:
+                serializer.save()
+                return
+
+            booking = serializer.save(status='pending', approved_by=None)
+            BookingLog.objects.create(
+                booking=booking, changed_by=self.request.user,
+                old_status='approved', new_status='pending',
+                remark='ผู้จองแก้ไขเวลา/ห้อง ต้องอนุมัติใหม่',
+            )
+            Notification.objects.create(
+                user=booking.user, booking=booking,
+                type='booking_pending', title='แก้ไขการจองแล้ว รออนุมัติใหม่',
+                message=(f'การจองห้อง {booking.room.name} '
+                         f'วันที่ {booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                         f'ถูกแก้ไขเวลา/ห้อง จึงต้องรอแอดมินอนุมัติใหม่อีกครั้ง')
+            )
+            from .signals import send_approval_request_email, send_email_after_commit
+            send_email_after_commit(send_approval_request_email, booking)
 
     def destroy(self, request, *args, **kwargs):
         return Response({'error': 'ใช้ปุ่ม cancel แทน'}, status=405)
@@ -2011,14 +2037,10 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrStaff]
     queryset = MaintenanceBlock.objects.select_related('room__building', 'created_by')
 
-    CONFLICT_MESSAGES = {
-        'booking':     'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
-        'term':        'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
-        'maintenance': 'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว',
-    }
+    CONFLICT_MESSAGES = MaintenanceBlockCreateSerializer.CONFLICT_MESSAGES
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action in ('create', 'update', 'partial_update'):
             return MaintenanceBlockCreateSerializer
         return MaintenanceBlockSerializer
 
@@ -2055,6 +2077,39 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
             if block.start_time <= timezone.now() < block.end_time:
                 block.room.status = 'maintenance'
                 block.room.save(update_fields=['status'])
+
+    def perform_update(self, serializer):
+        block = serializer.instance
+        if block.status not in ('scheduled', 'active'):
+            raise ValidationError({'detail': f'แก้ไขไม่ได้ สถานะปัจจุบัน: {block.get_status_display()}'})
+
+        data       = serializer.validated_data
+        room       = data.get('room', block.room)
+        start_time = data.get('start_time', block.start_time)
+        end_time   = data.get('end_time', block.end_time)
+
+        # ล็อกห้องแล้วตรวจซ้ำเหมือน perform_create (ถ้าย้ายห้อง ล็อกทั้งสองห้อง)
+        with transaction.atomic():
+            for pk in sorted({block.room_id, room.pk}):
+                Room.objects.select_for_update().get(pk=pk)
+            conflict = find_booking_conflict(room, start_time, end_time,
+                                             exclude_maintenance_pk=block.pk)
+            if conflict:
+                raise ValidationError({'detail': self.CONFLICT_MESSAGES[conflict[0]]})
+            old_room = block.room
+            block = serializer.save()
+            now = timezone.now()
+            for r in {old_room, block.room}:
+                in_window = MaintenanceBlock.objects.filter(
+                    room=r, status__in=['scheduled', 'active'],
+                    start_time__lte=now, end_time__gt=now,
+                ).exists()
+                if in_window and r.status != 'maintenance':
+                    r.status = 'maintenance'
+                    r.save(update_fields=['status'])
+                elif not in_window and r.status == 'maintenance':
+                    r.status = 'available'
+                    r.save(update_fields=['status'])
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

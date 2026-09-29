@@ -32,6 +32,31 @@ def _clean_student_id(value, exclude_pk=None):
     return value
 
 
+def _clean_email(value, exclude_pk=None):
+    """อีเมลห้ามซ้ำคนอื่น — login ด้วยอีเมลและลืมรหัสผ่านหยิบบัญชีแรกที่อีเมล
+    ตรงกัน (.first()) ถ้าซ้ำได้จะไม่รู้ว่าได้บัญชีไหน"""
+    value = (value or '').strip()
+    if not value:
+        return value
+    taken = User.objects.filter(email__iexact=value)
+    if exclude_pk is not None:
+        taken = taken.exclude(pk=exclude_pk)
+    if taken.exists():
+        raise serializers.ValidationError('อีเมลนี้ถูกใช้สมัครไปแล้ว')
+    return value
+
+
+def _check_room_bookable(room):
+    # แอดมินตั้ง status='disabled' ได้จากหน้าจัดการห้องโดยไม่ปิด is_active —
+    # เดิมตรวจแค่ is_active ห้องที่ขึ้นว่า "ปิดใช้งาน" จึงยังจองได้
+    if not room.is_active or room.status == 'disabled':
+        raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
+
+
+def _max_advance_date():
+    return timezone.localdate() + timedelta(days=settings.MAX_ADVANCE_BOOKING_DAYS)
+
+
 class UserSerializer(serializers.ModelSerializer):
     """ใช้กับ ProfileView (GET/PATCH /api/auth/profile/) — เป็นการแก้ไข
     ข้อมูลตัวเองของ user เอง ต้องกัน role/username ไม่ให้แก้ได้เองเด็ดขาด
@@ -56,6 +81,9 @@ class UserSerializer(serializers.ModelSerializer):
     def validate_student_id(self, value):
         # เดิมตรวจแค่ตอนสมัคร — PATCH โปรไฟล์ตั้ง "65abc123" ได้
         return _clean_student_id(value, exclude_pk=getattr(self.instance, 'pk', None))
+
+    def validate_email(self, value):
+        return _clean_email(value, exclude_pk=getattr(self.instance, 'pk', None))
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -82,6 +110,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         # พิมพ์ใหญ่เล็ก — ไม่งั้นสมัคร 'QA_Test_Bot' หรือ 'ｑａ_test_bot' ปลอมเป็น
         # 'qa_test_bot' ได้ (หน้าตาเหมือนกันในรายการแอดมิน/อีเมล)
         value = unicodedata.normalize('NFKC', value)
+        # '@ubu.ac.th' ผ่าน validator ของ field (อักขระถูกต้อง) แต่ตัดแล้วเหลือ
+        # ค่าว่าง — เดิมสร้างบัญชี username '' ได้สำเร็จ
+        if not value:
+            raise serializers.ValidationError('กรุณากรอกชื่อผู้ใช้')
         # username ที่เป็นตัวเลขล้วนคือรหัสนักศึกษา/บุคลากรใน LDAP — ถ้าให้สมัครเอง
         # ใครก็จองรหัสของคนอื่นไว้ก่อนได้ แล้วระบบจะรวมเป็นบัญชีเดียวกันตอน
         # เจ้าของล็อกอินผ่าน LDAP เจ้าของตัวจริงไม่ต้องสมัคร ล็อกอินได้เลย
@@ -93,6 +125,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError('ชื่อผู้ใช้นี้ถูกใช้แล้ว')
         return value
+
+    def validate_email(self, value):
+        return _clean_email(value)
 
     def validate_role(self, value):
         if value not in self.SELF_REGISTERABLE_ROLES:
@@ -350,8 +385,15 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f'จองทั้งเทอมได้ยาวสุด {settings.MAX_TERM_BOOKING_DAYS} วัน'
             )
-        if not room.is_active:
-            raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
+        # ตรวจเฉพาะตอนสร้างหรือเปลี่ยนวันจริง — คาบเดิมที่จบไปแล้วยังแก้โน้ตได้
+        dates_changed = self.instance is None or 'term_start' in data or 'term_end' in data
+        if dates_changed and term_end < timezone.localdate():
+            raise serializers.ValidationError('ช่วงเทอมที่เลือกสิ้นสุดไปแล้ว ไม่สามารถจองย้อนหลังได้')
+        if dates_changed and term_start > _max_advance_date():
+            raise serializers.ValidationError(
+                f'จองล่วงหน้าได้ไม่เกิน {settings.MAX_ADVANCE_BOOKING_DAYS} วัน'
+            )
+        _check_room_bookable(room)
 
         # ต้องมีคาบเกิดขึ้นจริงอย่างน้อย 1 ครั้งในช่วงที่เลือก — ไม่งั้นจะได้
         # การจองทั้งเทอมที่ไม่มีคาบไหนเกิดขึ้นเลย (เช่น เลือกทุกวันเสาร์ แต่ช่วง
@@ -434,14 +476,17 @@ class BookingCreateSerializer(serializers.ModelSerializer):
                 f'จองได้ยาวสุด {settings.MAX_BOOKING_DAYS} วันต่อครั้ง หากต้องการใช้ประจำให้จองทั้งเทอม'
             )
 
-        if not room.is_active:
-            raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
+        _check_room_bookable(room)
 
         # ตอนแก้ไข ตรวจเฉพาะเมื่อเปลี่ยนเวลาเริ่มจริง — start_time เดิมอาจผ่าน
         # ไปแล้วโดยชอบธรรมตั้งแต่ตอนสร้าง (เช่น แก้แค่ title)
         time_changed = self.instance is None or 'start_time' in data
         if time_changed and start_time < timezone.now():
             raise serializers.ValidationError('ไม่สามารถจองเวลาที่ผ่านไปแล้วได้')
+        if time_changed and timezone.localtime(start_time).date() > _max_advance_date():
+            raise serializers.ValidationError(
+                f'จองล่วงหน้าได้ไม่เกิน {settings.MAX_ADVANCE_BOOKING_DAYS} วัน'
+            )
 
         if attendees is not None:
             if attendees < 1:
@@ -794,55 +839,35 @@ class MaintenanceBlockCreateSerializer(serializers.ModelSerializer):
         model  = MaintenanceBlock
         fields = ['room', 'start_time', 'end_time', 'reason', 'note', 'predicted_demand_avg']
 
+    CONFLICT_MESSAGES = {
+        'booking':     'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
+        'term':        'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
+        'maintenance': 'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว',
+    }
+
+    def _get(self, data, field):
+        if field in data:
+            return data[field]
+        return getattr(self.instance, field, None)
+
     def validate(self, data):
-        room       = data['room']
-        start_time = data['start_time']
-        end_time   = data['end_time']
+        # ใช้ทั้งตอนสร้างและแก้ไข — เดิมตอนแก้ไขใช้ MaintenanceBlockSerializer ที่
+        # ไม่มี validate() เลย PATCH ให้เวลาสิ้นสุดก่อนเวลาเริ่ม หรือย้ายไปทับการจอง
+        # ที่อนุมัติแล้วได้ (tests_probe_weird)
+        room       = self._get(data, 'room')
+        start_time = self._get(data, 'start_time')
+        end_time   = self._get(data, 'end_time')
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
 
-        overlap_booking = Booking.objects.filter(
-            room=room,
-            status__in=['pending', 'approved', 'checked_in'],
-            start_time__lt=end_time,
-            end_time__gt=start_time,
+        # ตรวจเบื้องต้นยังไม่ Lock — ตรวจซ้ำใต้ select_for_update ใน views
+        conflict = find_booking_conflict(
+            room, start_time, end_time,
+            exclude_maintenance_pk=self.instance.pk if self.instance else None,
         )
-        if overlap_booking.exists():
-            raise serializers.ValidationError(
-                'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'
-            )
-
-        target_date  = start_time.date()
-        target_dow   = target_date.weekday()
-        overlap_term = TermBooking.objects.filter(
-            room=room,
-            day_of_week=target_dow,
-            status='active',
-            term_start__lte=target_date,
-            term_end__gte=target_date,
-        ).exclude(
-            start_time__gte=end_time.time()
-        ).exclude(
-            end_time__lte=start_time.time()
-        )
-        if overlap_term.exists():
-            raise serializers.ValidationError(
-                'ห้องนี้มีการจองทั้งเทอมอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้'
-            )
-
-        overlap_maint = MaintenanceBlock.objects.filter(
-            room=room,
-            status__in=['scheduled', 'active'],
-            start_time__lt=end_time,
-            end_time__gt=start_time,
-        )
-        if self.instance:
-            overlap_maint = overlap_maint.exclude(pk=self.instance.pk)
-        if overlap_maint.exists():
-            raise serializers.ValidationError(
-                'ห้องนี้มีการปิดซ่อมบำรุงในช่วงเวลาดังกล่าวอยู่แล้ว'
-            )
+        if conflict:
+            raise serializers.ValidationError(self.CONFLICT_MESSAGES[conflict[0]])
 
         return data
 

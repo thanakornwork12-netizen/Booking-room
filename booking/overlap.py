@@ -39,10 +39,11 @@ def recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, en
     return False
 
 
-def find_booking_conflict(room, start_time, end_time, exclude_pk=None):
+def find_booking_conflict(room, start_time, end_time, exclude_pk=None, exclude_maintenance_pk=None):
     """คืน (ชนิด, ข้อความ) ของสิ่งแรกที่ชน หรือ None ถ้าว่าง
 
     ชนิดเป็น 'booking' / 'term' / 'maintenance' ให้ผู้เรียกเลือกข้อความเองได้
+    exclude_pk = Booking ที่กำลังแก้, exclude_maintenance_pk = ช่วงปิดซ่อมที่กำลังแก้
     """
     dynamic = Booking.objects.filter(
         room=room,
@@ -68,12 +69,15 @@ def find_booking_conflict(room, start_time, end_time, exclude_pk=None):
             return 'term', (f'ห้องนี้ถูกจองทั้งเทอมโดย "{tb.subject_name}" '
                             f'({tb.start_time:%H:%M}–{tb.end_time:%H:%M})')
 
-    if MaintenanceBlock.objects.filter(
+    maintenance = MaintenanceBlock.objects.filter(
         room=room,
         status__in=['scheduled', 'active'],
         start_time__lt=end_time,
         end_time__gt=start_time,
-    ).exists():
+    )
+    if exclude_maintenance_pk is not None:
+        maintenance = maintenance.exclude(pk=exclude_maintenance_pk)
+    if maintenance.exists():
         return 'maintenance', 'ห้องนี้ปิดซ่อมบำรุงอยู่ในช่วงเวลาดังกล่าว'
 
     return None

@@ -231,6 +231,9 @@ APPROVER_EMAIL = os.environ.get('APPROVER_EMAIL', 'thanakorn.tho.66@ubu.ac.th')
 MAX_BOOKING_DAYS = int(os.environ.get('MAX_BOOKING_DAYS', '21'))
 # จองทั้งเทอมยาวสุด 1 ปีการศึกษา
 MAX_TERM_BOOKING_DAYS = int(os.environ.get('MAX_TERM_BOOKING_DAYS', '366'))
+# จองล่วงหน้าได้ไกลสุดกี่วัน (ทั้งรายครั้งและวันเริ่มเทอม) — เดิมไม่มีเพดาน
+# จองล่วงหน้า 50 ปีได้
+MAX_ADVANCE_BOOKING_DAYS = int(os.environ.get('MAX_ADVANCE_BOOKING_DAYS', '365'))
 
 SITE_URL     = os.environ.get('SITE_URL', 'http://127.0.0.1:8000')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
