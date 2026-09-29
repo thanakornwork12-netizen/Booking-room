@@ -83,6 +83,12 @@ class UserSerializer(serializers.ModelSerializer):
         return _clean_student_id(value, exclude_pk=getattr(self.instance, 'pk', None))
 
     def validate_email(self, value):
+        # ตรวจเฉพาะตอนเปลี่ยนอีเมลจริง — หน้าโปรไฟล์ส่งอีเมลมาทุกครั้งที่กดบันทึก
+        # และมีบัญชีเก่าที่อีเมลซ้ำกันอยู่ก่อนแล้ว ถ้าตรวจทุกครั้งบัญชีพวกนั้นจะ
+        # บันทึกโปรไฟล์ไม่ได้เลยทั้งที่ไม่ได้แตะอีเมล
+        current = (getattr(self.instance, 'email', '') or '').strip()
+        if (value or '').strip().lower() == current.lower():
+            return (value or '').strip()
         return _clean_email(value, exclude_pk=getattr(self.instance, 'pk', None))
 
 

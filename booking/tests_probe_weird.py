@@ -267,6 +267,13 @@ class BookingWeirdInputProbe(BookingEdgeBase):
         r = self.client.patch('/api/auth/profile/', {'email': 'qa_test_bot@example.com'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
+    def test_legacy_duplicate_email_can_still_save_profile(self):
+        # บัญชีเก่าที่อีเมลซ้ำกันอยู่ก่อนมีกฎนี้ ต้องบันทึกโปรไฟล์ได้ถ้าไม่ได้เปลี่ยนอีเมล
+        User.objects.filter(pk=self.user_b.pk).update(email='qa_test_bot@example.com')
+        r = self.client.patch('/api/auth/profile/', {
+            'first_name': 'ชื่อใหม่', 'email': 'qa_test_bot@example.com'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_booking_within_advance_limit_ok(self):
         d = timezone.localdate() + timedelta(days=300)
         r = self.book(aware(d, 10), aware(d, 11))
