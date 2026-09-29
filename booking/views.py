@@ -379,9 +379,12 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         blocked   = set(list(booked_dynamic) + list(booked_term) + list(maint_blocked))
         # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ ไม่ว่าใครจะเป็นคนจอง
+        # ไม่กรอง status='available' — status คือสถานะ "ตอนนี้" (เช่นกำลังซ่อม)
+        # เดิมห้องที่ซ่อมอยู่วันนี้หายจากการค้นหาทุกวันในอนาคตด้วย ช่วงซ่อมกันด้วย
+        # เวลาใน maint_blocked อยู่แล้ว ตัดออกแค่ห้องที่แอดมินปิดใช้งาน
         available = Room.objects.filter(
-            is_active=True, status='available', capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
-        ).exclude(id__in=blocked).select_related('building')\
+            is_active=True, capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
+        ).exclude(status='disabled').exclude(id__in=blocked).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
 
         if d.get('room_type'):
@@ -398,8 +401,8 @@ class RoomViewSet(viewsets.ModelViewSet):
     def _search_term(self, d, request):
         fallback_date = d.get('date') or date_type.today()
         dow     = d.get('day_of_week', fallback_date.weekday())
-        t_start = d.get('term_start', fallback_date)
-        t_end   = d.get('term_end',   fallback_date)
+        t_start = d.get('term_start') or fallback_date
+        t_end   = d.get('term_end') or fallback_date
 
         booked_term = TermBooking.objects.filter(
             day_of_week=dow, status='active',
@@ -407,16 +410,13 @@ class RoomViewSet(viewsets.ModelViewSet):
         ).exclude(start_time__gte=d['end_time']).exclude(end_time__lte=d['start_time'])\
          .values_list('room_id', flat=True)
 
-        # ช่วงซ่อมบำรุงที่ทับกับเทอม
-        maint_blocked = MaintenanceBlock.objects.filter(
-            status__in=['scheduled', 'active'],
-            start_time__date__lte=t_end, end_time__date__gte=t_start,
-        ).values_list('room_id', flat=True)
-
-        # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ ไม่ว่าใครจะเป็นคนจอง
+        # ไม่กันด้วยช่วงซ่อมแบบหยาบ (เดิมกันทั้งห้องถ้ามีช่วงซ่อมวันไหนก็ได้ในเทอม
+        # แม้คนละวันในสัปดาห์) — ใช้ find_term_conflict ตัวเดียวกับตอนจองจริงแทน
+        # ด้านล่าง ซึ่งตรวจช่วงซ่อมและการจองรายครั้งทีละสัปดาห์ (เดิมไม่ตรวจการจอง
+        # รายครั้งเลย ค้นเจอห้องแล้วกดจองกลับติด "มีการจองรายวันซ้อน")
         available = Room.objects.filter(
-            is_active=True, status='available', capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
-        ).exclude(id__in=set(list(booked_term) + list(maint_blocked))).select_related('building')\
+            is_active=True, capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
+        ).exclude(status='disabled').exclude(id__in=set(booked_term)).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
 
         if d.get('room_type'):
@@ -427,6 +427,10 @@ class RoomViewSet(viewsets.ModelViewSet):
             results   = preferred + others
         else:
             results = list(available.order_by('capacity'))
+        results = [
+            r for r in results
+            if find_term_conflict(r, dow, d['start_time'], d['end_time'], t_start, t_end) is None
+        ]
 
         today = date_type.today()
         forecast_target_date = today
@@ -582,8 +586,8 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ — เหมือน _search_dynamic/_search_term
         base_qs = Room.objects.filter(
-            is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
-        ).select_related('building').prefetch_related(
+            is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+        ).exclude(status='disabled').select_related('building').prefetch_related(
             'room_facilities__facility', 'forecasts',
         )
 
@@ -1022,9 +1026,11 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         return Response({
             'room': room.name, 'date': target_date,
+            # รวมรายการที่รออนุมัติ/เช็คอินแล้วด้วย — ทั้งหมดนี้กันช่วงเวลาไว้แล้ว
+            # (ACTIVE_BOOKING_STATUSES) เดิมโชว์แค่ approved ช่องจึงดูว่างทั้งที่จองไม่ได้
             'dynamic_bookings': list(Booking.objects.filter(
-                room=room, status='approved', start_time__date=target_date,
-            ).values('start_time', 'end_time', 'title', 'attendees')),
+                room=room, status__in=ACTIVE_BOOKING_STATUSES, start_time__date=target_date,
+            ).values('start_time', 'end_time', 'title', 'attendees', 'status')),
             'term_bookings': list(TermBooking.objects.filter(
                 room=room, status='active', day_of_week=target_date.weekday(),
                 term_start__lte=target_date, term_end__gte=target_date,
@@ -1314,8 +1320,8 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         preferred_room = None
         if preferred_room_id is not None:
             preferred_room = Room.objects.filter(
-                id=preferred_room_id, is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
-            ).select_related('building').first()
+                id=preferred_room_id, is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+            ).exclude(status='disabled').select_related('building').first()
 
         def is_room_blocked(room_obj, period_start, period_end):
             return TermBooking.objects.filter(
@@ -1366,10 +1372,9 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ — เหมือน _search_dynamic/_search_term
         base_qs = Room.objects.filter(
             is_active=True,
-            status='available',
             capacity__gte=attendees,
             id__in=AI_FORECAST_ROOM_IDS,
-        ).select_related('building')
+        ).exclude(status='disabled').select_related('building')
         if building_code:
             preferred_rooms = list(base_qs.filter(building__code=building_code).order_by('capacity', 'name'))
             other_rooms = list(base_qs.exclude(building__code=building_code).order_by('capacity', 'name'))
@@ -2143,7 +2148,8 @@ class DashboardView(generics.GenericAPIView):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
-        today       = timezone.now().date()
+        # timezone.now() เป็น UTC — เดิมช่วง 00:00–06:59 เวลาไทยแดชบอร์ดนับเป็นเมื่อวาน
+        today       = timezone.localdate()
         total_rooms = Room.objects.count()
         today_dynamic = Booking.objects.filter(start_time__date=today, status='approved').count()
         today_term    = TermBooking.objects.filter(
@@ -2218,6 +2224,10 @@ class ExportExcelView(APIView):
                     else:
                         for col in df.columns:
                             if pd.api.types.is_datetime64_any_dtype(df[col]):
+                                # ค่าใน DB เป็น UTC — เดิมตัด timezone ทิ้งเลย เวลาในไฟล์
+                                # จึงช้ากว่าเวลาไทย 7 ชั่วโมง ต้องแปลงเป็นเวลาไทยก่อน
+                                if df[col].dt.tz is not None:
+                                    df[col] = df[col].dt.tz_convert(THAI_TZ)
                                 df[col] = df[col].dt.tz_localize(None)
                             else:
                                 df[col] = df[col].apply(lambda x: "" if x is None else excel_safe(str(x)))

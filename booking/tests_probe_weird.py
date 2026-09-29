@@ -291,3 +291,147 @@ class BookingWeirdInputProbe(BookingEdgeBase):
     def test_profile_patch_student_id_of_other_user(self):
         r = self.client.patch('/api/auth/profile/', {'student_id': '6622222222'}, format='json')
         self.assertEqual(r.status_code, 400)
+
+
+# ══════════════════════════════════════════════════════════════
+# รอบ 2 — timezone, อีเมล, export, การค้นหาห้อง
+# ══════════════════════════════════════════════════════════════
+import io
+from datetime import datetime
+from unittest import mock
+
+import openpyxl
+from django.core import mail
+from django.test import override_settings
+
+from booking.models import DemandForecast, Room
+
+LOCMEM = 'django.core.mail.backends.locmem.EmailBackend'
+
+
+def thai_now(d, hh, mm=0):
+    """timezone.now() ปลอม (คืน UTC เหมือนของจริง) ที่ตรงกับเวลาไทย d hh:mm"""
+    return aware(d, hh, mm).astimezone(dt_timezone.utc)
+
+
+from datetime import timezone as dt_timezone  # noqa: E402
+
+
+@override_settings(EMAIL_BACKEND=LOCMEM, DEFAULT_FROM_EMAIL='noreply@example.com')
+class EmailProbe(BookingEdgeBase):
+    def test_checkin_reminder_shows_thai_time(self):
+        from booking.scheduler import send_checkin_reminders
+        start = timezone.now() + timedelta(minutes=15)
+        Booking.objects.create(user=self.bot, room=self.room, title='ประชุม', attendees=5,
+                               start_time=start, end_time=start + timedelta(hours=1),
+                               status='approved')
+        send_checkin_reminders()
+        self.assertEqual(len(mail.outbox), 1)
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertIn(timezone.localtime(start).strftime('%H:%M'), html)
+
+    def test_reminder_escapes_title(self):
+        from booking.scheduler import send_checkin_reminders
+        start = timezone.now() + timedelta(minutes=15)
+        Booking.objects.create(user=self.bot, room=self.room, title='<a href="http://evil">x</a>',
+                               attendees=5, start_time=start, end_time=start + timedelta(hours=1),
+                               status='approved')
+        send_checkin_reminders()
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertNotIn('<a href="http://evil">', html)
+
+    def test_pending_email_escapes_title(self):
+        from booking.signals import send_booking_pending_email
+        b = self.seed(aware(self.day, 10), aware(self.day, 11), status='pending', user=self.bot)
+        b.title = '<img src=x onerror=alert(1)>'
+        send_booking_pending_email(b)
+        html = mail.outbox[-1].alternatives[0][0]
+        self.assertNotIn('<img src=x', html)
+
+
+class ThaiDayProbe(BookingEdgeBase):
+    def test_dashboard_counts_thai_today_after_midnight(self):
+        # 01:30 เวลาไทย = 18:30 UTC ของเมื่อวาน
+        today = self.day
+        self.seed(aware(today, 9), aware(today, 10), status='approved')
+        self.client.force_authenticate(user=self.admin)
+        with mock.patch('django.utils.timezone.now', return_value=thai_now(today, 1, 30)):
+            r = self.client.get('/api/dashboard/')
+        self.assertEqual(r.json()['today_dynamic'], 1)
+
+    def test_room_forecast_uses_thai_hour(self):
+        self.client.force_authenticate(user=self.admin)
+        DemandForecast.objects.create(room=self.room, forecast_date=self.day, hour=10,
+                                      predicted_demand=0.9, demand_level='high')
+        with mock.patch('django.utils.timezone.now', return_value=thai_now(self.day, 10, 20)):
+            r = self.client.get('/api/rooms/')
+        rows = r.json()['results'] if isinstance(r.json(), dict) else r.json()
+        mine = next(x for x in rows if x['id'] == self.room.id)
+        self.assertTrue(mine['forecast']['has_forecast'], mine['forecast'])
+
+    def test_export_times_are_thai(self):
+        b = self.seed(aware(self.day, 10), aware(self.day, 11), status='approved')
+        self.client.force_authenticate(user=self.admin)
+        r = self.client.get('/api/export/excel/?sheets=bookings')
+        wb = openpyxl.load_workbook(io.BytesIO(r.content))
+        ws = wb.active
+        header = [c.value for c in ws[1]]
+        start = ws.cell(row=2, column=header.index('start_time') + 1).value
+        self.assertEqual(start.hour, 10, f'{start} (booking {b.id})')
+
+    def test_availability_lists_pending_bookings(self):
+        self.seed(aware(self.day, 10), aware(self.day, 11), status='pending')
+        self.client.force_authenticate(user=self.admin)
+        r = self.client.get(f'/api/rooms/{self.room.id}/availability/?date={self.day.isoformat()}')
+        self.assertEqual(len(r.json()['dynamic_bookings']), 1)
+
+
+class RoomSearchProbe(BookingEdgeBase):
+    """การค้นหาจำกัดเฉพาะห้องใน AI_FORECAST_ROOM_IDS — สร้างห้องด้วย id นั้น"""
+
+    def setUp(self):
+        super().setUp()
+        self.ai_room = Room.objects.create(id=443, building=self.building, name='2C05',
+                                           floor=1, capacity=40, room_type='ห้องเรียน')
+
+    def search(self, **params):
+        base = {'attendees': 5, 'start_time': '13:00', 'end_time': '14:00'}
+        base.update(params)
+        r = self.client.post('/api/rooms/search/', base, format='json')
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        return [x['id'] for x in r.json()]
+
+    def test_room_under_repair_today_still_found_next_week(self):
+        now = timezone.now()
+        MaintenanceBlock.objects.create(room=self.ai_room, start_time=now - timedelta(hours=1),
+                                        end_time=now + timedelta(hours=1), reason='x',
+                                        status='active', created_by=self.admin)
+        self.ai_room.status = 'maintenance'
+        self.ai_room.save()
+        ids = self.search(date=self.day.isoformat())
+        self.assertIn(self.ai_room.id, ids)
+
+    def test_disabled_room_not_found(self):
+        self.ai_room.status = 'disabled'
+        self.ai_room.save()
+        self.assertNotIn(self.ai_room.id, self.search(date=self.day.isoformat()))
+
+    def test_term_search_hides_room_with_dynamic_booking_on_that_weekday(self):
+        self.seed(aware(self.day, 13), aware(self.day, 14), status='pending', room=self.ai_room)
+        ids = self.search(booking_type='term', day_of_week=self.day.weekday(),
+                          term_start=(self.day - timedelta(days=7)).isoformat(),
+                          term_end=(self.day + timedelta(days=30)).isoformat())
+        self.assertNotIn(self.ai_room.id, ids)
+
+    def test_term_search_ignores_maintenance_on_other_weekday(self):
+        other = self.day + timedelta(days=2)
+        MaintenanceBlock.objects.create(room=self.ai_room, start_time=aware(other, 8),
+                                        end_time=aware(other, 17), reason='x',
+                                        status='scheduled', created_by=self.admin)
+        ids = self.search(booking_type='term', day_of_week=self.day.weekday(),
+                          term_start=self.day.isoformat(),
+                          term_end=(self.day + timedelta(days=30)).isoformat())
+        self.assertIn(self.ai_room.id, ids)
+
+    def test_term_search_null_dates_ok(self):
+        self.search(booking_type='term', day_of_week=1, term_start=None, term_end=None)

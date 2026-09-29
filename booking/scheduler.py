@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.utils import timezone
+from django.utils.html import escape
 
 
 def send_checkin_reminders():
@@ -28,6 +29,15 @@ def send_checkin_reminders():
 
     for booking in bookings:
         user_email = booking.user.email
+        # start_time จาก DB เป็น UTC — เดิม strftime ตรง ๆ อีเมลเตือนจึงบอกเวลา
+        # ช้าไป 7 ชั่วโมง (จอง 10:00 อีเมลบอก 03:00)
+        start_local = timezone.localtime(booking.start_time)
+        end_local   = timezone.localtime(booking.end_time)
+        # ข้อความที่ผู้ใช้พิมพ์เองต้อง escape ก่อนใส่ HTML
+        name_html     = escape(booking.user.get_full_name() or booking.user.username)
+        room_html     = escape(booking.room.name)
+        building_html = escape(booking.room.building.name)
+        title_html    = escape(booking.title)
         if not user_email:
             continue
 
@@ -53,27 +63,27 @@ def send_checkin_reminders():
 
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{booking.user.get_full_name() or booking.user.username}</b>
+        สวัสดีคุณ <b>{name_html}</b>
       </p>
       <p style="color:#6b7280;">ใกล้ถึงเวลาการจองของคุณแล้ว</p>
 
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
         <tr style="background:#fffbeb;">
           <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
-          <td style="padding:10px 12px;font-weight:bold;">{booking.room.name}</td>
+          <td style="padding:10px 12px;font-weight:bold;">{room_html}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
-          <td style="padding:10px 12px;">{booking.room.building.name}</td>
+          <td style="padding:10px 12px;">{building_html}</td>
         </tr>
         <tr style="background:#fffbeb;">
           <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
-          <td style="padding:10px 12px;">{booking.title}</td>
+          <td style="padding:10px 12px;">{title_html}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">⏰ เวลา</td>
           <td style="padding:10px 12px;">
-            {booking.start_time.strftime("%H:%M")} – {booking.end_time.strftime("%H:%M")} น.
+            {start_local.strftime("%H:%M")} – {end_local.strftime("%H:%M")} น.
           </td>
         </tr>
       </table>

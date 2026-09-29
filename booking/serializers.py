@@ -303,7 +303,8 @@ class RoomListSerializer(serializers.ModelSerializer):
                 pass
 
         if not search_date or search_hour is None:
-            now         = timezone.now()
+            # ต้องเป็นเวลาไทย — timezone.now() เป็น UTC เดิมหยิบพยากรณ์ผิดชั่วโมง (ช้าไป 7)
+            now         = timezone.localtime()
             search_date = now.date()
             search_hour = now.hour
 

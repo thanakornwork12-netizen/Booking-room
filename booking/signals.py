@@ -194,14 +194,14 @@ def send_welcome_email(user):
     <!-- Body -->
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{display_name}</b>
+        สวัสดีคุณ <b>{escape(display_name)}</b>
       </p>
       <p style="color:#6b7280;">สมัครสมาชิกสำเร็จแล้ว ตอนนี้สามารถเข้าสู่ระบบเพื่อค้นหาและจองห้องประชุมได้ทันที</p>
 
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;border-radius:8px;overflow:hidden;">
         <tr style="background:#eff6ff;">
           <td style="padding:10px 12px;color:#6b7280;width:40%;">👤 ชื่อผู้ใช้</td>
-          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{user.username}</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(user.username)}</td>
         </tr>
       </table>
 
@@ -285,10 +285,10 @@ def send_password_reset_email(user, uidb64, token):
 
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{display_name}</b>
+        สวัสดีคุณ <b>{escape(display_name)}</b>
       </p>
       <p style="color:#6b7280;">
-        มีการขอรีเซ็ตรหัสผ่านสำหรับบัญชี <b>{user.username}</b> กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่
+        มีการขอรีเซ็ตรหัสผ่านสำหรับบัญชี <b>{escape(user.username)}</b> กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่
       </p>
 
       <div style="text-align:center;margin:24px 0;">
@@ -486,7 +486,7 @@ def send_booking_pending_email(instance):
     <!-- Body -->
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b>
+        สวัสดีคุณ <b>{escape(instance.user.get_full_name() or instance.user.username)}</b>
       </p>
       <p style="color:#6b7280;">ระบบได้รับคำขอจองห้องของคุณแล้ว กำลังรอแอดมินตรวจสอบและอนุมัติ เมื่อผลออกแล้วจะส่งอีเมลแจ้งอีกครั้งครับ</p>
 
@@ -494,15 +494,15 @@ def send_booking_pending_email(instance):
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;border-radius:8px;overflow:hidden;">
         <tr style="background:#fffbeb;">
           <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
-          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(instance.room.name)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.room.building.name)}</td>
         </tr>
         <tr style="background:#fffbeb;">
           <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.title}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.title)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">📅 วันที่</td>
@@ -623,7 +623,7 @@ def send_booking_confirmation_email(instance):
     <!-- Body -->
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b>
+        สวัสดีคุณ <b>{escape(instance.user.get_full_name() or instance.user.username)}</b>
       </p>
       <p style="color:#6b7280;">การจองห้องของคุณสำเร็จแล้ว รายละเอียดด้านล่างครับ</p>
 
@@ -631,15 +631,15 @@ def send_booking_confirmation_email(instance):
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;border-radius:8px;overflow:hidden;">
         <tr style="background:#eff6ff;">
           <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
-          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(instance.room.name)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.room.building.name)}</td>
         </tr>
         <tr style="background:#eff6ff;">
           <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.title}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.title)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">📅 วันที่</td>
@@ -759,12 +759,12 @@ def send_term_booking_confirmation_email(instance):
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
     <div style="padding:28px 32px;">
-      <p style="font-size:16px;color:#374151;">สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b></p>
+      <p style="font-size:16px;color:#374151;">สวัสดีคุณ <b>{escape(instance.user.get_full_name() or instance.user.username)}</b></p>
       <p style="color:#6b7280;">การจองห้องทั้งเทอมของคุณสำเร็จแล้ว รายละเอียดด้านล่างครับ</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
-        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;width:40%;">ห้อง</td><td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td></tr>
-        <tr><td style="padding:10px 12px;color:#6b7280;">อาคาร</td><td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td></tr>
-        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;">วิชา/กิจกรรม</td><td style="padding:10px 12px;color:#111827;">{instance.subject_name}</td></tr>
+        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;width:40%;">ห้อง</td><td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(instance.room.name)}</td></tr>
+        <tr><td style="padding:10px 12px;color:#6b7280;">อาคาร</td><td style="padding:10px 12px;color:#111827;">{escape(instance.room.building.name)}</td></tr>
+        <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;">วิชา/กิจกรรม</td><td style="padding:10px 12px;color:#111827;">{escape(instance.subject_name)}</td></tr>
         <tr><td style="padding:10px 12px;color:#6b7280;">วัน/เวลา</td><td style="padding:10px 12px;color:#111827;">ทุกวัน{day_name} {instance.start_time:%H:%M} - {instance.end_time:%H:%M} น.</td></tr>
         <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;">ช่วงเทอม</td><td style="padding:10px 12px;color:#111827;">{instance.term_start} ถึง {instance.term_end}</td></tr>
         <tr><td style="padding:10px 12px;color:#6b7280;">ผู้เข้าร่วม</td><td style="padding:10px 12px;color:#111827;">{instance.attendees} คน</td></tr>
@@ -844,7 +844,7 @@ def send_booking_cancelled_email(instance):
     <!-- Body -->
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b>
+        สวัสดีคุณ <b>{escape(instance.user.get_full_name() or instance.user.username)}</b>
       </p>
       <p style="color:#6b7280;">การจองห้องของคุณถูกยกเลิกแล้ว รายละเอียดด้านล่างครับ</p>
 
@@ -852,15 +852,15 @@ def send_booking_cancelled_email(instance):
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
         <tr style="background:#fef2f2;">
           <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
-          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(instance.room.name)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.room.building.name)}</td>
         </tr>
         <tr style="background:#fef2f2;">
           <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.title}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.title)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">📅 วันที่</td>
@@ -975,7 +975,7 @@ def send_booking_rejected_email(instance):
     <!-- Body -->
     <div style="padding:28px 32px;">
       <p style="font-size:16px;color:#374151;">
-        สวัสดีคุณ <b>{instance.user.get_full_name() or instance.user.username}</b>
+        สวัสดีคุณ <b>{escape(instance.user.get_full_name() or instance.user.username)}</b>
       </p>
       <p style="color:#6b7280;">คำขอจองห้องของคุณถูกปฏิเสธ รายละเอียดด้านล่างครับ</p>
 
@@ -983,15 +983,15 @@ def send_booking_rejected_email(instance):
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
         <tr style="background:#fef2f2;">
           <td style="padding:10px 12px;color:#6b7280;width:40%;">🏢 ห้อง</td>
-          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{instance.room.name}</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(instance.room.name)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">🏛️ อาคาร</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.room.building.name}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.room.building.name)}</td>
         </tr>
         <tr style="background:#fef2f2;">
           <td style="padding:10px 12px;color:#6b7280;">📌 หัวข้อ</td>
-          <td style="padding:10px 12px;color:#111827;">{instance.title}</td>
+          <td style="padding:10px 12px;color:#111827;">{escape(instance.title)}</td>
         </tr>
         <tr>
           <td style="padding:10px 12px;color:#6b7280;">📅 วันที่</td>
