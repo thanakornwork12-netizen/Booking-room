@@ -626,7 +626,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <ul>
 <li>Backend และ AI เป็น Python (Django + Django REST Framework, LightGBM, XGBoost)</li>
 <li>Frontend เป็น JavaScript ด้วย React 19 + Vite จัดสไตล์ด้วย Tailwind CSS</li>
-<li>ฐานข้อมูลเข้าถึงผ่าน Django ORM ไม่ได้เขียน SQL ตรง ใช้ SQLite ตอนพัฒนา PostgreSQL บน production</li>
+<li>ฐานข้อมูลเข้าถึงผ่าน Django ORM ไม่ได้เขียน SQL ตรง ใช้ PostgreSQL ทั้งในเครื่องที่พัฒนาและบน production (Neon) ถ้าไม่ตั้ง <code>DATABASE_URL</code> จะใช้ SQLite</li>
 </ul></details>
 <details><summary>ทำไมเลือก Django ไม่ใช้ Node.js / Laravel?</summary>
 <ul>
