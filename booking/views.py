@@ -950,7 +950,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             total=Count('id', filter=Q(status__in=['approved', 'completed', 'checked_in', 'pending'])),
             approved=Count('id', filter=Q(status='approved')),
             completed=Count('id', filter=Q(status='completed')),
-            pending=Count('id', filter=Q(status='pending')),
+            pending=Count('id', filter=Q(status='pending', end_time__gt=timezone.now())),
             checked_in=Count('id', filter=Q(status='checked_in')),
         )
         booking_stats = {row['room_id']: row for row in booking_rows}
@@ -1148,6 +1148,17 @@ class RoomViewSet(viewsets.ModelViewSet):
 # ============================================================
 # TERM BOOKING ViewSet
 # ============================================================
+def _live_bookings(qs):
+    """ตัดคำขอจองรายครั้งที่เลยเวลาไปแล้วโดยยังไม่ได้อนุมัติออก — ถือว่าหมดอายุ
+    ไม่ต้องให้แอดมินไล่กดปฏิเสธเอง (แถวยังอยู่ในฐานข้อมูลและใน export)"""
+    return qs.exclude(status='pending', end_time__lte=timezone.now())
+
+
+def _live_term_bookings(qs):
+    """เหมือน _live_bookings สำหรับจองทั้งเทอม: รออนุมัติจนช่วงเทอมจบไปแล้ว"""
+    return qs.exclude(status='pending', term_end__lt=timezone.localdate())
+
+
 def _term_summary(tb):
     """ข้อความสรุปคาบทั้งเทอม ใช้ในแจ้งเตือนทุกแบบของการจองทั้งเทอม"""
     return (f'ห้อง {tb.room.name} สำหรับ "{tb.subject_name}" '
@@ -1161,7 +1172,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = TermBooking.objects.select_related('user', 'room__building')
+        qs = _live_term_bookings(TermBooking.objects.select_related('user', 'room__building'))
         if user.is_authenticated:
             if not is_admin_or_staff(user):
                 qs = qs.filter(user=user)
@@ -1595,8 +1606,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return Booking.objects.all().select_related('user', 'room__building')
         if is_admin_or_staff(user):
-            return Booking.objects.all().select_related('user', 'room__building')
-        return Booking.objects.filter(user=user).select_related('user', 'room__building')
+            return _live_bookings(Booking.objects.all()).select_related('user', 'room__building')
+        return _live_bookings(Booking.objects.filter(user=user)).select_related('user', 'room__building')
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):
@@ -2223,8 +2234,8 @@ class DashboardView(generics.GenericAPIView):
             day_of_week=today.weekday(), status='active',
             term_start__lte=today, term_end__gte=today,
         ).count()
-        pending = (Booking.objects.filter(status='pending').count()
-                   + TermBooking.objects.filter(status='pending').count())
+        pending = (_live_bookings(Booking.objects.filter(status='pending')).count()
+                   + _live_term_bookings(TermBooking.objects.filter(status='pending')).count())
         popular = (
             Booking.objects.filter(status__in=['approved', 'completed'])
             .values('room__name').annotate(count=Count('id')).order_by('-count')[:5]

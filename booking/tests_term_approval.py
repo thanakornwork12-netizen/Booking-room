@@ -222,3 +222,40 @@ class TermApprovalEmailTests(QABase):
         m = sent['qa_test_bot@example.com']
         self.assertIn('ถูกปฏิเสธ', m.subject)
         self.assertIn('ห้องปิดปรับปรุง', m.body)
+
+
+class ExpiredPendingTests(QABase):
+    """คำขอที่เลยเวลาไปแล้วโดยไม่ได้อนุมัติ หายจากทุกรายการเอง"""
+
+    def test_expired_pending_booking_disappears(self):
+        from booking.models import Booking
+        from booking.tests_qa import rows_of
+        now = timezone.now()
+        expired = Booking.objects.create(
+            user=self.bot, room=self.room, title='หมดเวลา', attendees=5,
+            start_time=now - timedelta(hours=3), end_time=now - timedelta(hours=1), status='pending')
+        waiting = Booking.objects.create(
+            user=self.bot, room=self.room, title='ยังรอ', attendees=5,
+            start_time=now + timedelta(days=1), end_time=now + timedelta(days=1, hours=1), status='pending')
+        past_approved = Booking.objects.create(
+            user=self.bot, room=self.room, title='ใช้ไปแล้ว', attendees=5,
+            start_time=now - timedelta(days=1, hours=3), end_time=now - timedelta(days=1, hours=1),
+            status='approved')
+        for user in (self.bot, self.admin):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                ids = {b['id'] for b in rows_of(self.client.get('/api/bookings/').data)}
+                self.assertEqual(ids, {waiting.id, past_approved.id})
+        self.assertEqual(self.client.get('/api/dashboard/').data['pending'], 1)
+        self.assertTrue(Booking.objects.filter(pk=expired.pk).exists(), 'แถวต้องยังอยู่ในฐานข้อมูล')
+
+    def test_expired_pending_term_request_disappears(self):
+        from booking.tests_qa import rows_of
+        today = timezone.localdate()
+        TermBooking.objects.create(
+            user=self.bot, room=self.room, subject_name='เทอมที่จบแล้ว', attendees=20,
+            day_of_week=1, start_time=time_type(10), end_time=time_type(12),
+            term_start=today - timedelta(days=60), term_end=today - timedelta(days=1), status='pending')
+        self.as_user(self.admin)
+        self.assertEqual(rows_of(self.client.get('/api/term-bookings/').data), [])
+        self.assertEqual(self.client.get('/api/dashboard/').data['pending'], 0)
