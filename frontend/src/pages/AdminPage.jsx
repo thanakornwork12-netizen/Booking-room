@@ -1332,12 +1332,50 @@ function MaintenancePanel({ dashboard, adminRooms }) {
 // ============================================================
 // DESKTOP
 // ============================================================
+// ── คำขอจองทั้งเทอมที่รออนุมัติ (ใช้ทั้ง desktop และ mobile) ──
+function PendingTermCard({ tb, onApprove, onReject }) {
+  return (
+    <div className="bg-white border border-blue-100 rounded-2xl px-4 py-3.5 flex items-center gap-3 flex-wrap"
+      style={{borderLeftWidth:4, borderLeftColor: STATUS_CFG.pending.dot}}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <p className="font-bold text-slate-900 truncate">{tb.subject_name}</p>
+          <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${STATUS_CFG.pending.bg} ${STATUS_CFG.pending.text}`}>
+            {STATUS_CFG.pending.label}
+          </span>
+          <span className="text-xs bg-purple-50 text-purple-700 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">ทั้งเทอม</span>
+        </div>
+        <p className="text-sm text-blue-600 font-medium mb-1 truncate">{tb.room_name||`ห้อง #${tb.room}`}</p>
+        <div className="flex gap-3 text-xs text-slate-400 flex-wrap">
+          <span>📅 ทุกวัน{tb.day_name}</span>
+          <span>⏰ {(tb.start_time||'').slice(0,5)}–{(tb.end_time||'').slice(0,5)}</span>
+          <span>🗓️ {tb.term_start} ถึง {tb.term_end}</span>
+          <span>👥 {tb.attendees} คน</span>
+          {tb.user_name && <span>👤 {tb.user_name}</span>}
+        </div>
+      </div>
+      <div className="flex gap-1.5 flex-shrink-0">
+        <button onClick={() => onReject(tb.id)}
+          className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl">
+          <X size={11} />ปฏิเสธ
+        </button>
+        <button onClick={() => onApprove(tb.id)}
+          className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-xl">
+          <Check size={11} />อนุมัติ
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
-  setSelectedBooking, handleCancel, handleApprove, handleReject, fmtDate, fmtTime, fmtDateFull, navigate,
+  setSelectedBooking, handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
+  fmtDate, fmtTime, fmtDateFull, navigate,
   onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
   hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
+  const pendingTerms = termBookings.filter(tb => tb.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledB = bookings.filter(b => b.status === 'cancelled')
   const currentB   = bookings.filter(b =>
@@ -1346,7 +1384,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
   )
 
   const tabs = [
-    {key:'active',   label:'การจองปัจจุบัน', count:currentB.length},
+    {key:'active',   label:'การจองปัจจุบัน', count:currentB.length + pendingTerms.length},
     {key:'rooms',    label:'สถานะห้อง',      count:adminRooms?.length ?? null},
     {key:'maintenance', label:'ซ่อมบำรุง AI', count:null},
     {key:'overview', label:'ภาพรวม',         count:null},
@@ -1396,7 +1434,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
             <div className="space-y-3 au">
               {[
                 {label:'จองวันนี้',        value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'รอยืนยัน (pending)',value:pendingB.length,              color:'text-yellow-600'},
+                {label:'รอยืนยัน (pending)',value:pendingB.length + pendingTerms.length, color:'text-yellow-600'},
                 {label:'ยืนยันแล้ว',       value:activeB.length,               color:'text-emerald-600'},
                 {label:'ยกเลิกแล้ว',       value:cancelledB.length,            color:'text-red-500'},
             ].map((s,i) => (
@@ -1420,7 +1458,10 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
               )}
             </div>
             <div className="col-span-2 space-y-3 au1">
-              {currentB.length === 0
+              {pendingTerms.map(tb => (
+                <PendingTermCard key={`term-${tb.id}`} tb={tb} onApprove={handleApproveTerm} onReject={handleRejectTerm} />
+              ))}
+              {currentB.length === 0 && pendingTerms.length === 0
                 ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center shadow-sm">
                     <Calendar size={40} className="text-blue-200 mx-auto mb-3" />
                     <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
@@ -1596,11 +1637,13 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
 // MOBILE
 // ============================================================
 function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
-  setSelectedBooking, handleCancel, handleApprove, handleReject, fmtDate, fmtTime, fmtDateFull, navigate,
+  setSelectedBooking, handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
+  fmtDate, fmtTime, fmtDateFull, navigate,
   onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
   hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
+  const pendingTerms = termBookings.filter(tb => tb.status === 'pending')
   const activeB    = bookings.filter(b => b.status === 'approved' && !isPast(b.end_time))
   const cancelledB = bookings.filter(b => b.status === 'cancelled')
   const currentB   = bookings.filter(b =>
@@ -1609,7 +1652,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
   )
 
   const tabs = [
-    {key:'active',   label:'จอง',     count:currentB.length},
+    {key:'active',   label:'จอง',     count:currentB.length + pendingTerms.length},
     {key:'rooms',    label:'ห้อง',    count:adminRooms?.length ?? null},
     {key:'maintenance', label:'ซ่อม AI', count:null},
     {key:'overview', label:'ภาพรวม',  count:null},
@@ -1653,7 +1696,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
             <div className="grid grid-cols-2 gap-2 au">
               {[
                 {label:'วันนี้',     value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'รอยืนยัน',  value:pendingB.length,              color:'text-yellow-600'},
+                {label:'รอยืนยัน',  value:pendingB.length + pendingTerms.length, color:'text-yellow-600'},
                 {label:'ยืนยันแล้ว',value:activeB.length,               color:'text-emerald-600'},
                 {label:'ยกเลิก',    value:cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
@@ -1663,7 +1706,10 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                 </div>
               ))}
             </div>
-            {currentB.length === 0
+            {pendingTerms.map(tb => (
+              <PendingTermCard key={`term-${tb.id}`} tb={tb} onApprove={handleApproveTerm} onReject={handleRejectTerm} />
+            ))}
+            {currentB.length === 0 && pendingTerms.length === 0
               ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au1">
                   <Calendar size={32} className="text-blue-200 mx-auto mb-3" />
                   <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
@@ -2105,6 +2151,23 @@ export default function AdminPage() {
     } catch { alert('เกิดข้อผิดพลาด') }
   }
 
+  const handleApproveTerm = async (id) => {
+    if (!confirm('ยืนยันอนุมัติการจองทั้งเทอมนี้?')) return
+    try {
+      await api.post(`term-bookings/${id}/approve/`)
+      setTermBookings(prev => prev.map(tb => tb.id===id ? {...tb,status:'active'} : tb))
+    } catch (err) { alert(err.response?.data?.detail || err.response?.data?.error || 'เกิดข้อผิดพลาด') }
+  }
+
+  const handleRejectTerm = async (id) => {
+    const reason = prompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):', '')
+    if (reason === null) return
+    try {
+      await api.post(`term-bookings/${id}/reject/`, { reason })
+      setTermBookings(prev => prev.map(tb => tb.id===id ? {...tb,status:'rejected',reject_reason:reason} : tb))
+    } catch (err) { alert(err.response?.data?.error || 'เกิดข้อผิดพลาด') }
+  }
+
   const fmtDate     = dt => new Date(dt).toLocaleDateString('th-TH',{day:'numeric',month:'short'})
   const fmtTime     = dt => new Date(dt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})
   const fmtDateFull = dt => new Date(dt).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long'})
@@ -2129,7 +2192,8 @@ export default function AdminPage() {
     dashboard, adminRooms, bookings, termBookings, weekStats, tab, setTab,
     hasMoreBookings: !!bookingsNextUrl, loadingMoreBookings, onLoadMoreBookings: loadMoreBookings,
     selectedBooking, setSelectedBooking,
-    handleCancel, handleApprove, handleReject, fmtDate, fmtTime, fmtDateFull, navigate,
+    handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
+    fmtDate, fmtTime, fmtDateFull, navigate,
     buildingsList,
     onAddRoom: () => setRoomModal({ mode: 'create' }),
     onEditRoom: (room) => setRoomModal({ mode: 'edit', room }),

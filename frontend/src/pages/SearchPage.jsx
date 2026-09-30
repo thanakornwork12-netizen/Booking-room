@@ -663,8 +663,9 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
         </div>
         <div className="p-8 -mt-10">
           <div className="rounded-[24px] bg-white border border-slate-200 shadow-sm p-6">
-            <p className="text-xs font-bold uppercase tracking-[0.28em] text-slate-400 mb-2">Booking complete</p>
-            <h2 className="text-2xl font-bold text-slate-900">จองสำเร็จแล้ว</h2>
+            <p className="text-xs font-bold uppercase tracking-[0.28em] text-slate-400 mb-2">Request sent</p>
+            <h2 className="text-2xl font-bold text-slate-900">ส่งคำขอจองแล้ว รออนุมัติ</h2>
+            <p className="mt-1 text-sm text-slate-500">แอดมินจะตรวจสอบคำขอ แล้วแจ้งผลทางอีเมลและแจ้งเตือนในเว็บ</p>
             <p className={`mt-3 text-lg font-semibold ${isTermMode ? 'text-indigo-700' : 'text-blue-700'}`}>{selectedRoom?.name}</p>
             <p className="mt-2 text-sm text-slate-500">
               {isTermMode ? `ทุก${getDayLabel(termDow)} · ${startTime} - ${endTime} น.` : `${formatDate(date)} · ${startTime} - ${endTime} น.`}

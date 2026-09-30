@@ -99,7 +99,7 @@ class SequentialDuplicateTests(DuplicateBase, TestCase):
         second = self.client.post('/api/term-bookings/', payload, format='json')
         self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(second.status_code, 400)
-        self.assertEqual(TermBooking.objects.filter(status='active').count(), 1)
+        self.assertEqual(TermBooking.objects.filter(status='pending').count(), 1)
 
     def test_same_split_booking_twice_is_rejected(self):
         payload = {
@@ -115,7 +115,7 @@ class SequentialDuplicateTests(DuplicateBase, TestCase):
         second = self.client.post('/api/term-bookings/split-book/', payload, format='json')
         self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(second.status_code, 400)
-        self.assertEqual(TermBooking.objects.filter(status='active').count(), 2)
+        self.assertEqual(TermBooking.objects.filter(status='pending').count(), 2)
 
     def test_two_users_same_slot(self):
         other = User.objects.create_user(username='qa_user_b', password='x', role='student')

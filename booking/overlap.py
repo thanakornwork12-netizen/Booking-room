@@ -13,6 +13,9 @@ from django.utils import timezone
 from .models import Booking, MaintenanceBlock, TermBooking
 
 ACTIVE_BOOKING_STATUSES = ['pending', 'approved', 'checked_in']
+# คาบทั้งเทอมที่รออนุมัติกันช่วงเวลาไว้ด้วย เหมือน pending ของการจองรายครั้ง —
+# ไม่นับ สองคำขอที่ทับกันจะเข้าไปรออนุมัติพร้อมกันได้
+TERM_BLOCKING_STATUSES = ['pending', 'active']
 
 
 def recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, end_time, term_start, term_end):
@@ -60,7 +63,7 @@ def find_booking_conflict(room, start_time, end_time, exclude_pk=None, exclude_m
     local_end = timezone.localtime(end_time)
     for tb in TermBooking.objects.filter(
         room=room,
-        status='active',
+        status__in=TERM_BLOCKING_STATUSES,
         term_start__lte=local_end.date(),
         term_end__gte=local_start.date(),
     ):
@@ -93,7 +96,7 @@ def find_term_conflict(room, day_of_week, start_time, end_time, term_start, term
     terms = TermBooking.objects.filter(
         room=room,
         day_of_week=day_of_week,
-        status='active',
+        status__in=TERM_BLOCKING_STATUSES,
         term_start__lte=term_end,
         term_end__gte=term_start,
         start_time__lt=end_time,

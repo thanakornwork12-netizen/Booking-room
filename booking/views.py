@@ -30,7 +30,9 @@ from .models import (
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
-from .overlap import ACTIVE_BOOKING_STATUSES, find_booking_conflict, find_term_conflict
+from .overlap import (
+    ACTIVE_BOOKING_STATUSES, TERM_BLOCKING_STATUSES, find_booking_conflict, find_term_conflict,
+)
 from .permissions import IsAdminOrStaff, is_admin_or_staff
 from .serializers import (
     UserSerializer, RegisterSerializer,
@@ -372,7 +374,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         ).values_list('room_id', flat=True)
 
         booked_term = TermBooking.objects.filter(
-            day_of_week=target_dow, status='active',
+            day_of_week=target_dow, status__in=TERM_BLOCKING_STATUSES,
             term_start__lte=target_date, term_end__gte=target_date,
         ).exclude(start_time__gte=d['end_time']).exclude(end_time__lte=d['start_time'])\
          .values_list('room_id', flat=True)
@@ -405,7 +407,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         t_end   = d.get('term_end') or fallback_date
 
         booked_term = TermBooking.objects.filter(
-            day_of_week=dow, status='active',
+            day_of_week=dow, status__in=TERM_BLOCKING_STATUSES,
             term_start__lte=t_end, term_end__gte=t_start,
         ).exclude(start_time__gte=d['end_time']).exclude(end_time__lte=d['start_time'])\
          .values_list('room_id', flat=True)
@@ -544,7 +546,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         ).values_list('room_id', flat=True))
 
         booked_term = set(TermBooking.objects.filter(
-            day_of_week=target_dow, status='active',
+            day_of_week=target_dow, status__in=TERM_BLOCKING_STATUSES,
             term_start__lte=target_date, term_end__gte=target_date,
         ).exclude(start_time__gte=end_time).exclude(end_time__lte=start_time)
          .values_list('room_id', flat=True))
@@ -748,7 +750,7 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         target_dow = target_date.weekday()
         term_rows = TermBooking.objects.filter(
-            room_id__in=room_ids, day_of_week=target_dow, status='active',
+            room_id__in=room_ids, day_of_week=target_dow, status__in=TERM_BLOCKING_STATUSES,
             term_start__lte=target_date, term_end__gte=target_date,
         ).values_list('room_id', 'start_time', 'end_time')
         for room_id, s, e in term_rows:
@@ -1032,9 +1034,9 @@ class RoomViewSet(viewsets.ModelViewSet):
                 room=room, status__in=ACTIVE_BOOKING_STATUSES, start_time__date=target_date,
             ).values('start_time', 'end_time', 'title', 'attendees', 'status')),
             'term_bookings': list(TermBooking.objects.filter(
-                room=room, status='active', day_of_week=target_date.weekday(),
+                room=room, status__in=TERM_BLOCKING_STATUSES, day_of_week=target_date.weekday(),
                 term_start__lte=target_date, term_end__gte=target_date,
-            ).values('subject_name', 'start_time', 'end_time', 'attendees', 'term_name')),
+            ).values('subject_name', 'start_time', 'end_time', 'attendees', 'term_name', 'status')),
             'forecasts': list(room.forecasts.filter(forecast_date=target_date).values(
                 'hour', 'demand_level', 'availability', 'predicted_demand', 'term_demand', 'dynamic_demand'
             )),
@@ -1146,6 +1148,14 @@ class RoomViewSet(viewsets.ModelViewSet):
 # ============================================================
 # TERM BOOKING ViewSet
 # ============================================================
+def _term_summary(tb):
+    """ข้อความสรุปคาบทั้งเทอม ใช้ในแจ้งเตือนทุกแบบของการจองทั้งเทอม"""
+    return (f'ห้อง {tb.room.name} สำหรับ "{tb.subject_name}" '
+            f'ทุกวัน{tb.get_day_of_week_display()} '
+            f'{tb.start_time:%H:%M}–{tb.end_time:%H:%M} '
+            f'ตั้งแต่ {tb.term_start} ถึง {tb.term_end}')
+
+
 class TermBookingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
@@ -1198,35 +1208,53 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             self._lock_and_check(room, day_of_week, start_time, end_time, term_start, term_end)
-            term_booking = serializer.save(user=self.request.user, status='active')
+            # จองทั้งเทอมกันห้องไว้ทั้งเทอม จึงต้องผ่านการอนุมัติเหมือนจองรายครั้ง —
+            # เดิมบันทึกเป็น active ทันทีโดยไม่มีใครตรวจ
+            term_booking = serializer.save(user=self.request.user, status='pending')
             Notification.objects.create(
                 user=self.request.user, term_booking=term_booking,
-                type='term_approved', title='จองห้องทั้งเทอมสำเร็จ',
-                message=(f'จองห้อง {term_booking.room.name} สำหรับ "{term_booking.subject_name}" '
-                         f'ทุกวัน{term_booking.get_day_of_week_display()} '
-                         f'{term_booking.start_time:%H:%M}–{term_booking.end_time:%H:%M} '
-                         f'ตั้งแต่ {term_booking.term_start} ถึง {term_booking.term_end}')
+                type='term_pending', title='ส่งคำขอจองทั้งเทอมแล้ว',
+                message=f'คำขอจอง{_term_summary(term_booking)} ถูกส่งแล้ว กำลังรอแอดมินอนุมัติ'
             )
 
     def perform_update(self, serializer):
         tb = serializer.instance
-        if tb.status != 'active':
+        if tb.status not in TERM_BLOCKING_STATUSES:
             raise ValidationError({'detail': f'แก้ไขไม่ได้ สถานะปัจจุบัน: {tb.get_status_display()}'})
         data = serializer.validated_data
         room = data.get('room', tb.room)
+        slot_fields = ('day_of_week', 'start_time', 'end_time', 'term_start', 'term_end')
+        slot = {f: data.get(f, getattr(tb, f)) for f in slot_fields}
+
+        # เหมือนจองรายครั้ง: ผู้จองย้ายห้อง/วัน/เวลา/ช่วงเทอมของคาบที่อนุมัติแล้ว
+        # ต้องกลับไปรออนุมัติใหม่ (แอดมิน/สตาฟแก้เองไม่ต้องอนุมัติซ้ำ)
+        needs_reapproval = (
+            tb.status == 'active'
+            and not is_admin_or_staff(self.request.user)
+            and (room.pk != tb.room_id or any(slot[f] != getattr(tb, f) for f in slot_fields))
+        )
+
         with transaction.atomic():
             if room.pk != tb.room_id:
                 Room.objects.select_for_update().get(pk=tb.room_id)
-            self._lock_and_check(
-                room,
-                data.get('day_of_week', tb.day_of_week),
-                data.get('start_time', tb.start_time),
-                data.get('end_time', tb.end_time),
-                data.get('term_start', tb.term_start),
-                data.get('term_end', tb.term_end),
-                exclude_pk=tb.pk,
+            self._lock_and_check(room, *(slot[f] for f in slot_fields), exclude_pk=tb.pk)
+            if not needs_reapproval:
+                serializer.save()
+                return
+
+            tb = serializer.save(status='pending', approved_by=None)
+            BookingLog.objects.create(
+                term_booking=tb, changed_by=self.request.user,
+                old_status='active', new_status='pending',
+                remark='ผู้จองแก้ไขห้อง/วัน/เวลา ต้องอนุมัติใหม่',
             )
-            serializer.save()
+            Notification.objects.create(
+                user=tb.user, term_booking=tb,
+                type='term_pending', title='แก้ไขการจองทั้งเทอมแล้ว รออนุมัติใหม่',
+                message=f'การจอง{_term_summary(tb)} ถูกแก้ไข จึงต้องรอแอดมินอนุมัติใหม่อีกครั้ง'
+            )
+            from .signals import send_approval_request_email, send_email_after_commit
+            send_email_after_commit(send_approval_request_email, tb)
 
     def destroy(self, request, *args, **kwargs):
         tb = self.get_object()
@@ -1234,11 +1262,15 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
         if tb.status == 'cancelled':
             return Response({'error': 'ยกเลิกไปแล้ว'}, status=400)
+        if tb.status not in TERM_BLOCKING_STATUSES:
+            return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {tb.get_status_display()}'},
+                            status=400)
+        old = tb.status
         tb.status = 'cancelled'
         tb.save()
         BookingLog.objects.create(
             term_booking=tb, changed_by=request.user,
-            old_status='active', new_status='cancelled'
+            old_status=old, new_status='cancelled'
         )
         return Response({'message': 'ยกเลิกการจองทั้งเทอมเรียบร้อยแล้ว'})
 
@@ -1246,16 +1278,56 @@ class TermBookingViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
-        tb = self.get_object()
-        if tb.status == 'active':
-            return Response({'message': 'การจองทั้งเทอมนี้ใช้งานอยู่แล้ว'})
+        # ล็อกแถวคาบไว้ก่อนเช็ค/เปลี่ยนสถานะ เหมือน approve ของการจองรายครั้ง —
+        # กันแอดมินสองคนกดอนุมัติ/ปฏิเสธรายการเดียวกันพร้อมกัน
         with transaction.atomic():
+            tb = get_object_or_404(TermBooking.objects.select_for_update(), pk=pk)
+            if tb.status == 'active':
+                return Response({'message': 'การจองทั้งเทอมนี้ใช้งานอยู่แล้ว'})
+            if tb.status == 'pending' and tb.term_end < timezone.localdate():
+                return Response({'error': 'ไม่สามารถอนุมัติได้ ช่วงเทอมสิ้นสุดไปแล้ว'}, status=400)
+            old = tb.status
             self._lock_and_check(tb.room, tb.day_of_week, tb.start_time, tb.end_time,
                                  tb.term_start, tb.term_end, exclude_pk=tb.pk)
             tb.status = 'active'
             tb.approved_by = request.user
+            tb.reject_reason = ''
             tb.save()
+            BookingLog.objects.create(
+                term_booking=tb, changed_by=request.user,
+                old_status=old, new_status='active'
+            )
+            Notification.objects.create(
+                user=tb.user, term_booking=tb,
+                type='term_approved', title='การจองทั้งเทอมได้รับการอนุมัติ',
+                message=f'การจอง{_term_summary(tb)} ได้รับการอนุมัติแล้ว'
+            )
         return Response({'message': 'อนุมัติการจองทั้งเทอมแล้ว'})
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        if not is_admin_or_staff(request.user):
+            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
+
+        reason = (request.data.get('reason') or '').strip()
+        with transaction.atomic():
+            tb = get_object_or_404(TermBooking.objects.select_for_update(), pk=pk)
+            if tb.status != 'pending':
+                return Response({'error': 'ปฏิเสธได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
+            tb.status = 'rejected'
+            tb.approved_by = request.user
+            tb.reject_reason = reason
+            tb.save()
+            BookingLog.objects.create(
+                term_booking=tb, changed_by=request.user,
+                old_status='pending', new_status='rejected', remark=reason
+            )
+            Notification.objects.create(
+                user=tb.user, term_booking=tb,
+                type='term_rejected', title='การจองทั้งเทอมถูกปฏิเสธ',
+                message=f'การจอง{_term_summary(tb)} ถูกปฏิเสธ' + (f' เหตุผล: {reason}' if reason else '')
+            )
+        return Response({'message': 'ปฏิเสธการจองทั้งเทอมแล้ว'})
 
     @action(detail=False, methods=['get'])
     def calendar(self, request):
@@ -1326,7 +1398,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         def is_room_blocked(room_obj, period_start, period_end):
             return TermBooking.objects.filter(
                 room=room_obj,
-                day_of_week=dow, status='active',
+                day_of_week=dow, status__in=TERM_BLOCKING_STATUSES,
                 term_start__lte=period_end, term_end__gte=period_start,
             ).exclude(start_time__gte=end_t).exclude(end_time__lte=start_t).exists()
 
@@ -1492,25 +1564,20 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                                               d['end_time'], d['term_start'], d['term_end'])
                 if conflict:
                     return Response({'error': f'ห้อง{label}: {conflict}'}, status=400)
-            tb1, tb2 = (h.save(user=request.user, status='active') for h in halves)
+            tb1, tb2 = (h.save(user=request.user, status='pending') for h in halves)
 
         for tb in (tb1, tb2):
             Notification.objects.create(
                 user=request.user,
                 term_booking=tb,
-                type='term_approved',
-                title='จองห้องทั้งเทอม (สลับห้อง) สำเร็จ',
-                message=(
-                    f'จองห้อง {tb.room.name} สำหรับ "{tb.subject_name}" '
-                    f'ทุกวัน{tb.get_day_of_week_display()} '
-                    f'{tb.start_time:%H:%M}–{tb.end_time:%H:%M} '
-                    f'ตั้งแต่ {tb.term_start} ถึง {tb.term_end}'
-                ),
+                type='term_pending',
+                title='ส่งคำขอจองทั้งเทอม (สลับห้อง) แล้ว',
+                message=f'คำขอจอง{_term_summary(tb)} ถูกส่งแล้ว กำลังรอแอดมินอนุมัติ',
             )
 
         ser = TermBookingSerializer
         return Response({
-            'message': 'จองสลับห้องทั้ง 2 ช่วงเรียบร้อยแล้ว',
+            'message': 'ส่งคำขอจองสลับห้องทั้ง 2 ช่วงแล้ว กำลังรอแอดมินอนุมัติ',
             'first_booking':  ser(tb1, context={'request': request}).data,
             'second_booking': ser(tb2, context={'request': request}).data,
         }, status=201)
@@ -2156,7 +2223,8 @@ class DashboardView(generics.GenericAPIView):
             day_of_week=today.weekday(), status='active',
             term_start__lte=today, term_end__gte=today,
         ).count()
-        pending = Booking.objects.filter(status='pending').count()
+        pending = (Booking.objects.filter(status='pending').count()
+                   + TermBooking.objects.filter(status='pending').count())
         popular = (
             Booking.objects.filter(status__in=['approved', 'completed'])
             .values('room__name').annotate(count=Count('id')).order_by('-count')[:5]

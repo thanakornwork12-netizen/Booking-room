@@ -186,8 +186,20 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
 
 // --- Modals ---
 
+const TERM_STATUS = {
+  pending:   { label: 'รออนุมัติ',    cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  active:    { label: 'อนุมัติแล้ว',  cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  rejected:  { label: 'ถูกปฏิเสธ',    cls: 'bg-rose-100 text-rose-700 border-rose-200' },
+  cancelled: { label: 'ยกเลิกแล้ว',   cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+  ended:     { label: 'หมดเทอมแล้ว',  cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+}
+const termStatus = (tb) => TERM_STATUS[tb.status] || TERM_STATUS.pending
+const hhmm = (t) => (t || '').slice(0, 5)
+
 function TermBookingModal({ booking, onClose, onCancel }) {
   if (!booking) return null
+  const st = termStatus(booking)
+  const canCancel = booking.status === 'pending' || booking.status === 'active'
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white w-full sm:max-w-md max-h-[86vh] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-y-auto si flex flex-col">
@@ -204,6 +216,16 @@ function TermBookingModal({ booking, onClose, onCancel }) {
             <p className="text-lg font-bold leading-tight break-words">{booking.subject_name}</p>
             <p className="text-xs opacity-80 mt-1">{booking.subject_code || 'ไม่ระบุรหัสวิชา'}</p>
           </div>
+          <div className="mb-4 flex items-center gap-2">
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${st.cls}`}>{st.label}</span>
+            {booking.status === 'pending' && <span className="text-xs text-slate-500">รอแอดมินตรวจสอบ จะแจ้งผลทางอีเมล</span>}
+          </div>
+          {booking.status === 'rejected' && booking.reject_reason && (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3">
+              <p className="text-[10px] font-bold text-rose-700">เหตุผลที่ปฏิเสธ</p>
+              <p className="text-sm text-rose-800 break-words">{booking.reject_reason}</p>
+            </div>
+          )}
           <div className="space-y-3 mb-6">
             <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
               <Building2 size={16} className="text-purple-600 shrink-0" />
@@ -211,16 +233,18 @@ function TermBookingModal({ booking, onClose, onCancel }) {
             </div>
             <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
               <Clock size={16} className="text-purple-600 shrink-0" />
-              <div className="min-w-0"><p className="text-[10px] text-slate-400">วันและเวลาที่เรียน</p><p className="text-sm font-bold truncate">ทุกวัน{booking.day_name} | {booking.start_time_raw} - {booking.end_time_raw} น.</p></div>
+              <div className="min-w-0"><p className="text-[10px] text-slate-400">วันและเวลาที่เรียน</p><p className="text-sm font-bold truncate">ทุกวัน{booking.day_name} | {hhmm(booking.start_time)} - {hhmm(booking.end_time)} น.</p></div>
             </div>
             <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
               <CalendarDays size={16} className="text-purple-600 shrink-0" />
               <div className="min-w-0"><p className="text-[10px] text-slate-400">ระยะเวลาของเทอม</p><p className="text-sm font-bold truncate">{booking.term_name}</p></div>
             </div>
           </div>
-          <button onClick={() => onCancel(booking.id)} className="w-full py-3 text-red-600 font-bold text-sm border-2 border-red-100 rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
-            <XCircle size={16} /> ยกเลิกการจองรายเทอมนี้
-          </button>
+          {canCancel && (
+            <button onClick={() => onCancel(booking.id)} className="w-full py-3 text-red-600 font-bold text-sm border-2 border-red-100 rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
+              <XCircle size={16} /> {booking.status === 'pending' ? 'ยกเลิกคำขอจองรายเทอมนี้' : 'ยกเลิกการจองรายเทอมนี้'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -506,7 +530,8 @@ export default function HomePage() {
       ])
       setUser(p.data)
       setBookings(b.data.results || b.data || [])
-      setTermBookings(Array.isArray(t.data) ? t.data : (t.data.results || []))
+      // ซ่อนรายการที่ยกเลิกแล้ว — เหลือรออนุมัติ/อนุมัติแล้ว/ถูกปฏิเสธ (ให้เห็นเหตุผล)
+      setTermBookings((Array.isArray(t.data) ? t.data : (t.data.results || [])).filter(tb => tb.status !== 'cancelled'))
       // สุ่มระยะเวลาแนะนำต่อห้องแค่ครั้งเดียวตอนโหลด ไม่ใช่ตอน render การ์ด —
       // ดู pickRandomFittingDuration ใน utils/booking.js ว่าทำไมต้องสุ่มตรงนี้
       const feedRooms = (Array.isArray(feed.data) ? feed.data : []).map(room => ({
@@ -790,9 +815,12 @@ export default function HomePage() {
                     onClick={() => setSelectedTermBooking(tb)}
                     className="w-full rounded-xl border border-slate-100 bg-white p-2.5 text-left transition-all hover:border-purple-200 hover:bg-purple-50"
                   >
-                    <p className="mb-1 truncate text-xs font-bold text-slate-800">{tb.subject_name}</p>
+                    <div className="mb-1 flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{tb.subject_name}</p>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${termStatus(tb).cls}`}>{termStatus(tb).label}</span>
+                    </div>
                     <p className="flex items-center gap-1 truncate text-[11px] font-semibold text-purple-600">
-                      <Clock size={10} className="shrink-0" /> ทุกวัน{tb.day_name} | {tb.start_time_raw} น.
+                      <Clock size={10} className="shrink-0" /> ทุกวัน{tb.day_name} | {hhmm(tb.start_time)} น.
                     </p>
                   </button>
                 ))

@@ -607,7 +607,9 @@ const NOTIF_TYPE_ICON = {
   booking_rejected:  '❌',
   booking_reminder:  '⏰',
   booking_cancelled: '🚫',
+  term_pending:      '⏳',
   term_approved:     '📚',
+  term_rejected:     '❌',
   demand_alert:      '📈',
   system:            '🔔',
 }

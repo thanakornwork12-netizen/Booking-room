@@ -41,7 +41,7 @@ LAYOUT = {
     'user':             (400, 380),
     'booking':          (820, 40),
     'bookinglog':       (820, 470),
-    'termbooking':      (820, 720),
+    'termbooking':      (820, 698),
     'room':             (1330, 420),
     'maintenanceblock': (1330, 960),
     'building':         (1780, 442),

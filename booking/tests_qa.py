@@ -407,7 +407,7 @@ class TermQATests(QABase):
     def test_split_book_happy_path(self):
         r = self.client.post('/api/term-bookings/split-book/', self.split_payload(), format='json')
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual(TermBooking.objects.filter(status='active').count(), 2)
+        self.assertEqual(TermBooking.objects.filter(status='pending').count(), 2)
 
     def test_split_book_rejects_daily_booking_conflict(self):
         Booking.objects.create(user=self.user_b, room=self.room, title='ประชุม', attendees=5,

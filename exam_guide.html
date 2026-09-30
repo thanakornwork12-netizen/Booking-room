@@ -70,7 +70,7 @@ h2{font-size:20px;margin-top:48px}
 </style>
 
 <h1>สรุปเตรียมสอบ: ระบบจองห้องอัจฉริยะ UBU (Smart Room Booking)</h1>
-<p class="m">อัปเดต 30 ก.ย. 2569 · ตรวจทุกหัวข้อเทียบกับโค้ดจริงใน repo (commit d7f7049) · ตัวเลขผลโมเดล direct มาจากรัน 20260914-214913 ส่วนผลโมเดล production มาจาก <code>consolidated_results.csv</code></p>
+<p class="m">อัปเดต 30 ก.ย. 2569 · ตรวจทุกหัวข้อเทียบกับโค้ดจริงใน repo (หลัง commit d7f7049 รวมการอนุมัติจองทั้งเทอม) · ตัวเลขผลโมเดล direct มาจากรัน 20260914-214913 ส่วนผลโมเดล production มาจาก <code>consolidated_results.csv</code></p>
 
 
 <div class="start">
@@ -86,8 +86,8 @@ h2{font-size:20px;margin-top:48px}
 <dt>โมเดล direct ชุด C (test)</dt><dd>accuracy 0.813 · balanced 0.620 · MAE 1.44 ชม.</dd>
 <dt>Baseline (seasonal naive)</dt><dd>accuracy 0.737 · MAE 2.07 ชม.</dd>
 <dt>Production</dt><dd>โมเดลเดี่ยวชนะ 56/56 (LightGBM 47, XGBoost 9)</dd>
-<dt>การทดสอบ</dt><dd>255 เคสผ่านทั้งหมด · แก้บั๊ก 32 รายการ</dd>
-<dt>กฎที่โดนถามบ่อย</dt><dd>เช็คอินได้ 15 นาทีก่อนเริ่ม · จองยาวสุด 21 วัน · ล่วงหน้าไม่เกิน 365 วัน · JWT access 1 วัน, refresh 30 วัน</dd>
+<dt>การทดสอบ</dt><dd>272 เคสผ่านทั้งหมด · แก้บั๊ก 32 รายการ</dd>
+<dt>กฎที่โดนถามบ่อย</dt><dd>จองทุกแบบต้องอนุมัติ (รายครั้งและทั้งเทอม) · เช็คอินได้ 15 นาทีก่อนเริ่ม · จองยาวสุด 21 วัน · ล่วงหน้าไม่เกิน 365 วัน · JWT access 1 วัน, refresh 30 วัน</dd>
 </dl></div>
 <div class="w"><h3>สามเรื่องที่ห้ามตอบพลาด</h3>
 <ol>
@@ -132,7 +132,7 @@ h2{font-size:20px;margin-top:48px}
 <h3>ภาษาที่ใช้ แต่ละภาษาใช้ทำอะไร</h3>
 <div class="tw"><table>
 <tr><th>ภาษา</th><th>ใช้ตรงไหน</th><th>ปริมาณโดยประมาณ</th></tr>
-<tr><td><b>Python</b></td><td>Backend ทั้งหมด (Django), ส่วน AI/ML ทั้งหมด (เทรน พยากรณ์ ประเมินผล), สคริปต์จัดการข้อมูล</td><td class="n">backend ~6,700 บรรทัด (<code>views.py</code> 2,273 · <code>signals.py</code> 1,048 · <code>serializers.py</code> 891) · <code>forecast.py</code> ~4,800 บรรทัด</td></tr>
+<tr><td><b>Python</b></td><td>Backend ทั้งหมด (Django), ส่วน AI/ML ทั้งหมด (เทรน พยากรณ์ ประเมินผล), สคริปต์จัดการข้อมูล</td><td class="n">backend ~6,700 บรรทัด (<code>views.py</code> 2,341 · <code>signals.py</code> 1,112 · <code>serializers.py</code> 891) · <code>forecast.py</code> ~4,800 บรรทัด</td></tr>
 <tr><td><b>JavaScript (JSX)</b></td><td>Frontend ด้วย React: หน้าเว็บทุกหน้า, การเรียก API, จัดการ token</td><td class="n">~8,000 บรรทัด (<code>AdminPage.jsx</code> 2,159 · <code>SearchPage.jsx</code> 1,676 · <code>AppShell.jsx</code> 1,322)</td></tr>
 <tr><td><b>HTML/CSS</b></td><td>หน้าเว็บ (ผ่าน JSX) จัดสไตล์ด้วย Tailwind CSS · อีเมล HTML และหน้าเช็คอิน/ยกเลิกจากลิงก์อีเมล (สร้างจาก Python)</td><td>—</td></tr>
 <tr><td><b>SQL</b></td><td>ไม่ได้เขียนตรง ใช้ผ่าน Django ORM (เขียนเป็น Python แล้ว ORM แปลงเป็น SQL ให้)</td><td>—</td></tr>
@@ -210,7 +210,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td><code>booking/permissions.py</code></td><td>เช็คสิทธิ์ admin/staff ที่เดียว: <code>is_admin_or_staff()</code> และ permission class <code>IsAdminOrStaff</code></td></tr>
 <tr><td><code>booking/urls.py</code></td><td>ผูก URL เข้ากับ view (หัวข้อ 6)</td></tr>
 <tr><td><code>booking/ldap_auth.py</code></td><td>ล็อกอินกับ LDAP มหาวิทยาลัย</td></tr>
-<tr><td><code>booking/signals.py</code></td><td>ทำงานอัตโนมัติหลังบันทึกข้อมูล: อีเมล 8 แบบ + push WebSocket</td></tr>
+<tr><td><code>booking/signals.py</code></td><td>ทำงานอัตโนมัติหลังบันทึกข้อมูล: อีเมล 10 แบบ + push WebSocket</td></tr>
 <tr><td><code>booking/consumers.py</code>, <code>routing.py</code></td><td>WebSocket 3 ช่อง: สถานะห้อง, แจ้งเตือน, ความคืบหน้าการเทรน</td></tr>
 <tr><td><code>booking/scheduler.py</code></td><td>งานตามเวลา: เตือนเช็คอินก่อน 15 นาที</td></tr>
 <tr><td><code>booking/admin.py</code></td><td>หน้า Django admin</td></tr>
@@ -235,10 +235,10 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td>Room</td><td>FK Building, name, floor, capacity, room_type, status, is_active</td><td>status: available / occupied / maintenance / disabled · unique (building, name) · ลบ = ปิดใช้งาน (is_active=False) ไม่ลบจริง</td></tr>
 <tr><td>Facility / RoomFacility</td><td>name, icon / room, facility, quantity</td><td>อุปกรณ์ในห้องพร้อมจำนวน</td></tr>
 <tr><td>Booking (รายครั้ง)</td><td>user, room, title, attendees, start_time, end_time (DateTime), status, reject_reason, checked_in, checked_in_at, checkin_token (UUID), reminded, approved_by</td><td>status: pending → approved → checked_in / completed · หรือ rejected / cancelled</td></tr>
-<tr><td>TermBooking (ทั้งเทอม)</td><td>subject_name/code, attendees, day_of_week (0=จันทร์), start/end_time (TimeField), term_start/end (DateField), status</td><td>status: active / cancelled / ended · สร้างแล้ว active ทันที · <code>get_weekly_slots()</code> คืนทุกวันที่เกิดคาบจริง</td></tr>
+<tr><td>TermBooking (ทั้งเทอม)</td><td>subject_name/code, attendees, day_of_week (0=จันทร์), start/end_time (TimeField), term_start/end (DateField), status, reject_reason, approved_by</td><td>status: pending → active · หรือ rejected / cancelled / ended · สร้างแล้วเป็น pending ต้องให้ admin/staff อนุมัติ · <code>get_weekly_slots()</code> คืนทุกวันที่เกิดคาบจริง</td></tr>
 <tr><td>MaintenanceBlock</td><td>room, start/end_time (DateTime ข้ามวันได้), reason, status, predicted_demand_avg</td><td>status: scheduled / active / completed / cancelled · เก็บ demand เฉลี่ยจาก AI ช่วงนั้นให้แอดมินเลือกปิดตอนคนใช้น้อย</td></tr>
 <tr><td>DemandForecast</td><td>room, forecast_date, hour, predicted_demand (0–1), demand_level, availability, confidence, term_demand, dynamic_demand</td><td>unique (room, date, hour) · AI เขียน, หน้าเว็บอ่าน</td></tr>
-<tr><td>Notification</td><td>user, booking/term_booking, type (8 แบบ), title, message, is_read</td><td>บันทึกแล้ว signal push ผ่าน WebSocket ทันที</td></tr>
+<tr><td>Notification</td><td>user, booking/term_booking, type (10 แบบ), title, message, is_read</td><td>บันทึกแล้ว signal push ผ่าน WebSocket ทันที</td></tr>
 <tr><td>BookingLog</td><td>booking/term_booking, changed_by, old/new_status, remark</td><td>ประวัติการเปลี่ยนสถานะ (audit trail) เก็บเหตุผลที่ปฏิเสธด้วย</td></tr>
 <tr><td>RoomUsageStat</td><td>room, date, total/term/dynamic bookings, utilization_rate</td><td>สถิติรายวัน</td></tr></table></div>
 <p class="m">ความสัมพันธ์หลัก: Building 1–N Room · Room 1–N Booking / TermBooking / MaintenanceBlock / DemandForecast · User 1–N Booking / TermBooking / Notification</p>
@@ -276,7 +276,8 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td><code>GET bookings/{id}/logs/</code></td><td>ผู้เห็นการจองนั้น</td><td>ประวัติการเปลี่ยนสถานะ</td></tr>
 <tr><td><code>GET bookings/{id}/checkin/{token}/</code></td><td>ทุกคนที่มีลิงก์</td><td>เช็คอินจากลิงก์อีเมล (ได้หน้า HTML)</td></tr>
 <tr><td><code>GET/POST bookings/{id}/cancel-email/{token}/</code></td><td>ทุกคนที่มีลิงก์</td><td>GET = หน้ายืนยัน, POST = ยกเลิกจริง</td></tr>
-<tr><td rowspan="4">จองทั้งเทอม</td><td><code>GET/POST/DELETE term-bookings/</code></td><td>ล็อกอิน</td><td>ดู/สร้าง/ยกเลิก (DELETE = เปลี่ยนเป็น cancelled)</td></tr>
+<tr><td rowspan="5">จองทั้งเทอม</td><td><code>GET/POST/DELETE term-bookings/</code></td><td>ล็อกอิน</td><td>ดู/สร้างคำขอ (ได้สถานะ pending)/ยกเลิก (DELETE = เปลี่ยนเป็น cancelled)</td></tr>
+<tr><td><code>POST term-bookings/{id}/approve/</code>, <code>reject/</code></td><td>admin/staff</td><td>อนุมัติ/ปฏิเสธคำขอจองทั้งเทอม (ส่ง <code>reason</code> ได้ ไม่บังคับ)</td></tr>
 <tr><td><code>GET term-bookings/calendar/</code></td><td>ล็อกอิน</td><td>ปฏิทินคาบทั้งเทอม</td></tr>
 <tr><td><code>POST term-bookings/split-recommend/</code></td><td>ล็อกอิน</td><td>หาคู่ห้อง A (ครึ่งแรก) + B (ครึ่งหลัง)</td></tr>
 <tr><td><code>POST term-bookings/split-book/</code></td><td>ล็อกอิน</td><td>จองสลับห้องทั้งสองช่วงในครั้งเดียว</td></tr>
@@ -331,7 +332,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 
 <!-- ============================================================ -->
 <h2 id="s8">8. การจองห้อง (ทุกแบบ)</h2>
-<p class="tl"><span class="lab">สรุปสั้น</span>จองรายครั้งเริ่มที่ pending ต้องให้ admin/staff อนุมัติ แล้วเช็คอินได้ตั้งแต่ 15 นาทีก่อนเริ่ม จองทั้งเทอม active ทันที ทุกแบบตรวจการชนกับการจองอื่น คาบเรียน และช่วงปิดซ่อม</p>
+<p class="tl"><span class="lab">สรุปสั้น</span>จองรายครั้งเริ่มที่ pending ต้องให้ admin/staff อนุมัติ แล้วเช็คอินได้ตั้งแต่ 15 นาทีก่อนเริ่ม จองทั้งเทอมก็เริ่มที่ pending และต้องอนุมัติเหมือนกัน ทุกแบบตรวจการชนกับการจองอื่น คาบเรียน และช่วงปิดซ่อม</p>
 <h3>8.1 วงจรสถานะของการจองรายครั้ง</h3>
 <pre>สร้าง ──▶ pending (รออนุมัติ) ──approve──▶ approved ──เช็คอิน──▶ checked_in
              │                      │
@@ -392,10 +393,14 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 
 <h3>8.7 จองทั้งเทอม</h3>
 <ul>
-<li>เลือกห้อง, วันในสัปดาห์, เวลา, วันเริ่ม–สิ้นสุดเทอม → สร้างเป็น active ทันที (ไม่ต้องรออนุมัติ)</li>
+<li>เลือกห้อง, วันในสัปดาห์, เวลา, วันเริ่ม–สิ้นสุดเทอม → สร้างเป็น <b>pending</b> แล้วรอ admin/staff อนุมัติ (เดิมเป็น active ทันทีโดยไม่มีใครตรวจ ทั้งที่กันห้องไว้ทั้งเทอม)</li>
+<li><b>วงจรสถานะ:</b> pending → <code>approve</code> → active · pending → <code>reject</code> (ใส่เหตุผลได้) → rejected · pending/active → ยกเลิก → cancelled</li>
+<li>คำขอที่ pending <b>กันช่วงเวลาไว้แล้ว</b> เหมือน pending ของจองรายครั้ง คนอื่นจองทับไม่ได้ทั้งแบบรายครั้งและทั้งเทอม ถูกปฏิเสธหรือยกเลิกแล้วช่วงเวลาจึงกลับมาว่าง · คาบจะขึ้นปฏิทินและสถานะห้องสดเมื่อ active แล้วเท่านั้น</li>
+<li>ตอนอนุมัติ ระบบล็อกแถวคาบและแถวห้อง แล้วตรวจการชนซ้ำอีกรอบ · คำขอที่ช่วงเทอมจบไปแล้วอนุมัติไม่ได้ · ทุกการเปลี่ยนสถานะบันทึก BookingLog และแจ้งผู้จองทั้งในเว็บและอีเมล</li>
+<li>เจ้าของย้ายห้อง/วัน/เวลา/ช่วงเทอมของคาบที่อนุมัติแล้ว → กลับเป็น pending ต้องอนุมัติใหม่ (admin/staff แก้เองไม่ต้อง)</li>
 <li>ปฏิเสธเมื่อ: วันสิ้นสุดเทอมไม่หลังวันเริ่ม · ช่วงเทอมสิ้นสุดไปแล้ว ("ช่วงเทอมที่เลือกสิ้นสุดไปแล้ว ไม่สามารถจองย้อนหลังได้") ·ช่วงเทอมไม่มีวันนั้นเลย (เลือกเสาร์ แต่เทอมมีแค่ จ.–พ.) · ผู้เข้าร่วมเกินความจุ · ทับคาบทั้งเทอมอื่น · ทับการจองรายครั้งหรือช่วงปิดซ่อม<b>ในบางสัปดาห์</b> (ไล่ตรวจทุกสัปดาห์ ไม่ใช่แค่สัปดาห์แรก)</li>
 <li>บั๊กที่เคยเจอ: JavaScript นับ 0=อาทิตย์ แต่ Python นับ 0=จันทร์ ต้องแปลงก่อนส่ง (มีคำสั่ง <code>audit_term_dow</code> ไว้ตรวจข้อมูลเก่า)</li>
-<li><b>สลับห้อง</b> (<code>split-recommend</code> / <code>split-book</code>): ถ้าไม่มีห้องเดียวว่างทั้งเทอม ระบบหาคู่ห้อง A ครึ่งเทอมแรก + ห้อง B ครึ่งหลัง แล้วจองทั้งสองช่วงใน transaction เดียว</li>
+<li><b>สลับห้อง</b> (<code>split-recommend</code> / <code>split-book</code>): ถ้าไม่มีห้องเดียวว่างทั้งเทอม ระบบหาคู่ห้อง A ครึ่งเทอมแรก + ห้อง B ครึ่งหลัง แล้วส่งคำขอทั้งสองช่วงใน transaction เดียว (ได้ 2 รายการ pending แอดมินอนุมัติทีละรายการ)</li>
 </ul>
 
 <h3>8.8 ช่วงปิดซ่อมบำรุง</h3>
@@ -423,21 +428,23 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 
 <!-- ============================================================ -->
 <h2 id="s10">10. แจ้งเตือน อีเมล และงานเบื้องหลัง</h2>
-<p class="tl"><span class="lab">สรุปสั้น</span>แจ้งเตือนในเว็บเด้งทันทีผ่าน WebSocket อีเมล 8 แบบส่งผ่าน Brevo หลัง commit เท่านั้น งานเบื้องหลังมีงานเดียวคือเตือนเช็คอินก่อน 15 นาที</p>
+<p class="tl"><span class="lab">สรุปสั้น</span>แจ้งเตือนในเว็บเด้งทันทีผ่าน WebSocket อีเมล 10 แบบส่งผ่าน Brevo หลัง commit เท่านั้น งานเบื้องหลังมีงานเดียวคือเตือนเช็คอินก่อน 15 นาที</p>
 <h3>แจ้งเตือนในเว็บ</h3>
 <ul>
 <li>บันทึก <code>Notification</code> → signal <code>post_save</code> push เข้า group <code>user_{id}_notifications</code> → กระดิ่งในเว็บเด้งทันที ไม่ต้อง refresh</li>
-<li>ประเภท: รออนุมัติ, อนุมัติ, ปฏิเสธ, เตือนก่อนใช้, ยกเลิก, จองทั้งเทอมสำเร็จ, แจ้งเตือน demand สูง, ระบบ</li>
+<li>ประเภท 10 แบบ: รออนุมัติ, อนุมัติ, ปฏิเสธ, เตือนก่อนใช้, ยกเลิก, จองทั้งเทอมรออนุมัติ, จองทั้งเทอมได้รับอนุมัติ, จองทั้งเทอมถูกปฏิเสธ, แจ้งเตือน demand สูง, ระบบ</li>
 <li>การจองเปลี่ยนสถานะ → push อัปเดตสถานะห้องเข้า <code>ws/rooms/</code></li>
 </ul>
-<h3>อีเมล 8 แบบ (<code>signals.py</code>)</h3>
+<h3>อีเมล 10 แบบ (<code>signals.py</code>)</h3>
 <ol>
 <li>ต้อนรับหลังสมัคร</li>
 <li>ลิงก์รีเซ็ตรหัสผ่าน</li>
-<li>ขออนุมัติ ส่งถึงผู้อนุมัติ</li>
+<li>ขออนุมัติ ส่งถึงผู้อนุมัติ (ทั้งจองรายครั้งและจองทั้งเทอม)</li>
 <li>รับคำขอจองแล้ว (รออนุมัติ)</li>
 <li>ยืนยันการจองที่อนุมัติแล้ว (มีลิงก์เช็คอิน/ยกเลิก)</li>
-<li>ยืนยันจองทั้งเทอม</li>
+<li>รับคำขอจองทั้งเทอมแล้ว (รออนุมัติ)</li>
+<li>ยืนยันจองทั้งเทอมที่อนุมัติแล้ว</li>
+<li>แจ้งปฏิเสธจองทั้งเทอม พร้อมเหตุผล</li>
 <li>แจ้งยกเลิก</li>
 <li>แจ้งปฏิเสธ พร้อมเหตุผล</li>
 </ol>
@@ -460,10 +467,10 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td><code>/</code></td><td>LandingPage</td><td>ทุกคน</td><td>หน้าแนะนำระบบ</td></tr>
 <tr><td><code>/login</code>, <code>/register</code></td><td>LoginPage, RegisterPage</td><td>ทุกคน</td><td>ล็อกอิน (มี "จดจำการเข้าสู่ระบบ") / สมัคร (เลือกบทบาท, รหัสนักศึกษาเฉพาะนักศึกษา)</td></tr>
 <tr><td><code>/reset-password/:uid/:token</code></td><td>ResetPasswordPage</td><td>มีลิงก์</td><td>ตั้งรหัสใหม่</td></tr>
-<tr><td><code>/home</code></td><td>HomePage</td><td>ล็อกอิน</td><td>การจองของฉัน (รายครั้ง + ทั้งเทอม) พร้อมปุ่มเช็คอิน/ยกเลิก, ฟีดห้องว่างวันนี้ และจองด่วนจากฟีด</td></tr>
+<tr><td><code>/home</code></td><td>HomePage</td><td>ล็อกอิน</td><td>การจองของฉัน (รายครั้ง + ทั้งเทอม พร้อมป้ายสถานะรออนุมัติ/อนุมัติแล้ว/ถูกปฏิเสธ) พร้อมปุ่มเช็คอิน/ยกเลิก, ฟีดห้องว่างวันนี้ และจองด่วนจากฟีด</td></tr>
 <tr><td><code>/search</code></td><td>SearchPage</td><td>ล็อกอิน</td><td>ค้นหา กรอง ดูผล AI จองรายครั้ง/ทั้งเทอม/สลับห้อง</td></tr>
 <tr><td><code>/guide</code>, <code>/profile</code></td><td>GuidePage, ProfilePage</td><td>ล็อกอิน</td><td>คู่มือใช้งาน / หน้าโปรไฟล์จอเดียว: แก้โปรไฟล์, ประวัติการจองพร้อมปุ่มยกเลิก/เช็คอิน, เปลี่ยนรหัส (ได้ token ใหม่ทันที ไม่หลุดออกจากระบบ), ลบบัญชี</td></tr>
-<tr><td><code>/admin/dashboard</code></td><td>AdminPage</td><td>staff/admin</td><td>อนุมัติ/ปฏิเสธ, จัดการห้อง อาคาร ช่วงปิดซ่อม, สถิติ, export Excel</td></tr>
+<tr><td><code>/admin/dashboard</code></td><td>AdminPage</td><td>staff/admin</td><td>อนุมัติ/ปฏิเสธ (ทั้งจองรายครั้งและจองทั้งเทอม), จัดการห้อง อาคาร ช่วงปิดซ่อม, สถิติ, export Excel</td></tr>
 </table></div>
 <ul>
 <li><code>AppShell.jsx</code>: โครงหน้าที่ใช้ร่วมกัน (เมนู, กระดิ่งแจ้งเตือน, เชื่อม WebSocket)</li>
@@ -597,10 +604,10 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 
 <!-- ============================================================ -->
 <h2 id="s16">16. การทดสอบระบบ</h2>
-<p class="tl"><span class="lab">สรุปสั้น</span>เทสต์อัตโนมัติ 255 เคสผ่านทั้งหมด จากการทดสอบเจอและแก้บั๊ก 32 รายการ</p>
+<p class="tl"><span class="lab">สรุปสั้น</span>เทสต์อัตโนมัติ 272 เคสผ่านทั้งหมด จากการทดสอบเจอและแก้บั๊ก 32 รายการ</p>
 <ul>
 <li>ใช้ Django <code>TestCase</code> + DRF <code>APIClient</code> ยิง API จริงบนฐานข้อมูลทดสอบที่สร้างแยกทุกครั้ง (ไม่แตะข้อมูลจริง)</li>
-<li>รันทั้งหมด: <code>python manage.py test booking --noinput</code> → <b>255 เคส ผ่านทั้งหมด</b> (รันล่าสุด 30 ก.ย.) (<code>--noinput</code> ให้ลบฐานทดสอบที่ค้างจากรอบก่อนเองโดยไม่ถามยืนยัน)</li>
+<li>รันทั้งหมด: <code>python manage.py test booking --noinput</code> → <b>272 เคส ผ่านทั้งหมด</b> (รันล่าสุด 30 ก.ย.) (<code>--noinput</code> ให้ลบฐานทดสอบที่ค้างจากรอบก่อนเองโดยไม่ถามยืนยัน)</li>
 <li><code>tests_blocktest.py</code>: แผนทดสอบ T01–T30 ตามเอกสาร Block Test (สมัคร, ล็อกอิน, จอง, อนุมัติ, เช็คอิน, ยกเลิก, จองทั้งเทอม) ผลกรอกไว้ใน <code>Test_Cases_BlockTest_Result.xlsx</code></li>
 <li><code>tests_booking_edge.py</code>: เคสขอบของการจอง (ข้อมูลผิดรูปแบบ, การทับทุกแบบ, แก้ไขการจอง, สิทธิ์, เรื่องเวลา)</li>
 <li><code>tests_security.py</code>: การ escape หน้า HTML จากลิงก์อีเมล และช่วงปิดซ่อมข้ามวัน</li>
@@ -610,6 +617,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <li><code>tests_adversarial.py</code>: ทดสอบแบบจงใจหาช่องโหว่: ข้อมูลแปลก, token ปลอม/ค้าง, ยึดบัญชี, export, ลิงก์อีเมล, WebSocket</li>
 <li><code>tests_qa.py</code>: QA ทุกระบบที่เหลือ: สมัคร/โปรไฟล์/เปลี่ยนและรีเซ็ตรหัส/ลบบัญชี, ค้นหาห้อง, จองทั้งเทอมและสลับห้อง, แจ้งเตือน, อาคาร, พารามิเตอร์ผิดรูปแบบ</li>
 <li><code>tests_probe_weird.py</code>: เคสแปลกรอบล่าสุด: ย้ายเวลาหลังอนุมัติ, แก้ไขช่วงปิดซ่อม, อีเมลซ้ำ, เวลาไทยในอีเมล/dashboard/export, การ escape ในอีเมล, ค้นหาห้องรายครั้งและทั้งเทอม</li>
+<li><code>tests_term_approval.py</code>: การอนุมัติจองทั้งเทอม: สร้างแล้วเป็น pending, pending กันช่วงเวลา, สิทธิ์อนุมัติ/ปฏิเสธ, ปฏิเสธแล้วช่วงเวลาว่าง, แก้ไขหลังอนุมัติต้องอนุมัติใหม่, อีเมลแต่ละขั้น</li>
 </ul>
 <h3>บั๊กที่พบจากการทดสอบและแก้แล้ว</h3>
 <div class="tw"><table><tr><th>บั๊ก</th><th>ผลกระทบ</th><th>วิธีแก้</th></tr>
@@ -721,6 +729,13 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 </ul></details>
 <details><summary>จองพร้อมกัน 2 คนเกิดอะไร?</summary>
 <p><code>select_for_update</code> ล็อกแถว Room ใน transaction คนที่สองต้องรอจนคนแรก commit แล้วตรวจซ้ำจะเห็นว่าห้องไม่ว่าง ได้ข้อความ "มีคนจองพร้อมกัน"</p></details>
+<details><summary>จองทั้งเทอมต้องอนุมัติไหม ต่างจากจองรายครั้งยังไง?</summary>
+<ul>
+<li>ต้องอนุมัติเหมือนกัน: สร้างแล้วเป็น pending ให้ admin/staff กด approve จึงเป็น active หรือ reject พร้อมเหตุผล</li>
+<li>เหตุผล: จองทั้งเทอมกันห้องไว้ทุกสัปดาห์ตลอดเทอม ผลกระทบมากกว่าจองรายครั้ง จึงไม่ควรมีผลโดยไม่มีคนตรวจ</li>
+<li>ระหว่างรออนุมัติ ช่วงเวลาถูกกันไว้แล้ว กันสองคำขอที่ทับกันเข้าไปรออนุมัติพร้อมกัน</li>
+<li>ที่ต่าง: จองทั้งเทอมไม่มีขั้นเช็คอิน และสถานะที่ใช้งานอยู่เรียกว่า active (จองรายครั้งเรียก approved)</li>
+</ul></details>
 <details><summary>ทำไมต้องมีเช็คอิน?</summary>
 <p>แก้ปัญหา no-show: เปิดเช็คอินก่อน 15 นาทีถึงเวลาจบ พร้อมอีเมลเตือนที่มีลิงก์ยกเลิก ถ้าไม่มาก็ยกเลิกได้ง่าย ห้องกลับมาว่างให้คนอื่น</p></details>
 <details><summary>ยกเลิกทางอีเมลไม่ต้องล็อกอิน ไม่อันตรายเหรอ?</summary>
@@ -739,7 +754,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 </ul></details>
 <details><summary>ทดสอบระบบยังไง เจออะไรบ้าง?</summary>
 <ul>
-<li>เขียนเทสต์อัตโนมัติ 255 เคสยิง API จริงบนฐานข้อมูลทดสอบแยก ครอบคลุมแผน T01–T30 เคสขอบของการจอง ความปลอดภัย สิทธิ์แอดมิน และอีเมล ผ่านทั้งหมด</li>
+<li>เขียนเทสต์อัตโนมัติ 272 เคสยิง API จริงบนฐานข้อมูลทดสอบแยก ครอบคลุมแผน T01–T30 เคสขอบของการจอง ความปลอดภัย สิทธิ์แอดมิน และอีเมล ผ่านทั้งหมด</li>
 <li>จากการทดสอบเจอและแก้บั๊ก 32 รายการ เช่น แก้ไขการจองแล้วข้ามการตรวจ, ย้ายเวลาหลังอนุมัติโดยไม่ต้องอนุมัติใหม่, จองสลับห้องทับการจองอื่น, ห้องที่เช็คอินอยู่ขึ้นว่าว่าง, เวลาในอีเมลเตือนเร็วไป 7 ชั่วโมง, XSS ในหน้าจากลิงก์อีเมล (หัวข้อ 16)</li>
 </ul></details>
 <details><summary>ทำไมรหัสผ่านผิดได้ 400 ไม่ใช่ 401?</summary>

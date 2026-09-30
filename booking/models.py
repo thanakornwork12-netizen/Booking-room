@@ -107,7 +107,9 @@ class RoomFacility(models.Model):
 # ============================================================
 class TermBooking(models.Model):
     STATUS_CHOICES = [
+        ('pending',   'รออนุมัติ'),
         ('active',    'ใช้งานอยู่'),
+        ('rejected',  'ถูกปฏิเสธ'),
         ('cancelled', 'ยกเลิกแล้ว'),
         ('ended',     'หมดเทอมแล้ว'),
     ]
@@ -132,7 +134,8 @@ class TermBooking(models.Model):
     term_start    = models.DateField(verbose_name='วันเริ่มเทอม')
     term_end      = models.DateField(verbose_name='วันสิ้นสุดเทอม')
     term_name     = models.CharField(max_length=50, blank=True, verbose_name='ชื่อเทอม')
-    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    reject_reason = models.TextField(blank=True, verbose_name='เหตุผลที่ปฏิเสธ')
     note          = models.TextField(blank=True)
     approved_by   = models.ForeignKey(
         User, null=True, blank=True,
@@ -295,7 +298,9 @@ class Notification(models.Model):
         ('booking_rejected',  'การจองถูกปฏิเสธ'),
         ('booking_reminder',  'เตือนก่อนใช้งาน'),
         ('booking_cancelled', 'การจองถูกยกเลิก'),
+        ('term_pending',      'การจองทั้งเทอมรออนุมัติ'),
         ('term_approved',     'การจองทั้งเทอมได้รับอนุมัติ'),
+        ('term_rejected',     'การจองทั้งเทอมถูกปฏิเสธ'),
         ('demand_alert',      'แจ้งเตือนความต้องการสูง'),
         ('system',            'ระบบ'),
     ]

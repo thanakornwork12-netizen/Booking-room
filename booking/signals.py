@@ -121,11 +121,30 @@ def broadcast_booking_update(sender, instance, created, **kwargs):
         logger.exception('ส่ง WebSocket booking update ไม่สำเร็จ')
 
 
+@receiver(pre_save, sender=TermBooking)
+def stash_old_term_status(sender, instance, **kwargs):
+    """เหมือน stash_old_booking_status — ให้ post_save รู้ว่าสถานะเปลี่ยนจากอะไร"""
+    if not instance.pk:
+        instance._old_status = None
+        return
+    instance._old_status = TermBooking.objects.filter(pk=instance.pk).values_list('status', flat=True).first()
+
+
 @receiver(post_save, sender=TermBooking)
 def send_term_booking_email(sender, instance, created, **kwargs):
-    if created:
-        send_email_after_commit(send_term_booking_confirmation_email, instance)
+    """อีเมลตามการเปลี่ยนสถานะของการจองทั้งเทอม (ลำดับเดียวกับจองรายครั้ง)"""
+    old_status = getattr(instance, '_old_status', None)
+
+    if created and instance.status == 'pending':
+        send_email_after_commit(send_term_booking_pending_email, instance)
         send_email_after_commit(send_approval_request_email, instance)
+    elif created and instance.status == 'active':
+        # สร้างเป็น active ตรง ๆ (Django admin/นำเข้าข้อมูล) — ไม่ผ่านขั้นรออนุมัติ
+        send_email_after_commit(send_term_booking_confirmation_email, instance)
+    elif old_status == 'pending' and instance.status == 'active':
+        send_email_after_commit(send_term_booking_confirmation_email, instance)
+    elif old_status == 'pending' and instance.status == 'rejected':
+        send_email_after_commit(send_term_booking_rejected_email, instance)
 
 
 @receiver(post_save, sender=Notification)
@@ -721,18 +740,19 @@ def send_booking_confirmation_email(instance):
       log_email_error('ส่งอีเมลยืนยันไม่สำเร็จ', e)
 
 
-def send_term_booking_confirmation_email(instance):
-    """ส่งอีเมลยืนยันเมื่อจองทั้งเทอมสำเร็จ"""
+def _send_term_booking_email(instance, *, subject, heading, intro, header_bg, log_label, reason=''):
+    """อีเมลถึงผู้จองทั้งเทอม — ใช้ร่วมกันทั้งรับคำขอ / อนุมัติ / ปฏิเสธ"""
     user_email = get_recipient_email(instance.user)
     if not user_email:
-        logger.warning('ไม่ส่งอีเมลจองทั้งเทอม เพราะ user %s ไม่มี email', instance.user_id)
+        logger.warning('ไม่ส่งอีเมล%s เพราะ user %s ไม่มี email', log_label, instance.user_id)
         return
 
     day_name = instance.get_day_of_week_display()
+    name = instance.user.get_full_name() or instance.user.username
     plain_text = f'''
-สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
+สวัสดีคุณ {name}
 
-การจองห้องทั้งเทอมของคุณสำเร็จแล้ว
+{intro}
 
 รายละเอียดการจอง
 ─────────────────────────
@@ -744,23 +764,32 @@ def send_term_booking_confirmation_email(instance):
 ช่วงเทอม  : {instance.term_start} ถึง {instance.term_end}
 ผู้เข้าร่วม: {instance.attendees} คน
 ─────────────────────────
+{f"เหตุผล: {reason}" if reason else ""}
 
 ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
+
+    # reason เป็นข้อความที่แอดมินพิมพ์เอง ต้อง escape ก่อนฝังใน HTML
+    reason_html = f'''
+      <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:16px;margin:0 0 8px;">
+        <p style="margin:0 0 4px;font-size:13px;color:#991b1b;font-weight:bold;">เหตุผลที่ปฏิเสธ</p>
+        <p style="margin:0;font-size:14px;color:#7f1d1d;">{escape(reason)}</p>
+      </div>
+    ''' if reason else ''
 
     html_message = f'''
 <!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
   <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-    <div style="background:#4338ca;padding:28px 32px;">
-      <h1 style="color:white;margin:0;font-size:22px;">ยืนยันการจองห้องทั้งเทอมสำเร็จ</h1>
-      <p style="color:#c7d2fe;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
+    <div style="background:{header_bg};padding:28px 32px;">
+      <h1 style="color:white;margin:0;font-size:22px;">{escape(heading)}</h1>
+      <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
     <div style="padding:28px 32px;">
-      <p style="font-size:16px;color:#374151;">สวัสดีคุณ <b>{escape(instance.user.get_full_name() or instance.user.username)}</b></p>
-      <p style="color:#6b7280;">การจองห้องทั้งเทอมของคุณสำเร็จแล้ว รายละเอียดด้านล่างครับ</p>
+      <p style="font-size:16px;color:#374151;">สวัสดีคุณ <b>{escape(name)}</b></p>
+      <p style="color:#6b7280;">{escape(intro)}</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;">
         <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;width:40%;">ห้อง</td><td style="padding:10px 12px;font-weight:bold;color:#111827;">{escape(instance.room.name)}</td></tr>
         <tr><td style="padding:10px 12px;color:#6b7280;">อาคาร</td><td style="padding:10px 12px;color:#111827;">{escape(instance.room.building.name)}</td></tr>
@@ -769,6 +798,7 @@ def send_term_booking_confirmation_email(instance):
         <tr style="background:#eef2ff;"><td style="padding:10px 12px;color:#6b7280;">ช่วงเทอม</td><td style="padding:10px 12px;color:#111827;">{instance.term_start} ถึง {instance.term_end}</td></tr>
         <tr><td style="padding:10px 12px;color:#6b7280;">ผู้เข้าร่วม</td><td style="padding:10px 12px;color:#111827;">{instance.attendees} คน</td></tr>
       </table>
+      {reason_html}
     </div>
   </div>
 </body>
@@ -776,16 +806,16 @@ def send_term_booking_confirmation_email(instance):
     '''
 
     try:
-      logger.info(
-        'Attempting send_mail to %s (term instance id=%s) via %s:%s backend=%s',
-        user_email,
-        getattr(instance, 'id', None),
-        getattr(settings, 'EMAIL_HOST', None),
-        getattr(settings, 'EMAIL_PORT', None),
-        getattr(settings, 'EMAIL_BACKEND', None),
-      )
-      send_mail(
-            subject=f'ยืนยันการจองห้องทั้งเทอม {instance.room.name}',
+        logger.info(
+            'Attempting send_mail to %s (term instance id=%s) via %s:%s backend=%s',
+            user_email,
+            getattr(instance, 'id', None),
+            getattr(settings, 'EMAIL_HOST', None),
+            getattr(settings, 'EMAIL_PORT', None),
+            getattr(settings, 'EMAIL_BACKEND', None),
+        )
+        send_mail(
+            subject=subject,
             message=plain_text,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user_email],
@@ -793,7 +823,41 @@ def send_term_booking_confirmation_email(instance):
             fail_silently=False,
         )
     except Exception as e:
-        log_email_error('ส่งอีเมลยืนยันจองทั้งเทอมไม่สำเร็จ', e)
+        log_email_error(f'ส่งอีเมล{log_label}ไม่สำเร็จ', e)
+
+
+def send_term_booking_pending_email(instance):
+    """ส่งอีเมลเมื่อรับคำขอจองทั้งเทอมแล้ว (รออนุมัติ)"""
+    _send_term_booking_email(
+        instance,
+        subject=f'รับคำขอจองห้องทั้งเทอม {instance.room.name} แล้ว (รออนุมัติ)',
+        heading='รับคำขอจองห้องทั้งเทอมแล้ว',
+        intro='ระบบได้รับคำขอจองห้องทั้งเทอมของคุณแล้ว กำลังรอแอดมินอนุมัติ จะแจ้งผลให้ทราบทางอีเมลอีกครั้ง',
+        header_bg='#b45309', log_label='รับคำขอจองทั้งเทอม',
+    )
+
+
+def send_term_booking_confirmation_email(instance):
+    """ส่งอีเมลยืนยันเมื่อการจองทั้งเทอมได้รับอนุมัติ"""
+    _send_term_booking_email(
+        instance,
+        subject=f'ยืนยันการจองห้องทั้งเทอม {instance.room.name}',
+        heading='การจองห้องทั้งเทอมได้รับการอนุมัติ',
+        intro='การจองห้องทั้งเทอมของคุณได้รับการอนุมัติแล้ว รายละเอียดด้านล่างครับ',
+        header_bg='#4338ca', log_label='ยืนยันจองทั้งเทอม',
+    )
+
+
+def send_term_booking_rejected_email(instance):
+    """ส่งอีเมลเมื่อแอดมินปฏิเสธคำขอจองทั้งเทอม"""
+    _send_term_booking_email(
+        instance,
+        subject=f'คำขอจองห้องทั้งเทอม {instance.room.name} ถูกปฏิเสธ',
+        heading='คำขอจองห้องทั้งเทอมถูกปฏิเสธ',
+        intro='คำขอจองห้องทั้งเทอมของคุณถูกปฏิเสธ หากต้องการจองห้องอื่นหรือช่วงเวลาอื่น เข้าระบบเพื่อจองใหม่ได้เลย',
+        header_bg='#be123c', log_label='ปฏิเสธจองทั้งเทอม',
+        reason=(instance.reject_reason or '').strip(),
+    )
 
 
 def send_booking_cancelled_email(instance):

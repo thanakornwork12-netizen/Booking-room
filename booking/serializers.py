@@ -351,9 +351,9 @@ class TermBookingSerializer(serializers.ModelSerializer):
             'subject_name', 'subject_code', 'attendees',
             'day_of_week', 'day_name', 'start_time', 'end_time',
             'term_start', 'term_end', 'term_name',
-            'status', 'note', 'total_weeks', 'created_at',
+            'status', 'reject_reason', 'note', 'total_weeks', 'created_at',
         ]
-        read_only_fields = ['id', 'user', 'status', 'created_at']
+        read_only_fields = ['id', 'user', 'status', 'reject_reason', 'created_at']
 
     def get_total_weeks(self, obj):
         return len(obj.get_weekly_slots())
