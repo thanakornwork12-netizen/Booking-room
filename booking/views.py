@@ -401,7 +401,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         return Response(self._enrich_rooms(results, target_date, d['start_time'], d['end_time'], 'dynamic', request))
 
     def _search_term(self, d, request):
-        fallback_date = d.get('date') or date_type.today()
+        fallback_date = d.get('date') or timezone.localdate()
         dow     = d.get('day_of_week', fallback_date.weekday())
         t_start = d.get('term_start') or fallback_date
         t_end   = d.get('term_end') or fallback_date
@@ -434,7 +434,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             if find_term_conflict(r, dow, d['start_time'], d['end_time'], t_start, t_end) is None
         ]
 
-        today = date_type.today()
+        today = timezone.localdate()
         forecast_target_date = today
         for i in range(14):
             test_date = today + timedelta(days=i)
@@ -607,7 +607,7 @@ class RoomViewSet(viewsets.ModelViewSet):
                     reasons.insert(0, 'ว่างตามเวลาที่เลือก')
                 else:
                     reasons.insert(0, time_label)
-                scored.append((sc, room, ' · '.join(reasons[:4])))
+                scored.append((sc, room, ' · '.join(reasons[:4]), (st, et)))
             scored.sort(key=lambda x: (-x[0], x[1].capacity))
             return scored
 
@@ -620,7 +620,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             relaxed = base_qs.exclude(id__in=blocked).filter(
                 capacity__gte=max(1, attendees - 2),
             )
-            seen = {r.id for _, r, _ in all_scored}
+            seen = {r.id for _, r, _, _ in all_scored}
             for room in relaxed:
                 if room.id in seen or room.capacity < attendees:
                     continue
@@ -631,7 +631,7 @@ class RoomViewSet(viewsets.ModelViewSet):
                     sc = 5
                     reasons = [f'รองรับ {room.capacity} คน (ขยายจากเงื่อนไขเดิม)']
                 reasons.insert(0, 'ว่างตามเวลาที่เลือก')
-                all_scored.append((sc - 5, room, ' · '.join(reasons[:4])))
+                all_scored.append((sc - 5, room, ' · '.join(reasons[:4]), (start_time, end_time)))
                 seen.add(room.id)
 
         # Tier 3: ช่วงเวลาใกล้เคียง ±30 / ±60 นาที
@@ -640,33 +640,44 @@ class RoomViewSet(viewsets.ModelViewSet):
             et_dt = datetime.combine(target_date, end_time)
             duration = et_dt - st_dt
             offsets = [30, -30, 60, -60]
-            seen = {r.id for _, r, _ in all_scored}
+            seen = {r.id for _, r, _, _ in all_scored}
+            now_local = timezone.localtime().replace(tzinfo=None)
             for mins in offsets:
                 new_st = (st_dt + timedelta(minutes=mins)).time()
                 new_et = (st_dt + timedelta(minutes=mins) + duration).time()
                 if new_st >= new_et:
                     continue
+                # เลื่อนเวลาถอยหลังแล้วเลยเวลาปัจจุบันไปแล้ว — จองไม่ได้ ไม่ต้องแนะนำ
+                if datetime.combine(target_date, new_st) <= now_local:
+                    continue
                 label = f'เวลาใกล้เคียง {new_st.strftime("%H:%M")}–{new_et.strftime("%H:%M")}'
-                for sc, room, reason in collect_for_slot(new_st, new_et, label):
+                for sc, room, reason, slot in collect_for_slot(new_st, new_et, label):
                     if room.id in seen:
                         continue
-                    all_scored.append((sc - 15, room, reason))
+                    all_scored.append((sc - 15, room, reason, slot))
                     seen.add(room.id)
                     if len(all_scored) >= max_results * 2:
                         break
 
         all_scored.sort(key=lambda x: (-x[0], x[1].capacity))
-        top_rooms = [r for _, r, _ in all_scored[:max_results]]
+        top_rooms = [r for _, r, _, _ in all_scored[:max_results]]
 
         enriched = []
         if top_rooms:
             enriched = self._enrich_rooms(
                 top_rooms, target_date, start_time, end_time, 'dynamic', request,
             )
-            reason_map = {r.id: reason for _, r, reason in all_scored[:max_results]}
+            reason_map = {r.id: reason for _, r, reason, _ in all_scored[:max_results]}
+            slot_map = {r.id: slot for _, r, _, slot in all_scored[:max_results]}
             for item in enriched:
                 item['is_similar_recommendation'] = True
                 item['recommendation_reason'] = reason_map.get(item['id'], 'ห้องใกล้เคียงที่ว่าง')
+                # ห้องที่ว่างแค่ "เวลาใกล้เคียง" ต้องบอกเวลาใหม่ให้หน้าเว็บด้วย — เดิม
+                # บอกแค่ในข้อความ หน้าเว็บจึงจองเวลาเดิมซึ่งห้องไม่ว่าง แล้วโดนปฏิเสธ
+                st, et = slot_map.get(item['id'], (start_time, end_time))
+                if (st, et) != (start_time, end_time):
+                    item['suggested_start_time'] = st.strftime('%H:%M')
+                    item['suggested_end_time'] = et.strftime('%H:%M')
 
         # Tier 4: วันเดียวกันหาห้องไม่ได้เลย (หรือได้ไม่ครบ) — ลองห้องเดิม/ห้องใกล้
         # เคียงแบบเดียวกันแต่ขยับไปวันอื่นแทน (พรุ่งนี้ / มะรืนนี้ / 3 วันถัดไป) คนละ
@@ -816,9 +827,11 @@ class RoomViewSet(viewsets.ModelViewSet):
             limit = 5
 
         rooms_by_id = {
+            # ไม่กรอง status='available' — status คือสถานะ ณ ตอนนี้ ห้องที่ซ่อม
+            # เสร็จช่วงบ่ายก็ควรติดฟีด ช่วงซ่อมจริงถูกนับใน _rooms_next_free_window แล้ว
             r.id: r for r in Room.objects.filter(
-                is_active=True, status='available', id__in=AI_FORECAST_ROOM_IDS,
-            ).select_related('building').prefetch_related('room_facilities__facility', 'forecasts')
+                is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+            ).exclude(status='disabled').select_related('building').prefetch_related('room_facilities__facility', 'forecasts')
         }
 
         windows = self._rooms_next_free_window(list(rooms_by_id.keys()), today, now_time)
@@ -1190,7 +1203,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         if term:
             qs = qs.filter(term_name__icontains=term)
         if active:
-            today = date_type.today()
+            today = timezone.localdate()
             qs = qs.filter(status='active', term_start__lte=today, term_end__gte=today)
         return qs
 
@@ -1342,7 +1355,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def calendar(self, request):
-        today = date_type.today()
+        today = timezone.localdate()
         qs = TermBooking.objects.filter(
             status='active', term_start__lte=today, term_end__gte=today,
         ).select_related('room__building', 'user')
@@ -1390,11 +1403,29 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                  else datetime.strptime(str(start_time), '%H:%M:%S').time()
             end_t = datetime.strptime(str(end_time), '%H:%M').time() if len(str(end_time)) <= 5 \
                  else datetime.strptime(str(end_time), '%H:%M:%S').time()
-            preferred_room_id = int(room_id) if room_id not in (None, '') else None
         except ValueError as e:
             return Response({'error': f'รูปแบบวันที่/เวลาไม่ถูกต้อง: {e}'}, status=400)
-        except TypeError:
+        # เดิมไม่แปลงชนิด: attendees เป็นข้อความทำให้ 500 และ day_of_week เป็นสตริง
+        # ทำให้ตัวตรวจการชนเทียบ weekday() ไม่ตรงเลย
+        try:
+            dow = int(dow)
+            attendees = int(attendees)
+        except (TypeError, ValueError):
+            return Response({'error': 'day_of_week และ attendees ต้องเป็นตัวเลข'}, status=400)
+        try:
+            preferred_room_id = int(room_id) if room_id not in (None, '') else None
+        except (TypeError, ValueError):
             preferred_room_id = None
+        if not 0 <= dow <= 6:
+            return Response({'error': 'day_of_week ต้องอยู่ระหว่าง 0–6'}, status=400)
+        if attendees < 1:
+            return Response({'error': 'จำนวนผู้เข้าร่วมต้องมากกว่า 0'}, status=400)
+        if start_t >= end_t:
+            return Response({'error': 'เวลาสิ้นสุดต้องหลังเวลาเริ่ม'}, status=400)
+        if t_end <= t_start:
+            return Response({'error': 'วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม'}, status=400)
+        if t_end < timezone.localdate():
+            return Response({'error': 'ช่วงเทอมที่เลือกสิ้นสุดไปแล้ว'}, status=400)
 
         mid = t_start + (t_end - t_start) // 2
         first_end = mid
@@ -1407,11 +1438,10 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             ).exclude(status='disabled').select_related('building').first()
 
         def is_room_blocked(room_obj, period_start, period_end):
-            return TermBooking.objects.filter(
-                room=room_obj,
-                day_of_week=dow, status__in=TERM_BLOCKING_STATUSES,
-                term_start__lte=period_end, term_end__gte=period_start,
-            ).exclude(start_time__gte=end_t).exclude(end_time__lte=start_t).exists()
+            # ตัวตรวจเดียวกับตอนจองจริง (คาบทั้งเทอม + จองรายครั้ง + ช่วงซ่อม ทีละ
+            # สัปดาห์) — เดิมดูแค่คาบทั้งเทอม แผนที่แนะนำจึงกดจองแล้วติด
+            # "มีการจองรายวันซ้อน" หรือช่วงซ่อม
+            return find_term_conflict(room_obj, dow, start_t, end_t, period_start, period_end) is not None
 
         def room_score(room_obj, period_start, period_end):
             if is_room_blocked(room_obj, period_start, period_end):
@@ -1441,7 +1471,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
 
             # ถ้าจองทั้งเทอม ควรเลือกห้องเรียนมากกว่าห้องพิเศษ
             room_type = (room_obj.room_type or '').lower()
-            if any(k in room_type for k in ['classroom', 'lecture', 'ห้องเรียน']):
+            if any(k in room_type for k in ['classroom', 'lecture', 'ห้องเรียน', 'ปฏิบัติการ', 'lab']):
                 score += 10
 
             # ให้ห้องที่ผู้ใช้ระบุไว้เป็นตัวเลือกนำ ถ้ามันยังใช้ได้ในครึ่งช่วงนั้น

@@ -6,7 +6,7 @@ import {
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
-import { addHours, pickRandomFittingDuration, minutesBetween } from '../utils/booking'
+import { addHours, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
 import { extractErrorMessage } from '../utils/errors'
 
 const supportInfo = {
@@ -363,7 +363,7 @@ function RebookModal({ booking, onClose, onSuccess }) {
     const end = new Date(booking.end_time)
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
-    setDate(tomorrow.toISOString().split('T')[0])
+    setDate(localDateStr(tomorrow))
     setStartTime(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
     setDuration(Math.min(3, Math.max(1, Math.round((end - start) / 3600000))))
     setAttendees(booking.attendees || 1)
@@ -374,7 +374,7 @@ function RebookModal({ booking, onClose, onSuccess }) {
   if (!booking) return null
 
   const endTime = startTime ? addHoursToTime(startTime, duration) : ''
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateStr()
 
   const handleSubmit = async () => {
     if (isSubmittingRef.current) return

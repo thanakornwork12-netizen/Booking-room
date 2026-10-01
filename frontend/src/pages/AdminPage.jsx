@@ -7,6 +7,7 @@ import {
   BookOpen, Wrench, Loader2, Sparkles, Plus, Pencil, Trash2, Bot
 } from 'lucide-react'
 import api from '../api/axios'
+import { localDateStr } from '../utils/booking'
 
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -39,7 +40,7 @@ const isTermActive = (tb) => {
   if (tb.day_of_week !== beDow) return false
 
   // ตรวจ term_start / term_end
-  const today = now.toISOString().split('T')[0]
+  const today = localDateStr(now)
   if (tb.term_start && today < tb.term_start) return false
   if (tb.term_end   && today > tb.term_end)   return false
 
@@ -55,7 +56,7 @@ const isTermActive = (tb) => {
 // ── TermBooking ของห้องนี้ที่ active วันนี้ (ไม่จำเป็นต้องตรงเวลา) ──
 const getTermsToday = (roomId, termBookings) => {
   const now  = new Date()
-  const today = now.toISOString().split('T')[0]
+  const today = localDateStr(now)
   const jsDow2Backend = (d) => (d === 0 ? 6 : d - 1)
   const beDow = jsDow2Backend(now.getDay())
 
@@ -71,7 +72,7 @@ const getTermsToday = (roomId, termBookings) => {
 // ── TermBooking ของห้องนี้ทั้งสัปดาห์ (สำหรับ tooltip/expand) ──
 const getTermsThisWeek = (roomId, termBookings) => {
   const now   = new Date()
-  const today = now.toISOString().split('T')[0]
+  const today = localDateStr(now)
   return termBookings.filter(tb =>
     tb.room === roomId &&
     tb.status === 'active' &&
@@ -266,7 +267,7 @@ function ExportButton({ isMobile = false }) {
       const url  = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href  = url
-      const now  = new Date().toISOString().slice(0,10).replace(/-/g,'')
+      const now  = localDateStr().replace(/-/g,'')
       link.setAttribute('download', `room_booking_export_${now}.xlsx`)
       document.body.appendChild(link)
       link.click()
@@ -2107,11 +2108,11 @@ export default function AdminPage() {
         const stats = []
         for (let i=6;i>=0;i--) {
           const d = new Date(); d.setDate(d.getDate()-i)
-          const ds = d.toISOString().split('T')[0]
+          const ds = localDateStr(d)
           stats.push({
             day: days[d.getDay()], date: ds,
             count: all.filter(b =>
-              new Date(b.start_time).toISOString().split('T')[0] === ds &&
+              localDateStr(new Date(b.start_time)) === ds &&
               (b.status === 'approved' || b.status === 'pending')
             ).length
           })

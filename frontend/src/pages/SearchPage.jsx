@@ -7,7 +7,8 @@ import {
   Sparkles, ArrowRight, Users, X, BookOpen, AlertTriangle,
 } from 'lucide-react'
 import api from '../api/axios'
-import { DURATIONS, addHours, pickFittingDuration } from '../utils/booking'
+import { DURATIONS, addHours, pickFittingDuration, localDateStr } from '../utils/booking'
+import { extractErrorMessage } from '../utils/errors'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DEFAULT_BUILDINGS = [{ code: '', label: 'ทั้งหมด' }]
@@ -217,7 +218,10 @@ const getAcademicYearOptions = () => {
 const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()
+  // ห้องทั้ง 8 ห้องที่เปิดให้จองเป็นห้องปฏิบัติการคอมพิวเตอร์ 7 ห้อง + ห้องประชุม 1 ห้อง
+  // เดิมนับแค่ "ห้องเรียน" ผลค้นหาจองทั้งเทอมจึงถูกกรองจนว่างเปล่าทุกครั้ง
   return t.includes('ห้องเรียน') || t.includes('lecture') || t.includes('classroom')
+    || t.includes('ปฏิบัติการ') || t.includes('lab')
 }
 
 const roomHasEquipments = (room, selectedEquipments, equipmentPresets) => {
@@ -861,7 +865,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                           <input
                             type="date"
                             value={date}
-                            min={new Date().toISOString().split('T')[0]}
+                            min={localDateStr()}
                             onChange={e => setDate(e.target.value)}
                             className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                           />
@@ -1164,6 +1168,9 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                                 // ต้องอัปเดตวันที่จองให้ตรงกับวันที่ห้องว่างจริง ไม่งั้น
                                 // ฟอร์มยืนยันจะยังพยายามจองวันเดิมที่ห้องไม่ว่างอยู่ดี
                                 if (room.suggested_date) setDate(room.suggested_date)
+                                // ห้องที่ว่างแค่ "เวลาใกล้เคียง" — ต้องเลื่อนเวลาเริ่มตามที่แนะนำด้วย
+                                // (ระยะเวลาเท่าเดิม) ไม่งั้นจะจองเวลาเดิมที่ห้องไม่ว่าง
+                                if (room.suggested_start_time) setStartTime(room.suggested_start_time)
                                 setStep(3)
                               }}
                             />
@@ -1310,7 +1317,7 @@ export default function SearchPage({ embedded = false }) {
   const [step, setStep] = useState(1)
   const [bookingType, setBookingType] = useState('daily')
   const [attendees, setAttendees] = useState(DEFAULT_ATTENDEES)
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(localDateStr())
   const [startTime, setStartTime] = useState('')
   const [duration, setDuration] = useState(1)
   const [building, setBuilding] = useState('')
@@ -1354,7 +1361,7 @@ export default function SearchPage({ embedded = false }) {
     setStep(1)
     setBookingType('daily')
     setAttendees(5)
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(localDateStr())
     setStartTime('')
     setDuration(1)
     setBuilding('')
@@ -1466,7 +1473,7 @@ export default function SearchPage({ embedded = false }) {
     const runQuickAvailableNow = async () => {
       const now = new Date()
       const nowStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-      const todayStr = now.toISOString().split('T')[0]
+      const todayStr = localDateStr(now)
 
       setDate(todayStr)
       setStartTime(nowStr)
@@ -1626,7 +1633,7 @@ export default function SearchPage({ embedded = false }) {
       setSplitPlan(null); setSplitSuggestion(splitRec)
       setStep(2)
     } catch (err) {
-      setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+      setError(extractErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'))
     } finally {
       setLoading(false)
     }
@@ -1656,7 +1663,7 @@ export default function SearchPage({ embedded = false }) {
       if (response.status === 201 || response.status === 200) setSuccess(true)
       else setError('จองไม่สำเร็จ กรุณาลองใหม่')
     } catch (err) {
-      setError(err.response?.data ? JSON.stringify(err.response.data) : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+      setError(extractErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'))
     } finally {
       isBookingSubmittingRef.current = false
       setBookingLoading(false)

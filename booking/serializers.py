@@ -541,15 +541,27 @@ class RoomSearchSerializer(serializers.Serializer):
         if data['start_time'] >= data['end_time']:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
 
+        # ใช้กฎเดียวกับตอนจองจริง — เดิมค้นเวลาที่ผ่านไปแล้ว/เทอมที่จบแล้วได้ห้อง
+        # ขึ้นมา แต่กดจองต่อกลับโดนปฏิเสธ
+        today = timezone.localdate()
         if data.get('booking_type') == 'term':
             if data.get('day_of_week') is None:
                 raise serializers.ValidationError(
                     'การค้นหาห้องทั้งเทอมต้องระบุวันในสัปดาห์ (day_of_week)'
                 )
+            if data.get('term_end') and data['term_end'] < today:
+                raise serializers.ValidationError('ช่วงเทอมที่เลือกสิ้นสุดไปแล้ว')
         else:
             if not data.get('date'):
                 raise serializers.ValidationError(
                     'การค้นหารายวันต้องระบุวันที่ (date)'
+                )
+            start_dt = timezone.make_aware(datetime.combine(data['date'], data['start_time']))
+            if start_dt < timezone.now():
+                raise serializers.ValidationError('ไม่สามารถจองเวลาที่ผ่านไปแล้วได้')
+            if data['date'] > _max_advance_date():
+                raise serializers.ValidationError(
+                    f'จองล่วงหน้าได้ไม่เกิน {settings.MAX_ADVANCE_BOOKING_DAYS} วัน'
                 )
         return data
 

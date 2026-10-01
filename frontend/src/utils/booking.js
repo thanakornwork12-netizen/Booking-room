@@ -1,3 +1,8 @@
+// วันที่ YYYY-MM-DD ตามเวลาเครื่อง (ไทย) — ห้ามใช้ toISOString() เพราะแปลงเป็น UTC
+// ก่อน ช่วง 00:00–06:59 จะได้วันที่ของเมื่อวาน
+export const localDateStr = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 // ตัวเลือกระยะเวลาจองมาตรฐานของฟอร์มจอง (ต้องตรงกับที่ปุ่มเลือกในฟอร์มมีให้จริง)
 export const DURATIONS = [
   { label: '1 ชม.', hours: 1 },
