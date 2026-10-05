@@ -23,7 +23,7 @@ class EmailPageEscapingTests(TestCase):
     def setUpTestData(cls):
         cls.building = Building.objects.create(name='อาคารเรียนรวม 2C', code='2C')
         cls.room = Room.objects.create(
-            building=cls.building, name='2C09', floor=1, capacity=40,
+            id=445, building=cls.building, name='2C09', floor=1, capacity=40,
             room_type='ห้องเรียน',
         )
 
@@ -93,7 +93,7 @@ class MaintenanceOverlapTests(TestCase):
     def setUpTestData(cls):
         cls.building = Building.objects.create(name='อาคารเรียนรวม 2C', code='2C')
         cls.room = Room.objects.create(
-            building=cls.building, name='2C09', floor=1, capacity=40,
+            id=445, building=cls.building, name='2C09', floor=1, capacity=40,
             room_type='ห้องเรียน',
         )
 

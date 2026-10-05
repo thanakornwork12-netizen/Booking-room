@@ -98,7 +98,7 @@ class MaintenanceLifecycleTests(TestCase):
         from datetime import timedelta
         from django.utils import timezone
         self.room = Room.objects.create(
-            building=self.building, name='2C09', floor=1, capacity=40, room_type='ห้องเรียน')
+            id=445, building=self.building, name='2C09', floor=1, capacity=40, room_type='ห้องเรียน')
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
         self.start = timezone.now() + timedelta(days=10)
@@ -159,7 +159,8 @@ class MaintenanceLifecycleTests(TestCase):
         r = self.client.post(f'/api/maintenance-blocks/{ids[0]}/complete/')
         self.room.refresh_from_db()
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(self.room.status, 'maintenance', 'ยังเหลืออีกช่วงค้างอยู่')
+        # ช่วงที่สองยังไม่เริ่ม — ห้องต้องว่าง ไม่ค้าง "ซ่อมบำรุง" ไปจนถึงช่วงนั้น
+        self.assertEqual(self.room.status, 'available')
 
         r = self.client.post(f'/api/maintenance-blocks/{ids[1]}/cancel/')
         self.room.refresh_from_db()

@@ -26,6 +26,7 @@ from .authentication import issue_tokens
 from .excel import excel_safe
 from .ldap_auth import authenticate_ldap
 from .models import (
+    AI_FORECAST_ROOM_IDS,
     User, Building, Room, Facility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
@@ -213,11 +214,9 @@ class BuildingViewSet(viewsets.ModelViewSet):
 # ============================================================
 # ROOM
 # ============================================================
-# ห้องที่มีข้อมูลการใช้งานสะสมมากพอให้โมเดล AI (ml/saved/forecast.py) เรียนรู้
-# และพยากรณ์ความต้องการได้แม่นยำจริง (~90%+ ตรวจสอบแล้ว) — อีก 61 ห้องที่เหลือ
-# ยังไม่มีข้อมูลพอ เลยซ่อนจากการค้นหา/จองของผู้ใช้ทั่วไป จนกว่าจะมีข้อมูลสะสมพอ
-# staff/admin ยังเห็นห้องทั้งหมดตามปกติ เพื่อจัดการ inventory จริงของมหาวิทยาลัยได้ครบ
-AI_FORECAST_ROOM_IDS = {443, 445, 446, 447, 448, 487, 505, 506}
+# การจองที่ "เกิดขึ้นจริง" สำหรับนับสถิติ — รวม checked_in ด้วย
+USED_BOOKING_STATUSES = ['approved', 'checked_in', 'completed']
+
 
 def _query_param(request, name, cast, default=None):
     """อ่าน query param แล้วแปลงชนิด — ค่าผิดรูปแบบได้ 400 พร้อมบอกชื่อพารามิเตอร์
@@ -447,7 +446,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             conflict_count = Booking.objects.filter(
                 room_id=room_data['id'],
                 start_time__week_day=(dow + 2) % 7 or 7,
-                status__in=['completed', 'approved'],
+                status__in=USED_BOOKING_STATUSES,
             ).exclude(start_time__time__gte=d['end_time'])\
              .exclude(end_time__time__lte=d['start_time']).count()
             room_data['term_conflict_count'] = conflict_count
@@ -825,6 +824,8 @@ class RoomViewSet(viewsets.ModelViewSet):
             limit = int(request.query_params.get('limit', 5))
         except (TypeError, ValueError):
             limit = 5
+        if limit < 0:  # ค่าติดลบเดิมหลุดเป็น "ไม่จำกัด" ซึ่งสงวนไว้ให้ 0
+            limit = 5
 
         rooms_by_id = {
             # ไม่กรอง status='available' — status คือสถานะ ณ ตอนนี้ ห้องที่ซ่อม
@@ -875,10 +876,13 @@ class RoomViewSet(viewsets.ModelViewSet):
         rooms = Room.objects.filter(is_active=True).select_related('building').order_by('name')
         room_ids = [r.id for r in rooms]
 
+        # ทับซ้อนกับวันนี้ ไม่ใช่แค่เริ่มวันนี้ — เดิมการจองที่เริ่มเมื่อวานแล้วยัง
+        # ไม่จบหลุดไป ห้องที่มีคนใช้อยู่จึงโชว์ "ว่าง"
+        day_start = timezone.make_aware(datetime.combine(today, time_type(0, 0)))
         bookings_by_room = {}
         for b in Booking.objects.filter(
             room_id__in=room_ids, status__in=ACTIVE_BOOKING_STATUSES,
-            start_time__date=today,
+            start_time__lt=day_start + timedelta(days=1), end_time__gt=day_start,
         ).values('room_id', 'start_time', 'end_time', 'status'):
             bookings_by_room.setdefault(b['room_id'], []).append(b)
 
@@ -1137,10 +1141,10 @@ class RoomViewSet(viewsets.ModelViewSet):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
         rooms = Room.objects.select_related('building')
-        total_bookings = Booking.objects.filter(status__in=['approved', 'completed']).count() or 1
+        total_bookings = Booking.objects.filter(status__in=USED_BOOKING_STATUSES).count() or 1
         result = []
         for room in rooms:
-            cnt = Booking.objects.filter(room=room, status__in=['approved', 'completed']).count()
+            cnt = Booking.objects.filter(room=room, status__in=USED_BOOKING_STATUSES).count()
             result.append({
                 'id':           room.id,
                 'name':         room.name,
@@ -1308,9 +1312,12 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             tb = get_object_or_404(TermBooking.objects.select_for_update(), pk=pk)
             if tb.status == 'active':
                 return Response({'message': 'การจองทั้งเทอมนี้ใช้งานอยู่แล้ว'})
-            if tb.status == 'pending' and tb.term_end < timezone.localdate():
+            # เหมือน approve ของการจองรายครั้ง — เดิมอนุมัติรายการที่ผู้ใช้ยกเลิกเอง
+            # หรือที่ปฏิเสธไปแล้วกลับเป็น active ได้ (และข้ามด่านเทอมจบแล้วด้วย)
+            if tb.status != 'pending':
+                return Response({'error': 'อนุมัติได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
+            if tb.term_end < timezone.localdate():
                 return Response({'error': 'ไม่สามารถอนุมัติได้ ช่วงเทอมสิ้นสุดไปแล้ว'}, status=400)
-            old = tb.status
             self._lock_and_check(tb.room, tb.day_of_week, tb.start_time, tb.end_time,
                                  tb.term_start, tb.term_end, exclude_pk=tb.pk)
             tb.status = 'active'
@@ -1319,7 +1326,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             tb.save()
             BookingLog.objects.create(
                 term_booking=tb, changed_by=request.user,
-                old_status=old, new_status='active'
+                old_status='pending', new_status='active'
             )
             Notification.objects.create(
                 user=tb.user, term_booking=tb,
@@ -1359,7 +1366,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         qs = TermBooking.objects.filter(
             status='active', term_start__lte=today, term_end__gte=today,
         ).select_related('room__building', 'user')
-        room = request.query_params.get('room')
+        room = _query_param(request, 'room', int)
         if room:
             qs = qs.filter(room_id=room)
         days = {i: [] for i in range(7)}
@@ -1804,6 +1811,10 @@ class BookingViewSet(viewsets.ModelViewSet):
         if booking.status not in ACTIVE_BOOKING_STATUSES:
             return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {booking.get_status_display()}'},
                             status=400)
+        # ใช้ห้องเสร็จไปแล้วยกเลิกย้อนหลังไม่ได้ — เดิมยกเลิกได้ ประวัติเพี้ยนและส่ง
+        # อีเมล "ยกเลิกแล้ว" ทั้งที่การจองจบไปแล้ว
+        if booking.end_time <= timezone.now():
+            return Response({'error': 'ยกเลิกไม่ได้ เวลาที่จองสิ้นสุดไปแล้ว'}, status=400)
         old = booking.status
         booking.status = 'cancelled'
         booking.save()
@@ -1940,6 +1951,9 @@ class BookingViewSet(viewsets.ModelViewSet):
         if booking.status not in ('pending', 'approved'):
             return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้',
                                            f'สถานะปัจจุบัน: {booking.get_status_display()}'), status=400)
+        if booking.end_time <= timezone.now():
+            return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้',
+                                           'เวลาที่จองสิ้นสุดไปแล้วครับ'), status=400)
 
         if request.method == 'GET':
             return HttpResponse(self._confirm_html(
@@ -2211,18 +2225,8 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
                 raise ValidationError({'detail': self.CONFLICT_MESSAGES[conflict[0]]})
             old_room = block.room
             block = serializer.save()
-            now = timezone.now()
             for r in {old_room, block.room}:
-                in_window = MaintenanceBlock.objects.filter(
-                    room=r, status__in=['scheduled', 'active'],
-                    start_time__lte=now, end_time__gt=now,
-                ).exists()
-                if in_window and r.status != 'maintenance':
-                    r.status = 'maintenance'
-                    r.save(update_fields=['status'])
-                elif not in_window and r.status == 'maintenance':
-                    r.status = 'available'
-                    r.save(update_fields=['status'])
+                self._sync_room_status(r)
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
@@ -2235,15 +2239,29 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         return Response({'message': 'ยกเลิกช่วงซ่อมบำรุงแล้ว'})
 
     @staticmethod
-    def _close(block, status):
-        """ปิดช่วงซ่อม แล้วคืนสถานะห้องเป็น available ถ้าไม่เหลือช่วงที่ยังค้าง"""
+    def _sync_room_status(room):
+        """ตั้งสถานะห้องตามช่วงซ่อมที่ครอบ "ตอนนี้" — ห้องที่แอดมินปิดใช้งาน
+        (disabled) ต้องคงไว้ตามเดิม ไม่ถูกเปิดกลับเพราะปิดงานซ่อม"""
+        now = timezone.now()
+        in_window = MaintenanceBlock.objects.filter(
+            room=room, status__in=['scheduled', 'active'],
+            start_time__lte=now, end_time__gt=now,
+        ).exists()
+        if in_window and room.status not in ('maintenance', 'disabled'):
+            room.status = 'maintenance'
+            room.save(update_fields=['status'])
+        elif not in_window and room.status == 'maintenance':
+            room.status = 'available'
+            room.save(update_fields=['status'])
+
+    @classmethod
+    def _close(cls, block, status):
+        """ปิดช่วงซ่อม แล้วคืนสถานะห้องตามช่วงซ่อมที่ยังครอบตอนนี้ — เดิมดูว่ายังมี
+        ช่วงซ่อมค้างอยู่ไหม (รวมช่วงในอนาคต) ห้องจึงค้าง "ซ่อมบำรุง" ไปจนถึงช่วง
+        ถัดไป และห้องที่ disabled ถูกเปิดกลับเป็น available เอง"""
         block.status = status
         block.save(update_fields=['status'])
-        if not MaintenanceBlock.objects.filter(
-            room=block.room, status__in=['scheduled', 'active']
-        ).exists():
-            block.room.status = 'available'
-            block.room.save(update_fields=['status'])
+        cls._sync_room_status(block.room)
 
 
 # ============================================================
@@ -2259,7 +2277,9 @@ class DashboardView(generics.GenericAPIView):
         # timezone.now() เป็น UTC — เดิมช่วง 00:00–06:59 เวลาไทยแดชบอร์ดนับเป็นเมื่อวาน
         today       = timezone.localdate()
         total_rooms = Room.objects.count()
-        today_dynamic = Booking.objects.filter(start_time__date=today, status='approved').count()
+        # เช็คอินแล้วก็ยังเป็นการจองของวันนี้ — เดิมนับแค่ approved ยอดจึงลดลงทุกครั้ง
+        # ที่มีคนเช็คอิน (ไม่มีขั้นไหนเปลี่ยนสถานะเป็น completed)
+        today_dynamic = Booking.objects.filter(start_time__date=today, status__in=USED_BOOKING_STATUSES).count()
         today_term    = TermBooking.objects.filter(
             day_of_week=today.weekday(), status='active',
             term_start__lte=today, term_end__gte=today,
@@ -2267,7 +2287,7 @@ class DashboardView(generics.GenericAPIView):
         pending = (_live_bookings(Booking.objects.filter(status='pending')).count()
                    + _live_term_bookings(TermBooking.objects.filter(status='pending')).count())
         popular = (
-            Booking.objects.filter(status__in=['approved', 'completed'])
+            Booking.objects.filter(status__in=USED_BOOKING_STATUSES)
             .values('room__name').annotate(count=Count('id')).order_by('-count')[:5]
         )
         demand_alerts = list(

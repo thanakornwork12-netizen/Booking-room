@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
+    AI_FORECAST_ROOM_IDS,
     User, Building, Room, RoomFacility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
@@ -46,11 +47,17 @@ def _clean_email(value, exclude_pk=None):
     return value
 
 
-def _check_room_bookable(room):
+def _check_room_bookable(room, instance=None):
     # แอดมินตั้ง status='disabled' ได้จากหน้าจัดการห้องโดยไม่ปิด is_active —
     # เดิมตรวจแค่ is_active ห้องที่ขึ้นว่า "ปิดใช้งาน" จึงยังจองได้
     if not room.is_active or room.status == 'disabled':
         raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
+    # ห้องที่ซ่อนจากการค้นหาต้องจองไม่ได้ด้วย — เดิมซ่อนแค่หน้าค้นหา ยิง id ห้อง
+    # เข้า API ตรงๆ ก็จองได้ ตรวจเฉพาะตอนเลือกห้อง (สร้าง/ย้ายห้อง) ไม่งั้นรายการ
+    # เก่าในห้องเหล่านั้นจะแก้แม้แต่หัวข้อไม่ได้
+    room_chosen = instance is None or instance.room_id != room.pk
+    if room_chosen and room.pk not in AI_FORECAST_ROOM_IDS:
+        raise serializers.ValidationError({'room': 'ห้องนี้ยังไม่เปิดให้จองในระบบ'})
 
 
 def _max_advance_date():
@@ -400,7 +407,7 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f'จองล่วงหน้าได้ไม่เกิน {settings.MAX_ADVANCE_BOOKING_DAYS} วัน'
             )
-        _check_room_bookable(room)
+        _check_room_bookable(room, self.instance)
 
         # ต้องมีคาบเกิดขึ้นจริงอย่างน้อย 1 ครั้งในช่วงที่เลือก — ไม่งั้นจะได้
         # การจองทั้งเทอมที่ไม่มีคาบไหนเกิดขึ้นเลย (เช่น เลือกทุกวันเสาร์ แต่ช่วง
@@ -483,13 +490,20 @@ class BookingCreateSerializer(serializers.ModelSerializer):
                 f'จองได้ยาวสุด {settings.MAX_BOOKING_DAYS} วันต่อครั้ง หากต้องการใช้ประจำให้จองทั้งเทอม'
             )
 
-        _check_room_bookable(room)
+        _check_room_bookable(room, self.instance)
 
         # ตอนแก้ไข ตรวจเฉพาะเมื่อเปลี่ยนเวลาเริ่มจริง — start_time เดิมอาจผ่าน
         # ไปแล้วโดยชอบธรรมตั้งแต่ตอนสร้าง (เช่น แก้แค่ title)
         time_changed = self.instance is None or 'start_time' in data
         if time_changed and start_time < timezone.now():
             raise serializers.ValidationError('ไม่สามารถจองเวลาที่ผ่านไปแล้วได้')
+        # แก้แค่ end_time ไม่ผ่านด่านบน — เดิมยืดการจองที่จบไปแล้วหลายวันออกไป
+        # อนาคตได้ (เริ่มในอดีต จบในอนาคต) ห้ามแก้เวลาของรายการที่จบแล้ว และ
+        # เวลาสิ้นสุดใหม่ต้องยังไม่ผ่านไป
+        end_changed = (self.instance is not None and 'end_time' in data
+                       and end_time != self.instance.end_time)
+        if end_changed and (self.instance.end_time <= timezone.now() or end_time <= timezone.now()):
+            raise serializers.ValidationError('ไม่สามารถแก้ไขเวลาของการจองที่สิ้นสุดไปแล้วได้')
         if time_changed and timezone.localtime(start_time).date() > _max_advance_date():
             raise serializers.ValidationError(
                 f'จองล่วงหน้าได้ไม่เกิน {settings.MAX_ADVANCE_BOOKING_DAYS} วัน'
@@ -551,6 +565,8 @@ class RoomSearchSerializer(serializers.Serializer):
                 )
             if data.get('term_end') and data['term_end'] < today:
                 raise serializers.ValidationError('ช่วงเทอมที่เลือกสิ้นสุดไปแล้ว')
+            if data.get('term_start') and data.get('term_end') and data['term_start'] >= data['term_end']:
+                raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
         else:
             if not data.get('date'):
                 raise serializers.ValidationError(
@@ -856,7 +872,8 @@ class MaintenanceBlockSerializer(serializers.ModelSerializer):
 class MaintenanceBlockCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model  = MaintenanceBlock
-        fields = ['room', 'start_time', 'end_time', 'reason', 'note', 'predicted_demand_avg']
+        # id ส่งกลับด้วย — เดิม response ตอนสร้างไม่มี id หน้าเว็บอ้างถึงรายการใหม่ไม่ได้
+        fields = ['id', 'room', 'start_time', 'end_time', 'reason', 'note', 'predicted_demand_avg']
 
     CONFLICT_MESSAGES = {
         'booking':     'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',

@@ -54,11 +54,11 @@ class BlockTest(TestCase):
     def setUpTestData(cls):
         cls.building = Building.objects.create(name='อาคารเรียนรวม 2C', code='2C')
         cls.room = Room.objects.create(
-            building=cls.building, name='2C09', floor=1,
+            id=445, building=cls.building, name='2C09', floor=1,
             capacity=40, room_type='ห้องเรียน',
         )
         cls.room_b = Room.objects.create(
-            building=cls.building, name='2C10', floor=1,
+            id=446, building=cls.building, name='2C10', floor=1,
             capacity=40, room_type='ห้องเรียน',
         )
 

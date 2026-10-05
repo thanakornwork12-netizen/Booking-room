@@ -29,7 +29,7 @@ class EmailTests(TestCase):
     def setUpTestData(cls):
         cls.building = Building.objects.create(name='อาคารเรียนรวม 2C', code='2C')
         cls.room = Room.objects.create(
-            building=cls.building, name='2C09', floor=1, capacity=40, room_type='ห้องเรียน')
+            id=445, building=cls.building, name='2C09', floor=1, capacity=40, room_type='ห้องเรียน')
         cls.user = User.objects.create_user(
             username='qa_test_bot', password='QaTest1234', role='student',
             email='qa_test_bot@example.com')
