@@ -6,7 +6,8 @@ import {
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
-import { addHours, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
+import { addHours, canCheckIn, isPast, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
+import { CHECKIN_OPENS_MINUTES_BEFORE } from '../config'
 import { extractErrorMessage } from '../utils/errors'
 
 const supportInfo = {
@@ -60,18 +61,11 @@ const ANIM = `
 .pulse{animation:pulse 2s infinite}
 `
 
-const canCheckIn = (startTime) => {
-  const diff = (new Date() - new Date(startTime)) / 60000
-  return diff >= -15 && diff <= 15
-}
-
-const isPast = (endTime) => new Date() > new Date(endTime)
-
 const timeUntil = (startTime) => {
   const diff = Math.round((new Date(startTime) - new Date()) / 60000)
   if (diff > 60) return `${Math.floor(diff/60)} ชม. ${diff%60} นาที`
   if (diff > 0)  return `${diff} นาที`
-  if (diff > -15) return 'เปิด check-in แล้ว'
+  if (diff > -CHECKIN_OPENS_MINUTES_BEFORE) return 'เปิด check-in แล้ว'
   return null
 }
 

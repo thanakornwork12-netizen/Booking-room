@@ -9,8 +9,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
+from .config import AI_FORECAST_ROOM_IDS
 from .models import (
-    AI_FORECAST_ROOM_IDS,
     User, Building, Room, RoomFacility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,

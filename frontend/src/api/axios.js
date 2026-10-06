@@ -1,6 +1,7 @@
 import axios from 'axios'
+import { DEFAULT_API_URL, REQUEST_TIMEOUT_MS, SLOW_REQUEST_MS } from '../config'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/'
+const API_BASE_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL
 // อ้างอิงจาก API_BASE_URL ตัวเดียวกัน กันพลาดเวลาแก้ host ตอน deploy จริง
 // (ต้องแก้แค่จุดเดียว ไม่ต้องไล่หาทุกที่ที่ hardcode url ไว้)
 export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api\/$/, '/ws/')
@@ -10,12 +11,11 @@ const api = axios.create({
   // 60s ไม่ใช่ 15s เดิม — backend อยู่บน Render free tier ที่ sleep เวลาไม่มี
   // คนใช้งาน request แรกหลัง sleep (cold start) อาจใช้เวลา 30-50 วินาทีกว่า
   // จะตื่น ถ้า timeout สั้นกว่านั้น request จะพังก่อนที่ server จะตอบจริงๆ
-  timeout: 60000,
+  timeout: REQUEST_TIMEOUT_MS,
 })
 
 // ── แจ้งเตือน "เซิร์ฟเวอร์กำลังตื่น" ตอน request ช้าผิดปกติ (cold start) ───
 // ยิง CustomEvent ให้ component ไหนก็ได้ subscribe ได้ ไม่ผูกกับ UI ตรงนี้
-const SLOW_REQUEST_MS = 4000
 let slowRequestCount = 0
 
 function _notifySlow(isSlow) {

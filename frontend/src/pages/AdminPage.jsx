@@ -7,7 +7,8 @@ import {
   BookOpen, Wrench, Loader2, Sparkles, Plus, Pencil, Trash2, Bot
 } from 'lucide-react'
 import api from '../api/axios'
-import { localDateStr } from '../utils/booking'
+import { isPast, localDateStr } from '../utils/booking'
+import { ADMIN_STATUS_REFRESH_MS, STARTING_SOON_MINUTES } from '../config'
 
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -70,7 +71,6 @@ const getTermsToday = (roomId, termBookings) => {
 }
 
 // ── ตรวจว่าเลยเวลาสิ้นสุดแล้วหรือยัง ──────────────────────
-const isPast = (endTime) => new Date() > new Date(endTime)
 const isNow  = (start, end) => {
   const now = new Date()
   return now >= new Date(start) && now <= new Date(end)
@@ -78,7 +78,7 @@ const isNow  = (start, end) => {
 const isSoon = (start) => {
   const now  = new Date()
   const diff = new Date(start) - now
-  return diff > 0 && diff <= 30 * 60 * 1000
+  return diff > 0 && diff <= STARTING_SOON_MINUTES * 60 * 1000
 }
 
 function useDevice() {
@@ -494,7 +494,7 @@ function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile 
   const [selectedRoom, setSelectedRoom] = useState(null)
 
   useEffect(() => {
-    const t = setInterval(() => setTick(n => n + 1), 30000)
+    const t = setInterval(() => setTick(n => n + 1), ADMIN_STATUS_REFRESH_MS)
     return () => clearInterval(t)
   }, [])
 

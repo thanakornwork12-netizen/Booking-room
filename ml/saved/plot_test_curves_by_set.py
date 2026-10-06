@@ -18,7 +18,8 @@ Usage: python ml/saved/plot_test_curves_by_set.py
 import os, sys, warnings
 warnings.filterwarnings('ignore')
 
-BASE_DIR = '/Users/macthanakorn/room_booking'
+# รากโปรเจกต์ (ml/saved/ อยู่ลึกลงไปสองชั้น) — เดิม hardcode path ของเครื่องเดียว
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, BASE_DIR)
 os.chdir(BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'room_booking.settings')

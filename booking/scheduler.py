@@ -8,14 +8,17 @@ from django.utils.html import escape
 
 
 def send_checkin_reminders():
-    """แจ้งเตือนให้ Check-in ก่อนเวลาเริ่ม 15 นาที"""
+    """แจ้งเตือนให้ Check-in ก่อนเวลาเริ่ม (config.REMINDER_MINUTES_BEFORE นาที)"""
+    from booking.config import REMINDER_CHECK_EVERY_MINUTES, REMINDER_MINUTES_BEFORE
     from booking.models import Booking
     from django.core.mail import send_mail
     from django.conf import settings
 
     now          = timezone.now()
-    window_start = now + timedelta(minutes=14)
-    window_end   = now + timedelta(minutes=16)
+    # หน้าต่างกว้างเท่ารอบการตรวจ (±1 นาทีเมื่อตรวจทุกนาที) — การจองที่จะเริ่มอีก
+    # REMINDER_MINUTES_BEFORE นาทีตกในหน้าต่างของรอบใดรอบหนึ่งแน่นอน (reminded กันส่งซ้ำ)
+    window_start = now + timedelta(minutes=REMINDER_MINUTES_BEFORE - REMINDER_CHECK_EVERY_MINUTES)
+    window_end   = now + timedelta(minutes=REMINDER_MINUTES_BEFORE + REMINDER_CHECK_EVERY_MINUTES)
 
     bookings = Booking.objects.filter(
         status='approved',
@@ -45,7 +48,7 @@ def send_checkin_reminders():
 
         try:
             send_mail(
-                subject=f'⏰ อีก 15 นาที! ถึงเวลาใช้ห้อง {booking.room.name}',
+                subject=f'⏰ อีก {REMINDER_MINUTES_BEFORE} นาที! ถึงเวลาใช้ห้อง {booking.room.name}',
                 message=f'ไม่สามารถมาใช้งานได้? กดยกเลิกที่: {cancel_url}',
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user_email],
@@ -56,7 +59,7 @@ def send_checkin_reminders():
   <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 
     <div style="background:#d97706;padding:28px 32px;">
-      <h1 style="color:white;margin:0;font-size:22px;">⏰ อีก 15 นาที ก็ถึงเวลาแล้ว!</h1>
+      <h1 style="color:white;margin:0;font-size:22px;">⏰ อีก {REMINDER_MINUTES_BEFORE} นาที ก็ถึงเวลาแล้ว!</h1>
       <p style="color:#fef3c7;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
@@ -137,7 +140,7 @@ def start():
 
     scheduler = BackgroundScheduler()
 
-    # แจ้งเตือน Check-in ก่อน 15 นาที (เช็คทุก 1 นาที)
-    scheduler.add_job(send_checkin_reminders, 'interval', minutes=1)
+    from booking.config import REMINDER_CHECK_EVERY_MINUTES
+    scheduler.add_job(send_checkin_reminders, 'interval', minutes=REMINDER_CHECK_EVERY_MINUTES)
 
     scheduler.start()

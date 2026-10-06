@@ -5,6 +5,7 @@ import {
   History, CalendarDays, Clock, Users, CheckCircle2, XCircle, KeyRound, UserRound,
 } from 'lucide-react'
 import api, { getUser, updateStoredUser, changePassword } from '../api/axios'
+import { canCheckIn, isPast } from '../utils/booking'
 
 const roleLabels = {
   admin: 'ผู้ดูแลระบบ',
@@ -18,12 +19,6 @@ const inputCls = `w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 p
   focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100
   disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400`
 
-// เงื่อนไขเดียวกับ HomePage — เช็คอินได้ช่วง 15 นาทีก่อน/หลังเวลาเริ่ม
-const canCheckIn = (startTime) => {
-  const diff = (new Date() - new Date(startTime)) / 60000
-  return diff >= -15 && diff <= 15
-}
-const isPast = (endTime) => new Date() > new Date(endTime)
 
 const fmtDate = dt => new Date(dt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 const fmtTime = dt => new Date(dt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })

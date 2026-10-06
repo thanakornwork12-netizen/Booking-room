@@ -13,7 +13,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-BASE_DIR = '/Users/macthanakorn/room_booking'
+# รากโปรเจกต์ (ml/saved/ อยู่ลึกลงไปสองชั้น) — เดิม hardcode path ของเครื่องเดียว
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 SAVED_DIR = os.path.join(BASE_DIR, 'ml', 'saved')
 OUT_PNG = os.path.join(SAVED_DIR, 'metrics_plots', 'train_vs_test_acc_by_set.png')
 TEST_CSV = os.path.join(SAVED_DIR, 'metrics_plots', 'test_only_results.csv')

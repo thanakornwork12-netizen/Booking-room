@@ -1,14 +1,29 @@
+import {
+  CHECKIN_BUTTON_MINUTES_AFTER, CHECKIN_OPENS_MINUTES_BEFORE, DURATIONS, PASSWORD_MIN_LENGTH,
+} from '../config'
+
 // วันที่ YYYY-MM-DD ตามเวลาเครื่อง (ไทย) — ห้ามใช้ toISOString() เพราะแปลงเป็น UTC
 // ก่อน ช่วง 00:00–06:59 จะได้วันที่ของเมื่อวาน
 export const localDateStr = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-// ตัวเลือกระยะเวลาจองมาตรฐานของฟอร์มจอง (ต้องตรงกับที่ปุ่มเลือกในฟอร์มมีให้จริง)
-export const DURATIONS = [
-  { label: '1 ชม.', hours: 1 },
-  { label: '2 ชม.', hours: 2 },
-  { label: '3 ชม.', hours: 3 },
-]
+export { DURATIONS }
+
+// เวลาจบผ่านไปแล้วหรือยัง
+export const isPast = (endTime) => new Date() > new Date(endTime)
+
+// ช่วงที่ปุ่มเช็คอินโชว์: ก่อนเวลาเริ่ม CHECKIN_OPENS_MINUTES_BEFORE นาที ถึงหลังเริ่ม
+// CHECKIN_BUTTON_MINUTES_AFTER นาที (เดิมคัดลอกไว้ใน HomePage กับ ProfilePage)
+export const canCheckIn = (startTime) => {
+  const diff = (new Date() - new Date(startTime)) / 60000
+  return diff >= -CHECKIN_OPENS_MINUTES_BEFORE && diff <= CHECKIN_BUTTON_MINUTES_AFTER
+}
+
+// ตรวจรหัสผ่านเบื้องต้นก่อนส่ง (กฎเต็มตรวจที่ backend) คืนข้อความผิด หรือ '' ถ้าผ่าน
+export const passwordProblem = (password) =>
+  (password.length < PASSWORD_MIN_LENGTH || /^\d+$/.test(password))
+    ? `รหัสผ่านต้องมีอย่างน้อย ${PASSWORD_MIN_LENGTH} ตัว และไม่เป็นตัวเลขล้วน`
+    : ''
 
 export const addHours = (time, hours) => {
   const [h, m] = time.split(':').map(Number)

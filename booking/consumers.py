@@ -105,7 +105,8 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_all_rooms(self):
-        from .models import AI_FORECAST_ROOM_IDS, Room
+        from .config import AI_FORECAST_ROOM_IDS
+        from .models import Room
         rooms = Room.objects.filter(is_active=True).select_related('building')
         # ผู้ใช้ทั่วไปเห็นเฉพาะห้องที่เปิดให้จอง เหมือน REST API (RoomViewSet)
         if not is_admin_or_staff(self.user):

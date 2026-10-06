@@ -37,8 +37,8 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 # น่าจะเป็นเพราะ HTTP/1.0 ให้ browser ยึด "server ปิด connection" เป็นสัญญาณ
 # จบ response แทนที่จะเชื่อ Content-Length อย่างเดียว แต่ runserver ปิด
 # connection ไม่ตรงจังหวะพอ เลยเอาออก ปล่อยเป็น default (HTTP/1.1) ตามเดิม
-TIME_ZONE = 'Asia/Bangkok'
-USE_TZ    = True
+
+# (TIME_ZONE / USE_TZ ตั้งครั้งเดียวในหัวข้อ INTERNATIONALIZATION ด้านล่าง)
 # ระบุ Domain ที่อนุญาตให้เข้าถึง
 ALLOWED_HOSTS = ['room-booking-1-7u7e.onrender.com', 'localhost', '127.0.0.1', '*']
 

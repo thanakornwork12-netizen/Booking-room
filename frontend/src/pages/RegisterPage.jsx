@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import api from '../api/axios'
 import { extractErrorMessage } from '../utils/errors'
+import { passwordProblem } from '../utils/booking'
 
 const FACULTIES = [
   'วิทยาศาสตร์','วิศวกรรมศาสตร์','บริหารธุรกิจ',
@@ -95,7 +96,7 @@ export default function RegisterPage() {
     if (!form.faculty) return setError('กรุณาเลือกคณะ/หน่วยงาน')
     if (!form.password) return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
-    if (form.password.length < 8 || /^\d+$/.test(form.password)) return setError('รหัสผ่านต้องมีอย่างน้อย 8 ตัว และไม่เป็นตัวเลขล้วน')
+    if (passwordProblem(form.password)) return setError(passwordProblem(form.password))
 
     isSubmittingRef.current = true
     setLoading(true)

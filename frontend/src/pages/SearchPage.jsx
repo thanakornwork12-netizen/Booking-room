@@ -8,11 +8,11 @@ import {
 } from 'lucide-react'
 import api from '../api/axios'
 import { DURATIONS, addHours, pickFittingDuration, localDateStr } from '../utils/booking'
+import { TIME_SLOTS } from '../config'
 import { extractErrorMessage } from '../utils/errors'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DEFAULT_BUILDINGS = [{ code: '', label: 'ทั้งหมด' }]
-const TIME_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00']
 // ห้องที่มีข้อมูล AI จริง (ดู AI_FORECAST_ROOM_IDS ฝั่ง backend) ตอนนี้เป็นห้อง
 // Lab คอมพิวเตอร์ขนาดใหญ่ล้วน (ความจุ 31-61 คน) ไม่มีห้องเล็ก — ปรับค่าเริ่มต้น/
 // มีห้องเล็กสุดจุแค่ 5 คนอยู่จริงในระบบ (ก่อนหน้านี้ล็อกขั้นต่ำไว้ที่ 20 คน

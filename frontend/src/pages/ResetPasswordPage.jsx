@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { Eye, EyeOff, Lock, ArrowRight, KeyRound } from 'lucide-react'
 import api from '../api/axios'
+import { passwordProblem } from '../utils/booking'
 
 const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-11 py-3 text-sm
   text-slate-800 outline-none transition-all placeholder:text-slate-400
@@ -26,8 +27,7 @@ export default function ResetPasswordPage() {
     if (isSubmittingRef.current) return
     if (!password || !password2) return setError('กรุณากรอกรหัสผ่านใหม่ให้ครบ')
     if (password !== password2) return setError('รหัสผ่านไม่ตรงกัน')
-    // กฎเต็มตรวจที่ backend (รหัสยอดนิยม/คล้ายชื่อผู้ใช้) ตรงนี้กันกรณีชัดๆ ก่อนส่ง
-    if (password.length < 8 || /^\d+$/.test(password)) return setError('รหัสผ่านต้องมีอย่างน้อย 8 ตัว และไม่เป็นตัวเลขล้วน')
+    if (passwordProblem(password)) return setError(passwordProblem(password))
 
     isSubmittingRef.current = true
     setLoading(true)

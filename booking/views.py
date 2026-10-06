@@ -26,8 +26,9 @@ from rest_framework.views import APIView
 from .authentication import issue_tokens
 from .excel import excel_safe
 from .ldap_auth import authenticate_ldap
+from . import config
+from .config import AI_FORECAST_ROOM_IDS
 from .models import (
-    AI_FORECAST_ROOM_IDS,
     User, Building, Room, Facility,
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
@@ -288,25 +289,12 @@ def _first_error(errors):
     return str(errors)
 
 
-# ค่าเฉลี่ย predicted_demand (0–1) → (demand_level, availability) ไล่จากเกณฑ์สูงลงต่ำ
-DEMAND_LEVEL_THRESHOLDS = (
-    (0.70, 'urgent', 'book_now'),
-    (0.50, 'high',   'book_soon'),
-    (0.30, 'medium', 'recommended'),
-)
-
-
 def _demand_level_for(avg_pred):
-    for threshold, level, availability in DEMAND_LEVEL_THRESHOLDS:
+    """ค่าเฉลี่ย predicted_demand → (demand_level, availability) ตามเกณฑ์ใน config"""
+    for threshold, level, availability in config.DEMAND_LEVEL_THRESHOLDS:
         if avg_pred >= threshold:
             return level, availability
     return 'low', 'likely_available'
-
-
-# เวลาปิดทำการอาคาร ใช้เป็นเพดานสูงสุดของ "ห้องว่างถึงกี่โมง" ในฟีดหน้าแรก —
-# ไม่งั้นวันที่ไม่มีการจองอะไรต่อแล้ว ทุกห้องจะโชว์ "ว่างถึงเที่ยงคืน" เหมือน
-# กันหมด ดูไม่สมจริง (ดู RoomViewSet._rooms_next_free_window)
-BUILDING_CLOSING_TIME = time_type(21, 0)
 
 
 class RoomViewSet(viewsets.ModelViewSet):
@@ -628,7 +616,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             reasons.append(f'ประเภท {room.room_type}')
         return score, reasons
 
-    def _find_similar_dynamic_rooms(self, d, request, max_results=8):
+    def _find_similar_dynamic_rooms(self, d, request, max_results=config.SIMILAR_ROOMS_MAX):
         """
         หาห้องว่างใกล้เคียงเมื่อค้นหาปกติไม่เจอหรือไม่มี AI forecast
         ลำดับ: ช่วงเวลาเดิม → ขยายความจุ → ช่วงเวลาใกล้เคียง ±30/60 นาที
@@ -693,10 +681,9 @@ class RoomViewSet(viewsets.ModelViewSet):
             st_dt = datetime.combine(target_date, start_time)
             et_dt = datetime.combine(target_date, end_time)
             duration = et_dt - st_dt
-            offsets = [30, -30, 60, -60]
             seen = {r.id for _, r, _, _ in all_scored}
             now_local = timezone.localtime().replace(tzinfo=None)
-            for mins in offsets:
+            for mins in config.NEARBY_TIME_OFFSETS_MINUTES:
                 new_st = (st_dt + timedelta(minutes=mins)).time()
                 new_et = (st_dt + timedelta(minutes=mins) + duration).time()
                 if new_st >= new_et:
@@ -741,7 +728,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         day_suggestions = []
         if len(enriched) < max_results:
             seen_ids = {item['id'] for item in enriched}
-            for days_ahead in (1, 2, 3):
+            for days_ahead in config.OTHER_DAY_OFFSETS:
                 if len(enriched) + len(day_suggestions) >= max_results:
                     break
                 other_date = target_date + timedelta(days=days_ahead)
@@ -792,7 +779,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: (from_time, until_time) | None}"""
         now_dt = timezone.localtime()
         day_start_dt = timezone.make_aware(datetime.combine(target_date, time_type(0, 0)))
-        day_end_dt = timezone.make_aware(datetime.combine(target_date, max(BUILDING_CLOSING_TIME, now_time)))
+        day_end_dt = timezone.make_aware(datetime.combine(target_date, max(config.BUILDING_CLOSING_TIME, now_time)))
         next_day_start_dt = day_start_dt + timedelta(days=1)
 
         busy = {rid: [] for rid in room_ids}
@@ -876,11 +863,11 @@ class RoomViewSet(viewsets.ModelViewSet):
         now_time = now.time()
 
         try:
-            limit = int(request.query_params.get('limit', 5))
+            limit = int(request.query_params.get('limit', config.TODAY_FEED_DEFAULT_LIMIT))
         except (TypeError, ValueError):
-            limit = 5
+            limit = config.TODAY_FEED_DEFAULT_LIMIT
         if limit < 0:  # ค่าติดลบเดิมหลุดเป็น "ไม่จำกัด" ซึ่งสงวนไว้ให้ 0
-            limit = 5
+            limit = config.TODAY_FEED_DEFAULT_LIMIT
 
         rooms_by_id = {
             # ไม่กรอง status='available' — status คือสถานะ ณ ตอนนี้ ห้องที่ซ่อม
@@ -974,7 +961,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             term_now = next((t for t in room_terms
                               if t['start_time'] <= now_time < t['end_time']), None)
             upcoming = next((b for b in room_bookings
-                              if b['status'] in confirmed and now < b['start_time'] <= now + timedelta(minutes=30)), None)
+                              if b['status'] in confirmed and now < b['start_time'] <= now + timedelta(minutes=config.STARTING_SOON_MINUTES)), None)
             pending = next((b for b in room_bookings
                              if b['status'] == 'pending' and b['end_time'] > now), None)
             booked = next((b for b in room_bookings
@@ -1582,7 +1569,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                     continue
                 ranked.append((score, room_obj))
             ranked.sort(key=lambda item: (-item[0], item[1].capacity or 0, item[1].name))
-            return ranked[:8]
+            return ranked[:config.SPLIT_ROOMS_PER_HALF]
 
         first_rooms = rank_candidates(t_start, first_end)
         second_rooms = rank_candidates(second_start, t_end)
@@ -1616,9 +1603,9 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                         f'เทอมหลัง ({second_start}–{t_end}): ห้อง {r2.name}'
                     ),
                 })
-                if len(suggestions) >= 8:
+                if len(suggestions) >= config.SPLIT_SUGGESTIONS_MAX:
                     break
-            if len(suggestions) >= 8:
+            if len(suggestions) >= config.SPLIT_SUGGESTIONS_MAX:
                 break
 
         suggestions.sort(key=lambda item: item['score'], reverse=True)
@@ -1923,7 +1910,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             }, status=400)
 
         now = timezone.now()
-        window_start = booking.start_time - timedelta(minutes=15)
+        window_start = booking.start_time - timedelta(minutes=config.CHECKIN_OPENS_MINUTES_BEFORE)
 
         if now < window_start:
             return Response({
@@ -1976,7 +1963,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                                            f'สถานะการจองปัจจุบัน: {booking.get_status_display()}'), status=400)
 
         now          = timezone.now()
-        window_start = booking.start_time - timedelta(minutes=15)
+        window_start = booking.start_time - timedelta(minutes=config.CHECKIN_OPENS_MINUTES_BEFORE)
 
         if now < window_start:
             window_start_thai = window_start.astimezone(THAI_TZ)
@@ -2157,9 +2144,9 @@ class MaintenanceSlotsView(APIView):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
         room_id  = _query_param(request, 'room', int)
-        max_dem  = _query_param(request, 'max_demand', float, 0.10)
-        min_hrs  = _query_param(request, 'min_hours', int, 3)
-        days     = _query_param(request, 'days', int, 14)
+        max_dem  = _query_param(request, 'max_demand', float, config.MAINTENANCE_MAX_DEMAND)
+        min_hrs  = _query_param(request, 'min_hours', int, config.MAINTENANCE_MIN_HOURS)
+        days     = _query_param(request, 'days', int, config.MAINTENANCE_DAYS_AHEAD)
         # เดิม days ใหญ่มากพังเป็น 500 (วันที่เกินปี 9999)
         days     = max(1, min(days, settings.MAX_ADVANCE_BOOKING_DAYS))
         min_hrs  = max(1, min(min_hrs, 24))
@@ -2175,9 +2162,9 @@ class MaintenanceSlotsView(APIView):
 
 def _find_maintenance_slots(
     room_id: int | None = None,
-    max_demand: float = 0.10,
-    min_consecutive_hours: int = 3,
-    days_ahead: int = 14,
+    max_demand: float = config.MAINTENANCE_MAX_DEMAND,
+    min_consecutive_hours: int = config.MAINTENANCE_MIN_HOURS,
+    days_ahead: int = config.MAINTENANCE_DAYS_AHEAD,
 ) -> list[dict]:
     """
     คัดกรองช่วงเวลาที่ demand ต่ำติดกันจาก DemandForecast โดยตรง
