@@ -211,10 +211,6 @@ const getDefaultTermNumber = () => {
   if (m >= 11 || m <= 3) return 2
   return 3
 }
-const getAcademicYearOptions = () => {
-  const current = getDefaultAcademicYearBE()
-  return [current - 1, current, current + 1]
-}
 const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()

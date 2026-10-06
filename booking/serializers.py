@@ -4,6 +4,8 @@ import unicodedata
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -47,10 +49,30 @@ def _clean_email(value, exclude_pk=None):
     return value
 
 
+# ข้อความภาษาไทยของ AUTH_PASSWORD_VALIDATORS (Django ไม่มีคำแปลไทยของตัวตรวจนี้)
+_PASSWORD_ERRORS = {
+    'password_too_short': 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร',
+    'password_too_common': 'รหัสผ่านนี้ง่ายเกินไป (เป็นรหัสที่คนใช้กันบ่อย)',
+    'password_entirely_numeric': 'รหัสผ่านต้องไม่เป็นตัวเลขล้วน',
+    'password_too_similar': 'รหัสผ่านคล้ายชื่อผู้ใช้หรืออีเมลมากเกินไป',
+}
+
+
+def check_password_strength(password, user=None):
+    """ตรวจรหัสผ่านตาม AUTH_PASSWORD_VALIDATORS ใน settings — เดิมตั้งไว้แต่ไม่มี
+    ที่ไหนเรียกใช้ สมัคร/รีเซ็ตด้วย 123456 ได้ คืนรายการข้อความผิด (ว่าง = ผ่าน)"""
+    try:
+        validate_password(password, user=user)
+    except DjangoValidationError as e:
+        return list(dict.fromkeys(_PASSWORD_ERRORS.get(err.code, err.messages[0]) for err in e.error_list))
+    return []
+
+
 def _check_room_bookable(room, instance=None):
     # แอดมินตั้ง status='disabled' ได้จากหน้าจัดการห้องโดยไม่ปิด is_active —
     # เดิมตรวจแค่ is_active ห้องที่ขึ้นว่า "ปิดใช้งาน" จึงยังจองได้
-    if not room.is_active or room.status == 'disabled':
+    # (รวมห้องในอาคารที่ปิดไปแล้วด้วย — Room.is_open_for_booking)
+    if not room.is_open_for_booking:
         raise serializers.ValidationError({'room': 'ห้องนี้ปิดใช้งานแล้ว ไม่สามารถจองได้'})
     # ห้องที่ซ่อนจากการค้นหาต้องจองไม่ได้ด้วย — เดิมซ่อนแค่หน้าค้นหา ยิง id ห้อง
     # เข้า API ตรงๆ ก็จองได้ ตรวจเฉพาะตอนเลือกห้อง (สร้าง/ย้ายห้อง) ไม่งั้นรายการ
@@ -100,7 +122,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password   = serializers.CharField(write_only=True, min_length=6)
+    password   = serializers.CharField(write_only=True)
     password2  = serializers.CharField(write_only=True)
     student_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
@@ -150,6 +172,10 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data['password'] != data['password2']:
             raise serializers.ValidationError({'password': 'รหัสผ่านไม่ตรงกัน'})
+        candidate = User(**{k: v for k, v in data.items() if k not in ('password', 'password2')})
+        problems = check_password_strength(data['password'], user=candidate)
+        if problems:
+            raise serializers.ValidationError({'password': problems})
 
         try:
             data['student_id'] = _clean_student_id(data.get('student_id'))
@@ -174,8 +200,8 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, min_length=6)
-    new_password2 = serializers.CharField(write_only=True, min_length=6)
+    new_password = serializers.CharField(write_only=True)
+    new_password2 = serializers.CharField(write_only=True)
 
     def validate(self, data):
         request = self.context.get('request')
@@ -203,6 +229,10 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'new_password': 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม'
             })
+
+        problems = check_password_strength(data['new_password'], user=user)
+        if problems:
+            raise serializers.ValidationError({'new_password': problems})
 
         return data
 
@@ -279,6 +309,12 @@ class RoomSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'building', 'building_name', 'building_code',
                   'floor', 'capacity', 'room_type', 'status',
                   'description', 'image', 'is_active', 'facilities']
+
+    def validate_capacity(self, value):
+        # เดิมสร้างห้องความจุติดลบ/ศูนย์ได้ ห้องนั้นค้นหาไม่เจอและจองไม่ได้ตลอดไป
+        if value < 1:
+            raise serializers.ValidationError('ความจุต้องมากกว่า 0')
+        return value
 
 
 class RoomListSerializer(serializers.ModelSerializer):
@@ -777,7 +813,13 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         user.first_name = first_name
         user.last_name = last_name
 
-        user.email = ldap_user.get('email') or f'{pure_username}@ubu.ac.th'
+        # อีเมลต้องไม่ชนบัญชีอื่น — เดิมตั้งทับตรงๆ ถ้าบัญชีที่สมัครเองใช้อีเมลนี้อยู่
+        # ก่อน จะมีสองบัญชีอีเมลเดียวกัน "ลืมรหัสผ่าน" หยิบบัญชีผิดได้
+        for candidate_email in (ldap_user.get('email'), f'{resolved_username}@ubu.ac.th'):
+            if candidate_email and not User.objects.filter(
+                    email__iexact=candidate_email).exclude(pk=user.pk).exists():
+                user.email = candidate_email
+                break
 
         user.faculty = ldap_user.get(
             'department',
@@ -896,6 +938,11 @@ class MaintenanceBlockCreateSerializer(serializers.ModelSerializer):
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+        # ช่วงซ่อมที่จบไปแล้วไม่มีผลกับอะไร — เดิมสร้างย้อนหลังได้ ประวัติเพี้ยน
+        # (ช่วงที่เริ่มไปแล้วแต่ยังไม่จบยังสร้างได้ เช่น ห้องเสียกะทันหัน)
+        times_changed = self.instance is None or 'start_time' in data or 'end_time' in data
+        if times_changed and end_time <= timezone.now():
+            raise serializers.ValidationError('ช่วงซ่อมบำรุงสิ้นสุดไปแล้ว ไม่สามารถบันทึกย้อนหลังได้')
 
         # ตรวจเบื้องต้นยังไม่ Lock — ตรวจซ้ำใต้ select_for_update ใน views
         conflict = find_booking_conflict(

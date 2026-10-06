@@ -80,6 +80,12 @@ class Room(models.Model):
     def __str__(self):
         return f"{self.building.code}-{self.name} (จุ {self.capacity} คน)"
 
+    @property
+    def is_open_for_booking(self):
+        """ห้องเปิดรับจอง: ห้องไม่ถูกปิด/ปิดใช้งาน และอาคารยังเปิดอยู่ — เดิมดูแค่ห้อง
+        ปิดอาคารแล้วห้องในอาคารยังค้นหาและจองได้"""
+        return self.is_active and self.status != 'disabled' and self.building.is_active
+
 
 # ============================================================
 # 4. FACILITIES
@@ -304,6 +310,7 @@ class Notification(models.Model):
         ('term_pending',      'การจองทั้งเทอมรออนุมัติ'),
         ('term_approved',     'การจองทั้งเทอมได้รับอนุมัติ'),
         ('term_rejected',     'การจองทั้งเทอมถูกปฏิเสธ'),
+        ('term_cancelled',    'การจองทั้งเทอมถูกยกเลิก'),
         ('demand_alert',      'แจ้งเตือนความต้องการสูง'),
         ('system',            'ระบบ'),
     ]

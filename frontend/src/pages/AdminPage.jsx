@@ -69,21 +69,6 @@ const getTermsToday = (roomId, termBookings) => {
   )
 }
 
-// ── TermBooking ของห้องนี้ทั้งสัปดาห์ (สำหรับ tooltip/expand) ──
-const getTermsThisWeek = (roomId, termBookings) => {
-  const now   = new Date()
-  const today = localDateStr(now)
-  return termBookings.filter(tb =>
-    tb.room === roomId &&
-    tb.status === 'active' &&
-    (!tb.term_start || today >= tb.term_start) &&
-    (!tb.term_end   || today <= tb.term_end)
-  )
-}
-
-const getRoomData = (name, adminRooms) =>
-  adminRooms?.find(r => name?.includes(r.code) || r.name === name) || null
-
 // ── ตรวจว่าเลยเวลาสิ้นสุดแล้วหรือยัง ──────────────────────
 const isPast = (endTime) => new Date() > new Date(endTime)
 const isNow  = (start, end) => {
@@ -275,7 +260,7 @@ function ExportButton({ isMobile = false }) {
       window.URL.revokeObjectURL(url)
       setDone(true)
       setTimeout(() => { setDone(false); setOpen(false) }, 2000)
-    } catch (err) {
+    } catch {
       alert('เกิดข้อผิดพลาดในการส่งออกข้อมูล')
     } finally {
       setLoading(false)
@@ -463,7 +448,7 @@ function BarChartBlock({ weekStats }) {
 // ============================================================
 // TERM SCHEDULE POPUP  (แสดงตารางสอนของห้องนี้วันนี้)
 // ============================================================
-function TermSchedulePopup({ termsToday, termNow, roomName }) {
+function TermSchedulePopup({ termsToday }) {
   if (termsToday.length === 0) return null
   return (
     <div className="mt-2 rounded-xl border border-purple-200 bg-purple-50 px-3 py-2 space-y-1">
@@ -502,7 +487,8 @@ function TermSchedulePopup({ termsToday, termNow, roomName }) {
 // ROOM STATUS GRID
 // ============================================================
 function RoomStatusGrid({ bookings, termBookings, adminRooms, fmtTime, isMobile = false }) {
-  const [tick, setTick] = useState(0)
+  // ค่า tick ไม่ได้ใช้ตรงๆ — setTick ทุก 30 วิ ให้การ์ดคำนวณสถานะ (กำลังใช้/ใกล้เริ่ม) ใหม่
+  const [, setTick] = useState(0)
   const [filterBuilding, setFilterBuilding] = useState('ทั้งหมด')
   const [filterState, setFilterState] = useState('all')
   const [selectedRoom, setSelectedRoom] = useState(null)

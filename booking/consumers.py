@@ -16,6 +16,13 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
     """
     #ทำgroup เมื่อ user ล็อตอินมา
     async def connect(self):
+        # ต้องล็อกอินก่อน — เดิมใครก็ต่อได้ คนนอกเห็นรายชื่อห้องทั้งหมด (รวมห้อง
+        # ที่ซ่อนอยู่) และการจองทุกรายการแบบ real-time
+        user = self.scope.get('user')
+        if not user or not user.is_authenticated:
+            await self.close()
+            return
+        self.user = user
         self.group_name = 'room_status'
 
 
@@ -33,10 +40,11 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.group_name,
-            self.channel_name
-        )
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(
+                self.group_name,
+                self.channel_name
+            )
 
     async def receive(self, text_data):
         """รับข้อความจาก Client (ถ้าต้องการ ping หรือ request ข้อมูล)"""
@@ -97,8 +105,11 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_all_rooms(self):
-        from .models import Room
+        from .models import AI_FORECAST_ROOM_IDS, Room
         rooms = Room.objects.filter(is_active=True).select_related('building')
+        # ผู้ใช้ทั่วไปเห็นเฉพาะห้องที่เปิดให้จอง เหมือน REST API (RoomViewSet)
+        if not is_admin_or_staff(self.user):
+            rooms = rooms.filter(building__is_active=True, id__in=AI_FORECAST_ROOM_IDS)
         return [
             {
                 'id':            r.id,

@@ -145,6 +145,8 @@ def send_term_booking_email(sender, instance, created, **kwargs):
         send_email_after_commit(send_term_booking_confirmation_email, instance)
     elif old_status == 'pending' and instance.status == 'rejected':
         send_email_after_commit(send_term_booking_rejected_email, instance)
+    elif instance.status == 'cancelled' and old_status in ('pending', 'active'):
+        send_email_after_commit(send_term_booking_cancelled_email, instance)
 
 
 @receiver(post_save, sender=Notification)
@@ -740,7 +742,8 @@ def send_booking_confirmation_email(instance):
       log_email_error('ส่งอีเมลยืนยันไม่สำเร็จ', e)
 
 
-def _send_term_booking_email(instance, *, subject, heading, intro, header_bg, log_label, reason=''):
+def _send_term_booking_email(instance, *, subject, heading, intro, header_bg, log_label, reason='',
+                             reason_label='เหตุผลที่ปฏิเสธ'):
     """อีเมลถึงผู้จองทั้งเทอม — ใช้ร่วมกันทั้งรับคำขอ / อนุมัติ / ปฏิเสธ"""
     user_email = get_recipient_email(instance.user)
     if not user_email:
@@ -772,7 +775,7 @@ def _send_term_booking_email(instance, *, subject, heading, intro, header_bg, lo
     # reason เป็นข้อความที่แอดมินพิมพ์เอง ต้อง escape ก่อนฝังใน HTML
     reason_html = f'''
       <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:16px;margin:0 0 8px;">
-        <p style="margin:0 0 4px;font-size:13px;color:#991b1b;font-weight:bold;">เหตุผลที่ปฏิเสธ</p>
+        <p style="margin:0 0 4px;font-size:13px;color:#991b1b;font-weight:bold;">{escape(reason_label)}</p>
         <p style="margin:0;font-size:14px;color:#7f1d1d;">{escape(reason)}</p>
       </div>
     ''' if reason else ''
@@ -857,6 +860,20 @@ def send_term_booking_rejected_email(instance):
         intro='คำขอจองห้องทั้งเทอมของคุณถูกปฏิเสธ หากต้องการจองห้องอื่นหรือช่วงเวลาอื่น เข้าระบบเพื่อจองใหม่ได้เลย',
         header_bg='#be123c', log_label='ปฏิเสธจองทั้งเทอม',
         reason=(instance.reject_reason or '').strip(),
+    )
+
+
+def send_term_booking_cancelled_email(instance):
+    """ส่งอีเมลเมื่อการจองทั้งเทอมถูกยกเลิก — เดิมไม่มีเลย แอดมินยกเลิกคาบทั้งเทอม
+    (หรือปิดห้อง) แล้วเจ้าของไม่รู้ตัว"""
+    _send_term_booking_email(
+        instance,
+        subject=f'การจองห้องทั้งเทอม {instance.room.name} ถูกยกเลิก',
+        heading='การจองห้องทั้งเทอมถูกยกเลิก',
+        intro='การจองห้องทั้งเทอมของคุณถูกยกเลิกแล้ว หากต้องการใช้ห้องต่อ เข้าระบบเพื่อจองใหม่ได้เลย',
+        header_bg='#475569', log_label='ยกเลิกจองทั้งเทอม',
+        reason=(getattr(instance, '_cancel_reason', '') or '').strip(),
+        reason_label='เหตุผล',
     )
 
 

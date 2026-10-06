@@ -4,6 +4,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .serializers import LDAPTokenObtainPairSerializer
+from .throttles import LoginThrottle, ThaiThrottleMixin
 from .views import (
     RegisterView, ProfileView,
     ChangePasswordView, DeleteAccountView,
@@ -17,13 +18,14 @@ from .views import (
 
 
 # ── Override TokenObtainPairView ให้ใช้ LDAP serializer ──────────────────────
-class LDAPTokenObtainPairView(TokenObtainPairView):
+class LDAPTokenObtainPairView(ThaiThrottleMixin, TokenObtainPairView):
     """
     POST /api/auth/login/
     Body: { "username": "6512345678", "password": "..." }
     ตรวจสอบกับ LDAP มหาวิทยาลัย แทน database
     """
     serializer_class = LDAPTokenObtainPairSerializer
+    throttle_classes = [LoginThrottle]
 
 
 # ── Router ────────────────────────────────────────────────────────────────────

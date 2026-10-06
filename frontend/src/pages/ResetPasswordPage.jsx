@@ -26,7 +26,8 @@ export default function ResetPasswordPage() {
     if (isSubmittingRef.current) return
     if (!password || !password2) return setError('กรุณากรอกรหัสผ่านใหม่ให้ครบ')
     if (password !== password2) return setError('รหัสผ่านไม่ตรงกัน')
-    if (password.length < 6) return setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัว')
+    // กฎเต็มตรวจที่ backend (รหัสยอดนิยม/คล้ายชื่อผู้ใช้) ตรงนี้กันกรณีชัดๆ ก่อนส่ง
+    if (password.length < 8 || /^\d+$/.test(password)) return setError('รหัสผ่านต้องมีอย่างน้อย 8 ตัว และไม่เป็นตัวเลขล้วน')
 
     isSubmittingRef.current = true
     setLoading(true)
@@ -69,7 +70,7 @@ export default function ResetPasswordPage() {
                 <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type={showPass ? 'text' : 'password'}
-                  placeholder="อย่างน้อย 6 ตัวอักษร"
+                  placeholder="อย่างน้อย 8 ตัว ไม่ใช่ตัวเลขล้วน"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className={inputCls}

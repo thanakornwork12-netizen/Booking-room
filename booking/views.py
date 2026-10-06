@@ -5,6 +5,7 @@ from functools import partial
 
 import pandas as pd
 import pytz
+from django.conf import settings
 from django.contrib.auth import login
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
@@ -35,7 +36,9 @@ from .overlap import (
     ACTIVE_BOOKING_STATUSES, TERM_BLOCKING_STATUSES, find_booking_conflict, find_term_conflict,
 )
 from .permissions import IsAdminOrStaff, is_admin_or_staff
+from .throttles import PasswordResetThrottle, ThaiThrottleMixin
 from .serializers import (
+    check_password_strength,
     UserSerializer, RegisterSerializer,
     ChangePasswordSerializer, DeleteAccountSerializer,
     BuildingSerializer,
@@ -88,7 +91,7 @@ class ChangePasswordView(APIView):
         })
 
 
-class ForgotPasswordView(APIView):
+class ForgotPasswordView(ThaiThrottleMixin, APIView):
     """ขอลิงก์รีเซ็ตรหัสผ่าน — ใช้ได้เฉพาะบัญชีที่สมัครเองในระบบ (มีรหัสผ่านจริง
     เก็บไว้ในนี้) บัญชี LDAP ของมหาวิทยาลัยไม่มีรหัสผ่านที่ใช้งานได้ในระบบนี้
     (สร้างด้วย set_unusable_password() — has_usable_password() คืน False,
@@ -96,6 +99,7 @@ class ForgotPasswordView(APIView):
     จริง ต้องเช็คด้วย has_usable_password() ไม่ใช่ truthiness ของ password
     ตรงๆ) จึงรีเซ็ตจากที่นี่ไม่ได้ ต้องแจ้งให้ติดต่อ IT แทน"""
     permission_classes = [AllowAny]
+    throttle_classes = [PasswordResetThrottle]
 
     def post(self, request):
         identifier = (request.data.get('email') or request.data.get('username') or '').strip()
@@ -138,8 +142,6 @@ class ResetPasswordConfirmView(APIView):
 
         if not password or password != password2:
             return Response({'error': 'รหัสผ่านไม่ตรงกัน'}, status=400)
-        if len(password) < 6:
-            return Response({'error': 'รหัสผ่านต้องมีอย่างน้อย 6 ตัว'}, status=400)
 
         try:
             uid = force_str(urlsafe_base64_decode(uidb64))
@@ -152,6 +154,10 @@ class ResetPasswordConfirmView(APIView):
 
         if not default_token_generator.check_token(user, token):
             return Response({'error': 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว'}, status=400)
+        # กฎเดียวกับตอนสมัคร — เดิมเช็คแค่ยาว 6 ตัว รีเซ็ตเป็น 123456 ได้
+        problems = check_password_strength(password, user=user)
+        if problems:
+            return Response({'error': problems[0], 'password': problems}, status=400)
 
         user.set_password(password)
         user.save(update_fields=['password'])
@@ -174,6 +180,39 @@ class DeleteAccountView(APIView):
 def _require_admin_or_staff(request):
     if not is_admin_or_staff(request.user):
         raise PermissionDenied('สำหรับผู้ดูแลระบบเท่านั้น')
+
+
+def _release_reservations(rooms, actor, reason):
+    """ยกเลิกการจองที่ยังไม่จบของห้องที่ถูกปิด แล้วแจ้งเจ้าของทั้งในเว็บและอีเมล
+
+    เดิมปิดห้อง/อาคารแล้วการจองที่อนุมัติไว้ยังค้างเป็น "อนุมัติ" เจ้าของไม่รู้ตัว
+    จนมาถึงห้องที่ใช้ไม่ได้ (อีเมลยกเลิกส่งผ่าน signals ตอนสถานะเปลี่ยน)"""
+    now = timezone.now()
+    for b in Booking.objects.filter(room__in=rooms, status__in=['pending', 'approved'],
+                                    end_time__gt=now).select_related('room'):
+        old = b.status
+        b.status = 'cancelled'
+        b.save()
+        BookingLog.objects.create(booking=b, changed_by=actor, old_status=old,
+                                  new_status='cancelled', remark=reason)
+        Notification.objects.create(
+            user=b.user, booking=b, type='booking_cancelled', title='การจองถูกยกเลิก',
+            message=(f'การจองห้อง {b.room.name} วันที่ '
+                     f'{b.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                     f'ถูกยกเลิก เหตุผล: {reason}'),
+        )
+    for tb in TermBooking.objects.filter(room__in=rooms, status__in=TERM_BLOCKING_STATUSES,
+                                         term_end__gte=timezone.localdate()).select_related('room'):
+        old = tb.status
+        tb.status = 'cancelled'
+        tb._cancel_reason = reason
+        tb.save()
+        BookingLog.objects.create(term_booking=tb, changed_by=actor, old_status=old,
+                                  new_status='cancelled', remark=reason)
+        Notification.objects.create(
+            user=tb.user, term_booking=tb, type='term_cancelled', title='การจองทั้งเทอมถูกยกเลิก',
+            message=f'การจอง{_term_summary(tb)} ถูกยกเลิก เหตุผล: {reason}',
+        )
 
 
 # ============================================================
@@ -203,17 +242,27 @@ class BuildingViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         _require_admin_or_staff(self.request)
-        serializer.save()
+        was_active = serializer.instance.is_active
+        with transaction.atomic():
+            building = serializer.save()
+            if was_active and not building.is_active:
+                _release_reservations(building.rooms.all(), self.request.user, 'อาคารปิดให้บริการ')
 
     def perform_destroy(self, instance):
         _require_admin_or_staff(self.request)
-        instance.is_active = False
-        instance.save(update_fields=['is_active'])
+        with transaction.atomic():
+            instance.is_active = False
+            instance.save(update_fields=['is_active'])
+            _release_reservations(instance.rooms.all(), self.request.user, 'อาคารปิดให้บริการ')
 
 
 # ============================================================
 # ROOM
 # ============================================================
+# ยกเลิกได้เฉพาะก่อนเช็คอิน — ใช้ทั้งปุ่มในเว็บและลิงก์ในอีเมล (เดิมปุ่มในเว็บ/API
+# ยกเลิกรายการที่เช็คอินแล้วได้ แต่ลิงก์อีเมลกับหน้าเว็บไม่ให้ ผลไม่ตรงกัน)
+CANCELLABLE_BOOKING_STATUSES = ['pending', 'approved']
+
 # การจองที่ "เกิดขึ้นจริง" สำหรับนับสถิติ — รวม checked_in ด้วย
 USED_BOOKING_STATUSES = ['approved', 'checked_in', 'completed']
 
@@ -266,7 +315,7 @@ class RoomViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         is_staff = is_admin_or_staff(self.request.user)
         qs = Room.objects.select_related('building')
-        qs = qs if is_staff else qs.filter(is_active=True, id__in=AI_FORECAST_ROOM_IDS)
+        qs = qs if is_staff else qs.filter(is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS)
         building  = self.request.query_params.get('building')
         room_type = self.request.query_params.get('room_type')
         capacity  = _query_param(self.request, 'min_capacity', int)
@@ -287,13 +336,19 @@ class RoomViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         _require_admin_or_staff(self.request)
-        serializer.save()
+        was_open = serializer.instance.is_active and serializer.instance.status != 'disabled'
+        with transaction.atomic():
+            room = serializer.save()
+            if was_open and (not room.is_active or room.status == 'disabled'):
+                _release_reservations([room], self.request.user, 'ห้องปิดใช้งาน')
 
     def perform_destroy(self, instance):
         _require_admin_or_staff(self.request)
-        instance.is_active = False
-        instance.status = 'disabled'
-        instance.save(update_fields=['is_active', 'status'])
+        with transaction.atomic():
+            instance.is_active = False
+            instance.status = 'disabled'
+            instance.save(update_fields=['is_active', 'status'])
+            _release_reservations([instance], self.request.user, 'ห้องปิดใช้งาน')
 
     @action(detail=False, methods=['post'])
     def search(self, request):
@@ -318,7 +373,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         # การค้นหา/จองห้องจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ ไม่ว่าใครจะเป็นคนจอง
         # (ต่างจาก RoomViewSet.get_queryset ทั่วไปที่ยังให้ staff/admin เห็นครบ
         # สำหรับจัดการ inventory)
-        rooms_qs = Room.objects.filter(is_active=True, id__in=AI_FORECAST_ROOM_IDS)
+        rooms_qs = Room.objects.filter(is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS)
         rooms = list(rooms_qs.select_related('building').order_by('building__name', 'name'))
 
         if not q:
@@ -384,7 +439,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         # เดิมห้องที่ซ่อมอยู่วันนี้หายจากการค้นหาทุกวันในอนาคตด้วย ช่วงซ่อมกันด้วย
         # เวลาใน maint_blocked อยู่แล้ว ตัดออกแค่ห้องที่แอดมินปิดใช้งาน
         available = Room.objects.filter(
-            is_active=True, capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
+            is_active=True, capacity__gte=d['attendees'], building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').exclude(id__in=blocked).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
 
@@ -416,7 +471,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         # ด้านล่าง ซึ่งตรวจช่วงซ่อมและการจองรายครั้งทีละสัปดาห์ (เดิมไม่ตรวจการจอง
         # รายครั้งเลย ค้นเจอห้องแล้วกดจองกลับติด "มีการจองรายวันซ้อน")
         available = Room.objects.filter(
-            is_active=True, capacity__gte=d['attendees'], id__in=AI_FORECAST_ROOM_IDS,
+            is_active=True, capacity__gte=d['attendees'], building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').exclude(id__in=set(booked_term)).select_related('building')\
          .prefetch_related('room_facilities__facility', 'forecasts')
 
@@ -587,7 +642,7 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         # การจองจำกัดแค่ห้องที่มีข้อมูล AI จริงเสมอ — เหมือน _search_dynamic/_search_term
         base_qs = Room.objects.filter(
-            is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+            is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').select_related('building').prefetch_related(
             'room_facilities__facility', 'forecasts',
         )
@@ -831,7 +886,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             # ไม่กรอง status='available' — status คือสถานะ ณ ตอนนี้ ห้องที่ซ่อม
             # เสร็จช่วงบ่ายก็ควรติดฟีด ช่วงซ่อมจริงถูกนับใน _rooms_next_free_window แล้ว
             r.id: r for r in Room.objects.filter(
-                is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+                is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
             ).exclude(status='disabled').select_related('building').prefetch_related('room_facilities__facility', 'forecasts')
         }
 
@@ -1043,13 +1098,24 @@ class RoomViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'error': 'รูปแบบวันที่ไม่ถูกต้อง'}, status=400)
 
+        # รายละเอียดการจองของคนอื่น (หัวข้อ/จำนวนคน) เห็นได้เฉพาะเจ้าของและแอดมิน —
+        # คนทั่วไปเห็นแค่ช่วงเวลาที่ไม่ว่าง เหมือน status-feed (เดิมเห็นหัวข้อทุกการจอง)
+        can_see_details = is_admin_or_staff(request.user)
+        dynamic_bookings = []
+        for b in Booking.objects.filter(
+            room=room, status__in=ACTIVE_BOOKING_STATUSES, start_time__date=target_date,
+        ).values('user_id', 'start_time', 'end_time', 'title', 'attendees', 'status'):
+            mine = b.pop('user_id') == request.user.id
+            if not (mine or can_see_details):
+                b['title'] = 'ไม่ว่าง'
+                b['attendees'] = None
+            dynamic_bookings.append(b)
+
         return Response({
             'room': room.name, 'date': target_date,
             # รวมรายการที่รออนุมัติ/เช็คอินแล้วด้วย — ทั้งหมดนี้กันช่วงเวลาไว้แล้ว
             # (ACTIVE_BOOKING_STATUSES) เดิมโชว์แค่ approved ช่องจึงดูว่างทั้งที่จองไม่ได้
-            'dynamic_bookings': list(Booking.objects.filter(
-                room=room, status__in=ACTIVE_BOOKING_STATUSES, start_time__date=target_date,
-            ).values('start_time', 'end_time', 'title', 'attendees', 'status')),
+            'dynamic_bookings': dynamic_bookings,
             'term_bookings': list(TermBooking.objects.filter(
                 room=room, status__in=TERM_BLOCKING_STATUSES, day_of_week=target_date.weekday(),
                 term_start__lte=target_date, term_end__gte=target_date,
@@ -1295,11 +1361,17 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                             status=400)
         old = tb.status
         tb.status = 'cancelled'
-        tb.save()
+        tb.save()  # อีเมลแจ้งยกเลิกส่งจาก signals
         BookingLog.objects.create(
             term_booking=tb, changed_by=request.user,
             old_status=old, new_status='cancelled'
         )
+        # แอดมินยกเลิกคาบทั้งเทอมของคนอื่น — เดิมเจ้าของไม่รู้ตัวเลย
+        if tb.user_id != request.user.id:
+            Notification.objects.create(
+                user=tb.user, term_booking=tb, type='term_cancelled', title='การจองทั้งเทอมถูกยกเลิก',
+                message=f'การจอง{_term_summary(tb)} ถูกยกเลิกโดยผู้ดูแลระบบ',
+            )
         return Response({'message': 'ยกเลิกการจองทั้งเทอมเรียบร้อยแล้ว'})
 
     @action(detail=True, methods=['post'])
@@ -1318,6 +1390,8 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                 return Response({'error': 'อนุมัติได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
             if tb.term_end < timezone.localdate():
                 return Response({'error': 'ไม่สามารถอนุมัติได้ ช่วงเทอมสิ้นสุดไปแล้ว'}, status=400)
+            if not tb.room.is_open_for_booking:
+                return Response({'error': 'ไม่สามารถอนุมัติได้ ห้องนี้ปิดใช้งานแล้ว'}, status=400)
             self._lock_and_check(tb.room, tb.day_of_week, tb.start_time, tb.end_time,
                                  tb.term_start, tb.term_end, exclude_pk=tb.pk)
             tb.status = 'active'
@@ -1439,7 +1513,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         preferred_room = None
         if preferred_room_id is not None:
             preferred_room = Room.objects.filter(
-                id=preferred_room_id, is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+                id=preferred_room_id, is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
             ).exclude(status='disabled').select_related('building').first()
 
         def is_room_blocked(room_obj, period_start, period_end):
@@ -1491,7 +1565,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         base_qs = Room.objects.filter(
             is_active=True,
             capacity__gte=attendees,
-            id__in=AI_FORECAST_ROOM_IDS,
+            building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').select_related('building')
         if building_code:
             preferred_rooms = list(base_qs.filter(building__code=building_code).order_by('capacity', 'name'))
@@ -1747,6 +1821,9 @@ class BookingViewSet(viewsets.ModelViewSet):
                 return Response({'error': 'อนุมัติได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
             if booking.end_time <= timezone.now():
                 return Response({'error': 'ไม่สามารถอนุมัติได้ เวลาที่จองผ่านไปแล้ว'}, status=400)
+            # ห้องถูกปิดหลังส่งคำขอ — เดิมยังกดอนุมัติผ่าน
+            if not booking.room.is_open_for_booking:
+                return Response({'error': 'ไม่สามารถอนุมัติได้ ห้องนี้ปิดใช้งานแล้ว'}, status=400)
 
             old = booking.status
             booking.status = 'approved'
@@ -1804,7 +1881,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             return Response({'error': 'ยกเลิกไปแล้ว'}, status=400)
         # เดิมยกเลิกรายการที่ถูกปฏิเสธ/เสร็จสิ้นไปแล้วได้ ประวัติเพี้ยนและส่งอีเมล
         # "ยกเลิกแล้ว" ไปหาผู้จองโดยไม่มีเหตุผล
-        if booking.status not in ACTIVE_BOOKING_STATUSES:
+        if booking.status not in CANCELLABLE_BOOKING_STATUSES:
             return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {booking.get_status_display()}'},
                             status=400)
         # ใช้ห้องเสร็จไปแล้วยกเลิกย้อนหลังไม่ได้ — เดิมยกเลิกได้ ประวัติเพี้ยนและส่ง
@@ -1818,6 +1895,14 @@ class BookingViewSet(viewsets.ModelViewSet):
             booking=booking, changed_by=request.user,
             old_status=old, new_status='cancelled'
         )
+        # แอดมินยกเลิกให้ — เดิมเจ้าของได้แค่อีเมล ไม่มีแจ้งเตือนในระบบ
+        if booking.user_id != request.user.id:
+            Notification.objects.create(
+                user=booking.user, booking=booking, type='booking_cancelled', title='การจองถูกยกเลิก',
+                message=(f'การจองห้อง {booking.room.name} วันที่ '
+                         f'{booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
+                         f'ถูกยกเลิกโดยผู้ดูแลระบบ'),
+            )
         return Response({'message': 'ยกเลิกการจองเรียบร้อยแล้ว'})
 
     @action(detail=True, methods=['get'])
@@ -1944,7 +2029,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         if booking.status == 'cancelled':
             return HttpResponse(self._html('❌', '#6b7280', 'ยกเลิกไปแล้ว',
                                            f'การจองห้อง {escape(booking.room.name)} ถูกยกเลิกไปแล้วครับ'))
-        if booking.status not in ('pending', 'approved'):
+        if booking.status not in CANCELLABLE_BOOKING_STATUSES:
             return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้',
                                            f'สถานะปัจจุบัน: {booking.get_status_display()}'), status=400)
         if booking.end_time <= timezone.now():
@@ -2075,6 +2160,9 @@ class MaintenanceSlotsView(APIView):
         max_dem  = _query_param(request, 'max_demand', float, 0.10)
         min_hrs  = _query_param(request, 'min_hours', int, 3)
         days     = _query_param(request, 'days', int, 14)
+        # เดิม days ใหญ่มากพังเป็น 500 (วันที่เกินปี 9999)
+        days     = max(1, min(days, settings.MAX_ADVANCE_BOOKING_DAYS))
+        min_hrs  = max(1, min(min_hrs, 24))
 
         slots = _find_maintenance_slots(
             room_id=room_id,

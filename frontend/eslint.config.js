@@ -23,7 +23,9 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // ตัวพิมพ์ใหญ่ = component ที่ใช้ใน JSX (กฎนี้มองไม่เห็นการใช้ใน JSX) ทั้งตัวแปร
+      // และพารามิเตอร์ เช่น ({ icon: Icon }) — เดิมยกเว้นแค่ตัวแปร
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' }],
     },
   },
 ])

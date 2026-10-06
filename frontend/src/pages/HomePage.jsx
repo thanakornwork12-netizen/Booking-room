@@ -75,10 +75,17 @@ const timeUntil = (startTime) => {
   return null
 }
 
-const addHoursToTime = (time, hrs) => {
+// เวลาสิ้นสุด (วัน + เวลา) จากวันเริ่ม เวลาเริ่ม และจำนวนชั่วโมง — เดิมคืนแค่เวลา
+// แล้ววนรอบ 24 ชม. เริ่ม 23:00 นาน 2 ชม. จึงส่ง "วันเดียวกัน 01:00" ไป backend
+// ปฏิเสธว่าเวลาสิ้นสุดก่อนเวลาเริ่ม ตอนนี้ข้ามเที่ยงคืนแล้วขยับวันให้ถูก
+const endOf = (date, time, hrs) => {
+  const [y, mo, d] = date.split('-').map(Number)
   const [h, m] = time.split(':').map(Number)
-  const total = ((h * 60 + m + hrs * 60) % 1440 + 1440) % 1440
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+  const end = new Date(y, mo - 1, d, h + hrs, m)
+  return {
+    date: localDateStr(end),
+    time: `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`,
+  }
 }
 
 const TUTORIAL_STEPS = [
@@ -373,7 +380,8 @@ function RebookModal({ booking, onClose, onSuccess }) {
 
   if (!booking) return null
 
-  const endTime = startTime ? addHoursToTime(startTime, duration) : ''
+  const end = date && startTime ? endOf(date, startTime, duration) : null
+  const endTime = end ? end.time : ''
   const today = localDateStr()
 
   const handleSubmit = async () => {
@@ -389,7 +397,7 @@ function RebookModal({ booking, onClose, onSuccess }) {
         title: title.trim(),
         attendees: parseInt(attendees, 10),
         start_time: `${date}T${startTime}:00`,
-        end_time: `${date}T${endTime}:00`,
+        end_time: `${end.date}T${end.time}:00`,
       })
       onSuccess()
     } catch (err) {
@@ -486,7 +494,7 @@ function RebookModal({ booking, onClose, onSuccess }) {
           </div>
 
           {startTime && (
-            <p className="text-xs text-slate-500 text-center">เวลาที่จอง: {startTime} - {endTime} น.</p>
+            <p className="text-xs text-slate-500 text-center">เวลาที่จอง: {startTime} - {endTime} น.{end && end.date !== date ? ' (วันถัดไป)' : ''}</p>
           )}
 
           <button
@@ -552,8 +560,6 @@ export default function HomePage() {
   }
 
   useEffect(() => { load() }, [])
-
-  const handleLogout = () => { localStorage.clear(); navigate('/login') }
 
   const handleCancel = async (id) => {
     if (!confirm('ยืนยันการยกเลิกการจองนี้?')) return

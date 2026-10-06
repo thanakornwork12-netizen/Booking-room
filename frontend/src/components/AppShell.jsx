@@ -296,7 +296,7 @@ function SettingsModal({ open, onClose, user }) {
                   value={passwordForm.new_password}
                   onChange={e => setPasswordForm(prev => ({ ...prev, new_password: e.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  placeholder="อย่างน้อย 6 ตัวอักษร"
+                  placeholder="อย่างน้อย 8 ตัว ไม่ใช่ตัวเลขล้วน"
                 />
               </label>
 

@@ -95,7 +95,7 @@ export default function RegisterPage() {
     if (!form.faculty) return setError('กรุณาเลือกคณะ/หน่วยงาน')
     if (!form.password) return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
-    if (form.password.length < 6) return setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัว')
+    if (form.password.length < 8 || /^\d+$/.test(form.password)) return setError('รหัสผ่านต้องมีอย่างน้อย 8 ตัว และไม่เป็นตัวเลขล้วน')
 
     isSubmittingRef.current = true
     setLoading(true)
@@ -355,7 +355,7 @@ export default function RegisterPage() {
                       <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type={showPass ? 'text' : 'password'}
-                        placeholder="อย่างน้อย 6 ตัวอักษร"
+                        placeholder="อย่างน้อย 8 ตัว ไม่ใช่ตัวเลขล้วน"
                         className={`${inputCls} pr-11`}
                         value={form.password}
                         onChange={e => set('password', e.target.value)}

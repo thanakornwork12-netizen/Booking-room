@@ -6,7 +6,7 @@ select_for_update เพื่อกัน race condition)
 ทำให้การจองข้ามเที่ยงคืนทับคาบเรียนของวันถัดไปได้ ตอนนี้ไล่ทุกวันในช่วงผ่าน
 recurring_slot_conflicts แทน
 """
-from datetime import timedelta
+from datetime import time as time_type, timedelta
 
 from django.utils import timezone
 
@@ -23,20 +23,20 @@ def recurring_slot_conflicts(local_start, local_end, day_of_week, start_time, en
     เช็คว่าเหตุการณ์ครั้งเดียว (Booking/MaintenanceBlock ที่มี start/end เป็น
     datetime จริง) ชนกับ slot รายสัปดาห์ของ TermBooking (day_of_week +
     start_time/end_time ซ้ำทุกสัปดาห์ตลอด [term_start, term_end]) ไหม
+
+    ตัดเหตุการณ์เป็นท่อนรายวันแล้วเทียบเวลาจริงของแต่ละวัน — เดิมเหตุการณ์ข้ามวัน
+    ถือว่าชนทั้งวันถัดไป จอง 22:00–02:00 วันจันทร์ (หรือ 20:00–24:00) จึงโดน
+    ปฏิเสธเพราะคาบ 10:00 วันอังคาร ทั้งที่ไม่ได้ทับกันจริง
     """
-    if local_start.date() == local_end.date():
-        d = local_start.date()
-        if not (term_start <= d <= term_end):
-            return False
-        if d.weekday() != day_of_week:
-            return False
-        return local_start.time() < end_time and local_end.time() > start_time
-    # เหตุการณ์ข้ามวัน (เช่น ปิดซ่อมบำรุงยาวหลายวัน) — ถือว่าชนถ้ามีวันไหน
-    # ในช่วงตรงกับ day_of_week และอยู่ในช่วงเทอม (ระมัดระวังไว้ก่อน ไม่เช็ค
-    # เวลาละเอียดในกรณีนี้ เพราะห้องถูกกันทั้งวันอยู่แล้วในทางปฏิบัติ)
     cur = local_start.date()
-    while cur <= local_end.date():
-        if term_start <= cur <= term_end and cur.weekday() == day_of_week:
+    last = local_end.date()
+    while cur <= last:
+        # ท่อนของเหตุการณ์ที่ตกอยู่ในวัน cur (None = สุดวัน 24:00)
+        seg_start = local_start.time() if cur == local_start.date() else time_type(0, 0)
+        seg_end = local_end.time() if cur == last else None
+        empty = seg_end == time_type(0, 0)  # จบเที่ยงคืนพอดี ไม่มีท่อนในวันสุดท้าย
+        if (not empty and term_start <= cur <= term_end and cur.weekday() == day_of_week
+                and seg_start < end_time and (seg_end is None or seg_end > start_time)):
             return True
         cur += timedelta(days=1)
     return False
@@ -92,7 +92,13 @@ def find_term_conflict(room, day_of_week, start_time, end_time, term_start, term
     ตรวจ 3 แหล่งเหมือนการจองรายครั้ง: คาบทั้งเทอมอื่น, การจองรายครั้ง และ
     ช่วงปิดซ่อม (สองอย่างหลังไล่ทุกสัปดาห์ในช่วงเทอมผ่าน recurring_slot_conflicts)
     exclude_pk ใช้ตอนแก้ไข/เปิดคาบเดิมกลับมา ไม่ให้นับตัวเองว่าชน
+
+    ตรวจเฉพาะสัปดาห์ตั้งแต่วันนี้ไป — เทอมที่เริ่มไปแล้ว (จองกลางเทอม) เดิมโดนการ
+    จองเก่าในสัปดาห์ที่ผ่านไปแล้วบล็อกทั้งเทอม ทั้งที่ช่วงนั้นไม่มีผลอะไรแล้ว
     """
+    term_start = max(term_start, timezone.localdate())
+    if term_start > term_end:
+        return None
     terms = TermBooking.objects.filter(
         room=room,
         day_of_week=day_of_week,

@@ -228,6 +228,12 @@ APPROVER_EMAIL = os.environ.get('APPROVER_EMAIL', 'thanakorn.tho.66@ubu.ac.th')
 # ส่วน login ต้องพาไปหน้าเว็บฝั่ง frontend)
 # เพดานความยาวการจอง — กันจองยาวเป็นปีแล้วห้องถูกกันไว้ตลอด (แค่รออนุมัติก็กันแล้ว)
 # 21 วันครอบทุกการจองในข้อมูลจริง 7,260 รายการ (ยาวสุด ~17 วัน)
+# จำกัดการยิงซ้ำ (booking/throttles.py): (จำนวนครั้ง, ภายในกี่วินาที) ต่อบัญชีที่กรอก
+BOOKING_THROTTLE_RATES = {
+    'login': (10, 5 * 60),            # ล็อกอินผิด/ถูกรวมกัน 10 ครั้งใน 5 นาที
+    'password_reset': (3, 60 * 60),   # ขอลิงก์รีเซ็ต 3 ครั้งต่อชั่วโมงต่อบัญชี
+}
+
 MAX_BOOKING_DAYS = int(os.environ.get('MAX_BOOKING_DAYS', '21'))
 # จองทั้งเทอมยาวสุด 1 ปีการศึกษา
 MAX_TERM_BOOKING_DAYS = int(os.environ.get('MAX_TERM_BOOKING_DAYS', '366'))

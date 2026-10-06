@@ -1,5 +1,3 @@
-import json
-import datetime
 from ldap3 import Server, Connection, ALL, SUBTREE, AUTO_BIND_TLS_BEFORE_BIND
 from ldap3.core.exceptions import LDAPSocketReceiveError, LDAPSocketOpenError
 from django.conf import settings
@@ -101,7 +99,10 @@ def authenticate_ldap(username: str, password: str, extra_principal: str | None 
         search_filter=search_filter,
         search_scope=SUBTREE,
         time_limit=3,
-        attributes=['*']   # ดึงทุก field เพื่อให้เห็นว่ามีอะไรบ้าง
+        # ดึงเฉพาะ field ที่ใช้จริงด้านล่าง ไม่ใช่ทุก field ('*')
+        attributes=['sAMAccountName', 'displayName', 'mail', 'department',
+                    'physicalDeliveryOfficeName', 'title', 'employeeID', 'ou',
+                    'description', 'company'],
     )
 
     if not conn.entries:
@@ -117,16 +118,8 @@ def authenticate_ldap(username: str, password: str, extra_principal: str | None 
 
     entry = conn.entries[0]
 
-    # ── Log ทุก field ที่ LDAP ส่งมา (ดูใน terminal) ──────────────
-    print('\n' + '='*60)
-    print('[LDAP] RAW ATTRIBUTES ทั้งหมด:')
-    print(json.dumps(
-        {k: str(v) for k, v in entry.entry_attributes_as_dict.items()},
-        ensure_ascii=False,
-        indent=2
-    ))
-    print('='*60 + '\n')
-    # ──────────────────────────────────────────────────────────────
+    # ไม่ print attribute ดิบของ LDAP ลง log — เดิมพิมพ์ข้อมูลส่วนตัวทุก field
+    # (ชื่อ อีเมล คณะ รหัส ฯลฯ) ของทุกคนที่ล็อกอินลง log ของเซิร์ฟเวอร์
 
     # ── ดึง field ที่ต้องการ (ใช้ .value เพื่อป้องกัน error) ──────
     def get(attr):
@@ -154,13 +147,6 @@ def authenticate_ldap(username: str, password: str, extra_principal: str | None 
         'company':     get('company'),                     # มหาวิทยาลัย
     }
 
-    # ── Log ข้อมูลที่ parse แล้ว ───────────────────────────────────
-    print('[LDAP] LOGIN SUCCESS:')
-    print(json.dumps(
-        {**result, 'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-        ensure_ascii=False,
-        indent=2
-    ))
-
+    print(f'[LDAP] LOGIN SUCCESS: {real_username}')
     conn.unbind()
     return result

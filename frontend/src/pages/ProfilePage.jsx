@@ -237,7 +237,7 @@ function ChangePasswordForm({ canChange }) {
                 value={form.old_password} onChange={e => set('old_password', e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-500">รหัสผ่านใหม่ (6 ตัวขึ้นไป)</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-500">รหัสผ่านใหม่ (8 ตัวขึ้นไป ไม่ใช่ตัวเลขล้วน)</label>
               <input className={inputCls} type="password" autoComplete="new-password"
                 value={form.new_password} onChange={e => set('new_password', e.target.value)} />
             </div>
