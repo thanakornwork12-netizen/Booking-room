@@ -154,7 +154,8 @@ Infrastructure (production):
    - status: pending / approved / rejected / cancelled / completed / checked_in
    - checked_in, checked_in_at, checkin_token (UUID สุ่ม ใช้เป็นกุญแจลิงก์
      เช็คอิน/ยกเลิกผ่านอีเมลโดยไม่ต้องล็อกอิน)
-   - approved_by
+   - ไม่มีคอลัมน์ approved_by — ใครอนุมัติ/ปฏิเสธดูจาก BookingLog.changed_by
+     (User กับ Booking มีความสัมพันธ์เดียวคือ "จอง" — 1 คู่ตาราง = 1 เส้น)
 
 6) TermBooking — การจองทั้งเทอม (ล็อกวันซ้ำรายสัปดาห์)
    - FK -> User, Room
@@ -182,6 +183,7 @@ Infrastructure (production):
    WebSocket ทันทีที่ถูกสร้าง (Django signal ดัก post_save)
 
 10) BookingLog — ประวัติการเปลี่ยนสถานะการจอง (audit trail)
+   - changed_by = คนที่เปลี่ยนสถานะ ใช้บอกว่าใครอนุมัติ/ปฏิเสธ (แทน approved_by เดิม)
 
 11) RoomUsageStat — สถิติการใช้งานห้องรายวัน (จำนวนจอง, utilization rate)
     สำหรับ dashboard รายงาน

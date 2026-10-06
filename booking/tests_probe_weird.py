@@ -36,13 +36,10 @@ class ApprovedBookingEditProbe(BookingEdgeBase):
 
     def test_reapproval_is_logged_and_notified(self):
         b = self.seed(aware(self.day, 10), aware(self.day, 12), status='approved', user=self.bot)
-        b.approved_by = self.admin
-        b.save()
         self.client.patch(f'/api/bookings/{b.id}/', {
             'end_time': aware(self.day, 13).isoformat()}, format='json')
         b.refresh_from_db()
         self.assertEqual(b.status, 'pending')
-        self.assertIsNone(b.approved_by)
         self.assertTrue(b.logs.filter(old_status='approved', new_status='pending').exists())
         self.assertTrue(b.notification_set.filter(title__contains='รออนุมัติใหม่').exists())
 

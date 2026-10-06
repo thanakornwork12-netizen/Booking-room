@@ -144,10 +144,8 @@ class TermBooking(models.Model):
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     reject_reason = models.TextField(blank=True, verbose_name='เหตุผลที่ปฏิเสธ')
     note          = models.TextField(blank=True)
-    approved_by   = models.ForeignKey(
-        User, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='approved_term_bookings'
-    )
+    # ไม่มีฟิลด์ approved_by — ใครอนุมัติ/ปฏิเสธดูจาก BookingLog.changed_by แทน
+    # (ให้ User กับ TermBooking มีความสัมพันธ์เดียวคือ "จอง" ตามหลัก ER)
     created_at    = models.DateTimeField(auto_now_add=True)
     updated_at    = models.DateTimeField(auto_now=True)
 
@@ -232,10 +230,8 @@ class Booking(models.Model):
     reminded       = models.BooleanField(default=False)
     created_at     = models.DateTimeField(auto_now_add=True)
     updated_at     = models.DateTimeField(auto_now=True)
-    approved_by    = models.ForeignKey(
-        User, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='approved_bookings'
-    )
+    # ไม่มีฟิลด์ approved_by — ใครอนุมัติ/ปฏิเสธดูจาก BookingLog.changed_by แทน
+    # (ให้ User กับ Booking มีความสัมพันธ์เดียวคือ "จอง" ตามหลัก ER)
 
     class Meta:
         verbose_name = 'การจองรายวัน'

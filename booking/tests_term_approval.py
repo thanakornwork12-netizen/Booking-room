@@ -43,7 +43,6 @@ class TermApprovalTests(QABase):
     def test_new_term_booking_waits_for_approval(self):
         tb = self.request_term()
         self.assertEqual(tb.status, 'pending')
-        self.assertIsNone(tb.approved_by)
         self.assertTrue(Notification.objects.filter(
             user=self.bot, term_booking=tb, type='term_pending').exists())
 
@@ -106,7 +105,7 @@ class TermApprovalTests(QABase):
         self.assertEqual(r.status_code, 200, r.data)
         tb.refresh_from_db()
         self.assertEqual(tb.status, 'active')
-        self.assertEqual(tb.approved_by, self.admin)
+        # ผู้อนุมัติเก็บใน BookingLog.changed_by (ไม่มีฟิลด์ approved_by แล้ว)
         self.assertTrue(BookingLog.objects.filter(
             term_booking=tb, old_status='pending', new_status='active', changed_by=self.admin).exists())
         self.assertTrue(Notification.objects.filter(
@@ -146,13 +145,14 @@ class TermApprovalTests(QABase):
 
     # ── แก้ไข / ยกเลิก ───────────────────────────────────────
     def test_owner_moving_approved_class_needs_reapproval(self):
-        tb = self.make_term('active', approved_by=self.admin)
+        tb = self.make_term('active')
         r = self.client.patch(f'/api/term-bookings/{tb.id}/',
                               {'start_time': '13:00', 'end_time': '15:00'}, format='json')
         self.assertEqual(r.status_code, 200, r.data)
         tb.refresh_from_db()
         self.assertEqual(tb.status, 'pending', 'ย้ายเวลาหลังอนุมัติแล้วไม่ต้องอนุมัติใหม่')
-        self.assertIsNone(tb.approved_by)
+        self.assertTrue(BookingLog.objects.filter(
+            term_booking=tb, old_status='active', new_status='pending').exists())
 
     def test_note_only_edit_keeps_approval(self):
         tb = self.make_term('active')

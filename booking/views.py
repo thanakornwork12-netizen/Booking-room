@@ -1270,7 +1270,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                 serializer.save()
                 return
 
-            tb = serializer.save(status='pending', approved_by=None)
+            tb = serializer.save(status='pending')
             BookingLog.objects.create(
                 term_booking=tb, changed_by=self.request.user,
                 old_status='active', new_status='pending',
@@ -1321,7 +1321,6 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             self._lock_and_check(tb.room, tb.day_of_week, tb.start_time, tb.end_time,
                                  tb.term_start, tb.term_end, exclude_pk=tb.pk)
             tb.status = 'active'
-            tb.approved_by = request.user
             tb.reject_reason = ''
             tb.save()
             BookingLog.objects.create(
@@ -1346,7 +1345,6 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             if tb.status != 'pending':
                 return Response({'error': 'ปฏิเสธได้เฉพาะรายการที่รออนุมัติเท่านั้น'}, status=400)
             tb.status = 'rejected'
-            tb.approved_by = request.user
             tb.reject_reason = reason
             tb.save()
             BookingLog.objects.create(
@@ -1716,7 +1714,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 serializer.save()
                 return
 
-            booking = serializer.save(status='pending', approved_by=None)
+            booking = serializer.save(status='pending')
             BookingLog.objects.create(
                 booking=booking, changed_by=self.request.user,
                 old_status='approved', new_status='pending',
@@ -1752,7 +1750,6 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             old = booking.status
             booking.status = 'approved'
-            booking.approved_by = request.user
             booking.save()
             BookingLog.objects.create(
                 booking=booking, changed_by=request.user,
@@ -1781,7 +1778,6 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             old = booking.status
             booking.status = 'rejected'
-            booking.approved_by = request.user
             booking.reject_reason = reason
             booking.save()
             BookingLog.objects.create(

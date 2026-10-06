@@ -56,10 +56,8 @@ LAYOUT = {
 #   ตำแหน่งบนด้านแม่: เลขแถว (ด้านซ้าย/ขวา), เศษส่วนความกว้าง (ด้านบน/ล่าง) หรือ None = ตรงกับเส้นที่มา
 EDGES = [
     ('booking', 'user_id', 'L', [('x', 730)], 'user', 'R', 1),
-    ('booking', 'approved_by_id', 'L', [('x', 760)], 'user', 'R', 2),
     ('booking', 'room_id', 'R', [('x', 1450)], 'room', 'T', None),
     ('termbooking', 'user_id', 'L', [('x', 770)], 'user', 'R', 13),
-    ('termbooking', 'approved_by_id', 'L', [('x', 730)], 'user', 'R', 16),
     ('termbooking', 'room_id', 'R', [('x', 1400)], 'room', 'B', None),
     ('bookinglog', 'booking_id', 'R', [('x', 1070)], 'booking', 'R', 16),
     ('bookinglog', 'term_booking_id', 'R', [('x', 1090)], 'termbooking', 'R', 1),

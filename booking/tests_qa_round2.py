@@ -171,3 +171,13 @@ class QARound2Tests(QABase):
         r = self.client.get('/api/rooms/today-feed/?limit=-1')
         self.assertEqual(r.status_code, 200)
         self.assertLessEqual(len(r.data), 5)
+
+    # ── ผู้อนุมัติ/ผู้ปฏิเสธดูจาก log (ไม่มีฟิลด์ approved_by แล้ว) ─────────
+    def test_approver_and_rejecter_recorded_in_log(self):
+        ok = self.make_booking(aware(self.tue, 10), aware(self.tue, 11), status='pending')
+        no = self.make_booking(aware(self.tue, 13), aware(self.tue, 14), status='pending')
+        self.as_user(self.admin)
+        self.assertEqual(self.client.post(f'/api/bookings/{ok.id}/approve/').status_code, 200)
+        self.assertEqual(self.client.post(f'/api/bookings/{no.id}/reject/').status_code, 200)
+        self.assertTrue(ok.logs.filter(new_status='approved', changed_by=self.admin).exists())
+        self.assertTrue(no.logs.filter(new_status='rejected', changed_by=self.admin).exists())
