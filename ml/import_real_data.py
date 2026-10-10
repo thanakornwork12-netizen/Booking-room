@@ -18,6 +18,9 @@ import argparse
 import pandas as pd
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+# คำในช่อง "สถานะ" ของตารางห้องที่แปลว่าห้องไม่เปิดให้จอง
+CLOSED_STATUS_WORDS = ('งดจอง', 'งดใช้', 'ปิดใช้', 'ปิดปรับปรุง', 'ไม่เปิด', 'ไม่ให้จอง', 'ไม่สามารถจอง')
 sys.path.insert(0, BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'room_booking.settings')
 
@@ -182,7 +185,9 @@ def parse_room_specs(df) -> list[dict]:
             'storage': '',
             'extra_equipment': extra,
             'capacity': cap,
-            'status': 'disabled' if 'งดจอง' in status_value or 'ไม่' in status_value else 'available',
+            # ปิดเฉพาะสถานะที่บอกว่างดจองจริง — เดิมเช็คแค่ "มีคำว่า ไม่" ข้อความอย่าง
+            # "ไม่มีค่าใช้จ่าย" ก็ทำให้ห้องถูกปิด (1C-MEETING ถูกปิดตอนนำเข้าทั้งที่มีการใช้งานจริง)
+            'status': 'disabled' if any(k in status_value for k in CLOSED_STATUS_WORDS) else 'available',
             'building_code': building_code,
             'building_name': building_name,
         })

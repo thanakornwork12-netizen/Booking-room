@@ -215,9 +215,11 @@ const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()
   // ห้องทั้ง 8 ห้องที่เปิดให้จองเป็นห้องปฏิบัติการคอมพิวเตอร์ 7 ห้อง + ห้องประชุม 1 ห้อง
-  // เดิมนับแค่ "ห้องเรียน" ผลค้นหาจองทั้งเทอมจึงถูกกรองจนว่างเปล่าทุกครั้ง
+  // เดิมนับแค่ "ห้องเรียน" ผลค้นหาจองทั้งเทอมจึงถูกกรองจนว่างเปล่าทุกครั้ง และห้องประชุม
+  // (1C-MEETING) ไม่เคยขึ้นในการค้นหาจองทั้งเทอม ทั้งที่ backend รับจองได้ (เช่น ประชุมประจำสัปดาห์)
   return t.includes('ห้องเรียน') || t.includes('lecture') || t.includes('classroom')
     || t.includes('ปฏิบัติการ') || t.includes('lab')
+    || t.includes('ประชุม') || t.includes('meeting')
 }
 
 const roomHasEquipments = (room, selectedEquipments, equipmentPresets) => {
