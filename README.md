@@ -43,7 +43,7 @@ python manage.py test booking --noinput
 
 ## แก้พารามิเตอร์
 
-> เลขบรรทัดตรงกับโค้ด ณ วันที่ 10/10/2026 (commit `e3a2486` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
+> เลขบรรทัดตรงกับโค้ด ณ วันที่ 10/10/2026 (commit `317adad` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
 > ให้ค้นด้วยชื่อพารามิเตอร์ (`Ctrl+F` / `grep -n ชื่อ ไฟล์`) แล้วรัน
 > `python scripts/check_readme_params.py` เพื่อเช็คว่าเลขบรรทัดใน README ยังตรงไหม
 
@@ -114,16 +114,16 @@ python manage.py test booking --noinput
 
 | พารามิเตอร์ | ไฟล์:บรรทัด | ค่าตอนนี้ | ทำอะไร | แก้แล้วต้องทำอะไรต่อ |
 |---|---|---|---|---|
-| `CURRENT_PARAM_SET` | [ml/saved/forecast.py:150](ml/saved/forecast.py#L150) | `'D'` | ชุด hyperparameter ที่ใช้ตอน retrain (A–E) | หรือส่ง `--param-set X` ตอนรันแทนการแก้ไฟล์ |
-| `SKIP_LSTM` | [ml/saved/forecast.py:106](ml/saved/forecast.py#L106) | `True` | ข้าม LSTM (ใช้แค่ LightGBM + XGBoost) | production ใช้แค่ LGB+XGB |
-| `FORECAST_DAYS` | [ml/saved/forecast.py:143](ml/saved/forecast.py#L143) | `14` | พยากรณ์ล่วงหน้ากี่วัน ลงตาราง DemandForecast |  |
-| `MIN_DAYS` | [ml/saved/forecast.py:141](ml/saved/forecast.py#L141) | `30` | ห้องต้องมีการจองอย่างน้อยกี่รายการถึงจะเทรน |  |
-| `MIN_UNIQUE_DAYS` | [ml/saved/forecast.py:142](ml/saved/forecast.py#L142) | `14` | ห้องต้องมีวันที่ใช้งานอย่างน้อยกี่วัน |  |
-| `TRAIN_FRAC / CALIB_FRAC` | [ml/saved/forecast.py:366](ml/saved/forecast.py#L366) | `0.70 / 0.10` | สัดส่วนแบ่งข้อมูล train / calibration (ที่เหลือ 20% = test) | CALIB_FRAC อยู่บรรทัดถัดไป |
-| `LGB_WEIGHT_PRIOR / XGB_WEIGHT_PRIOR` | [ml/saved/forecast.py:354](ml/saved/forecast.py#L354) | `0.50 / 0.50` | น้ำหนักเริ่มต้นของ LightGBM / XGBoost ใน ensemble | XGB อยู่บรรทัดถัดไป |
-| `LABEL_BUFFER / LABEL_MED_BUFFER` | [ml/saved/forecast.py:361](ml/saved/forecast.py#L361) | `0.03 / 0.06` | ความไวตอนแปลงค่าพยากรณ์เป็นระดับ | MED อยู่บรรทัดถัดไป |
-| `ROOM_OPEN_HOUR / ROOM_CLOSE_HOUR` | [ml/saved/forecast.py:374](ml/saved/forecast.py#L374) | `8 / 20 (08:00–20:00)` | ช่วงเวลาที่นับการใช้ห้องในข้อมูลเทรน | CLOSE อยู่บรรทัดถัดไป |
-| `DISABLE_EARLY_STOPPING` | [ml/saved/forecast.py:166](ml/saved/forecast.py#L166) | `True` | เทรนครบทุกรอบแล้วเลือกรอบที่ดีที่สุดภายหลัง | หรือส่ง `--enable-early-stop` |
+| `CURRENT_PARAM_SET` | [ml/saved/forecast.py:151](ml/saved/forecast.py#L151) | `'D'` | ชุด hyperparameter ที่ใช้ตอน retrain (A–E) | หรือส่ง `--param-set X` ตอนรันแทนการแก้ไฟล์ |
+| `SKIP_LSTM` | [ml/saved/forecast.py:107](ml/saved/forecast.py#L107) | `True` | ข้าม LSTM (ใช้แค่ LightGBM + XGBoost) | production ใช้แค่ LGB+XGB |
+| `FORECAST_DAYS` | [ml/saved/forecast.py:144](ml/saved/forecast.py#L144) | `14` | พยากรณ์ล่วงหน้ากี่วัน ลงตาราง DemandForecast | หรือส่ง `--days 120` ตอนรัน เพื่อไม่ต้องรันใหม่บ่อย |
+| `MIN_DAYS` | [ml/saved/forecast.py:142](ml/saved/forecast.py#L142) | `30` | ห้องต้องมีการจองอย่างน้อยกี่รายการถึงจะเทรน |  |
+| `MIN_UNIQUE_DAYS` | [ml/saved/forecast.py:143](ml/saved/forecast.py#L143) | `14` | ห้องต้องมีวันที่ใช้งานอย่างน้อยกี่วัน |  |
+| `TRAIN_FRAC / CALIB_FRAC` | [ml/saved/forecast.py:367](ml/saved/forecast.py#L367) | `0.70 / 0.10` | สัดส่วนแบ่งข้อมูล train / calibration (ที่เหลือ 20% = test) | CALIB_FRAC อยู่บรรทัดถัดไป |
+| `LGB_WEIGHT_PRIOR / XGB_WEIGHT_PRIOR` | [ml/saved/forecast.py:355](ml/saved/forecast.py#L355) | `0.50 / 0.50` | น้ำหนักเริ่มต้นของ LightGBM / XGBoost ใน ensemble | XGB อยู่บรรทัดถัดไป |
+| `LABEL_BUFFER / LABEL_MED_BUFFER` | [ml/saved/forecast.py:362](ml/saved/forecast.py#L362) | `0.03 / 0.06` | ความไวตอนแปลงค่าพยากรณ์เป็นระดับ | MED อยู่บรรทัดถัดไป |
+| `ROOM_OPEN_HOUR / ROOM_CLOSE_HOUR` | [ml/saved/forecast.py:375](ml/saved/forecast.py#L375) | `8 / 20 (08:00–20:00)` | ช่วงเวลาที่นับการใช้ห้องในข้อมูลเทรน | CLOSE อยู่บรรทัดถัดไป |
+| `DISABLE_EARLY_STOPPING` | [ml/saved/forecast.py:167](ml/saved/forecast.py#L167) | `True` | เทรนครบทุกรอบแล้วเลือกรอบที่ดีที่สุดภายหลัง | หรือส่ง `--enable-early-stop` |
 | `PARAM_SETS` | [ml/saved/param_sets.py:31](ml/saved/param_sets.py#L31) | `{...}` | ค่า hyperparameter ของชุด A, A_REG, B, C, D, E, F | ดู "แก้ hyperparameter" ด้านล่าง |
 | `PARAM_SETS['A']` | [ml/saved/param_sets.py:35](ml/saved/param_sets.py#L35) | ดูในไฟล์ | ต้นไม้/learning rate/regularization ของชุด A | |
 | `PARAM_SETS['B']` | [ml/saved/param_sets.py:61](ml/saved/param_sets.py#L61) | ดูในไฟล์ | ต้นไม้/learning rate/regularization ของชุด B | |
@@ -134,6 +134,7 @@ python manage.py test booking --noinput
 **แก้ hyperparameter (`PARAM_SETS`)**
 1. แก้ค่าในชุดที่ต้องการใน [ml/saved/param_sets.py](ml/saved/param_sets.py) (`forecast.py` กับ `plotting.py` อ่านจากไฟล์นี้ที่เดียว)
 2. เทรนใหม่: `python ml/saved/forecast.py --retrain --param-set D`
+   - พยากรณ์อย่างเดียว (ใช้โมเดลเดิม ไม่เทรน): `python ml/saved/forecast.py --days 120` ผลเขียนลงฐานข้อมูลที่ `DATABASE_URL` ชี้ไป — เว็บจริง (Render) รันโมเดลเองไม่ได้ เพราะไม่มี lightgbm/xgboost และไฟล์โมเดลไม่ได้อยู่ใน git ต้องรันจากเครื่องโดยชี้ `DATABASE_URL` ไปที่ Neon
 3. **ตาราง/กราฟ/ตัวเลขที่สร้างจากผลเทรนต้องสร้างใหม่ทุกชิ้น** (ไฟล์ใน `ml/saved/metrics_plots/` และตัวเลขใน exam_guide.html) ไม่งั้นตัวเลขในเล่มจะไม่ตรงกับโมเดล
 4. production ใช้แค่ LightGBM + XGBoost (`SKIP_LSTM = True`) ค่า `lstm_*` ในแต่ละชุดจึงไม่มีผล
 
