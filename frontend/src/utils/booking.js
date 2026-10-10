@@ -1,5 +1,5 @@
 import {
-  CHECKIN_BUTTON_MINUTES_AFTER, CHECKIN_OPENS_MINUTES_BEFORE, DURATIONS, PASSWORD_MIN_LENGTH,
+  CHECKIN_OPENS_MINUTES_BEFORE, DURATIONS, PASSWORD_MIN_LENGTH,
 } from '../config'
 
 // วันที่ YYYY-MM-DD ตามเวลาเครื่อง (ไทย) — ห้ามใช้ toISOString() เพราะแปลงเป็น UTC
@@ -12,12 +12,11 @@ export { DURATIONS }
 // เวลาจบผ่านไปแล้วหรือยัง
 export const isPast = (endTime) => new Date() > new Date(endTime)
 
-// ช่วงที่ปุ่มเช็คอินโชว์: ก่อนเวลาเริ่ม CHECKIN_OPENS_MINUTES_BEFORE นาที ถึงหลังเริ่ม
-// CHECKIN_BUTTON_MINUTES_AFTER นาที (เดิมคัดลอกไว้ใน HomePage กับ ProfilePage)
-export const canCheckIn = (startTime) => {
-  const diff = (new Date() - new Date(startTime)) / 60000
-  return diff >= -CHECKIN_OPENS_MINUTES_BEFORE && diff <= CHECKIN_BUTTON_MINUTES_AFTER
-}
+// เปิดเช็คอินแล้วหรือยัง (ก่อนเวลาเริ่ม CHECKIN_OPENS_MINUTES_BEFORE นาที) — ผู้เรียกเช็ค
+// เพิ่มว่าการจองยังไม่จบ จึงเช็คอินได้ถึงเวลาสิ้นสุดตามกฎของ backend (เดิมปุ่มหายไป
+// หลังเริ่มได้ 15 นาที ทั้งที่ระบบยังรับเช็คอินอยู่ คนมาสายจึงหาปุ่มไม่เจอ)
+export const canCheckIn = (startTime) =>
+  (new Date() - new Date(startTime)) / 60000 >= -CHECKIN_OPENS_MINUTES_BEFORE
 
 // ตรวจรหัสผ่านเบื้องต้นก่อนส่ง (กฎเต็มตรวจที่ backend) คืนข้อความผิด หรือ '' ถ้าผ่าน
 export const passwordProblem = (password) =>

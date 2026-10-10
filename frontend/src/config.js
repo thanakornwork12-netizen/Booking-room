@@ -22,13 +22,15 @@ export const DURATIONS = [
 // ── เช็คอิน / สถานะ ───────────────────────────────────────────
 // ต้องตรงกับ CHECKIN_OPENS_MINUTES_BEFORE ใน booking/config.py
 export const CHECKIN_OPENS_MINUTES_BEFORE = 15
-// ปุ่มเช็คอินในหน้าเว็บโชว์ถึงกี่นาทีหลังเวลาเริ่ม (backend รับได้ถึงเวลาจบ)
-export const CHECKIN_BUTTON_MINUTES_AFTER = 15
 // หน้าแอดมิน: การจองที่จะเริ่มภายในกี่นาทีนับเป็น "จะเริ่มเร็วๆ"
 // ต้องตรงกับ STARTING_SOON_MINUTES ใน booking/config.py
 export const STARTING_SOON_MINUTES = 30
 // หน้าแอดมิน: คำนวณสถานะห้องใหม่ทุกกี่มิลลิวินาที
 export const ADMIN_STATUS_REFRESH_MS = 30000
+
+// ── รายการ ──────────────────────────────────────────────────
+// หน้าโปรไฟล์/หน้าแรกขอการจองของตัวเองได้ทีละกี่รายการ (backend จำกัดสูงสุด 200)
+export const MY_BOOKINGS_PAGE_SIZE = 200
 
 // ── รหัสผ่าน ─────────────────────────────────────────────────
 // ตรวจเบื้องต้นก่อนส่ง กฎเต็มอยู่ที่ AUTH_PASSWORD_VALIDATORS ใน settings.py

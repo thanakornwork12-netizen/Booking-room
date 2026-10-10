@@ -2109,7 +2109,7 @@ export default function AdminPage() {
       finally  { setLoading(false) }
     }
     load()
-  }, [])
+  }, [navigate])
 
   const handleCancel = async (id) => {
     if (!confirm('ยืนยันการยกเลิกการจองนี้?')) return

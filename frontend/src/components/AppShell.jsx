@@ -808,6 +808,9 @@ function AppShell({ children }) {
   const [suggestPos, setSuggestPos] = useState(null)
   const searchWrapRef = useRef(null)
 
+  // อ่านข้อมูลผู้ใช้ใหม่ทุกครั้งที่เปลี่ยนหน้า (เช่น หลังแก้ชื่อในโปรไฟล์) — pathname จึงตั้งใจ
+  // ใส่ไว้เป็นตัวกระตุ้น แม้ฟังก์ชันจะไม่ได้ใช้ค่านั้นตรงๆ
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const user = useMemo(() => getUser(), [location.pathname])
   const displayName = normalizeDisplayName(
     [

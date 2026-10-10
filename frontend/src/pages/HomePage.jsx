@@ -7,8 +7,8 @@ import {
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
 import { addHours, canCheckIn, isPast, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
-import { CHECKIN_OPENS_MINUTES_BEFORE } from '../config'
 import { extractErrorMessage } from '../utils/errors'
+import { MY_BOOKINGS_PAGE_SIZE } from '../config'
 
 const supportInfo = {
   organization: 'สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี',
@@ -66,8 +66,7 @@ const timeUntil = (startTime) => {
   const diff = Math.round((new Date(startTime) - new Date()) / 60000)
   if (diff > 60) return `${Math.floor(diff/60)} ชม. ${diff%60} นาที`
   if (diff > 0)  return `${diff} นาที`
-  if (diff > -CHECKIN_OPENS_MINUTES_BEFORE) return 'เปิด check-in แล้ว'
-  return null
+  return 'เปิด check-in แล้ว'  // ผู้เรียกแสดงเฉพาะรายการที่ยังไม่จบ
 }
 
 // เวลาสิ้นสุด (วัน + เวลา) จากวันเริ่ม เวลาเริ่ม และจำนวนชั่วโมง — เดิมคืนแค่เวลา
@@ -529,8 +528,8 @@ export default function HomePage() {
     try {
       const [p, b, t, feed] = await Promise.all([
         api.get('/auth/profile/'),
-        api.get('/bookings/'),
-        api.get('/term-bookings/').catch(() => ({ data: [] })),
+        api.get('/bookings/', { params: { page_size: MY_BOOKINGS_PAGE_SIZE } }),
+        api.get('/term-bookings/', { params: { page_size: MY_BOOKINGS_PAGE_SIZE } }).catch(() => ({ data: [] })),
         api.get('/rooms/today-feed/').catch(() => ({ data: [] })),
       ])
       setUser(p.data)
@@ -589,7 +588,7 @@ export default function HomePage() {
   const handleRebookSuccess = async () => {
     setRebookBooking(null)
     try {
-      const res = await api.get('/bookings/')
+      const res = await api.get('/bookings/', { params: { page_size: MY_BOOKINGS_PAGE_SIZE } })
       setBookings(res.data.results || res.data || [])
     } catch { /* list will refresh next visit */ }
     alert('✅ จองซ้ำสำเร็จ!')

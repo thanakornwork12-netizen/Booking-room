@@ -43,7 +43,7 @@ python manage.py test booking --noinput
 
 ## แก้พารามิเตอร์
 
-> เลขบรรทัดตรงกับโค้ด ณ วันที่ 10/10/2026 (commit `317adad` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
+> เลขบรรทัดตรงกับโค้ด ณ วันที่ 10/10/2026 (commit `bae75b3` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
 > ให้ค้นด้วยชื่อพารามิเตอร์ (`Ctrl+F` / `grep -n ชื่อ ไฟล์`) แล้วรัน
 > `python scripts/check_readme_params.py` เพื่อเช็คว่าเลขบรรทัดใน README ยังตรงไหม
 
@@ -105,10 +105,10 @@ python manage.py test booking --noinput
 | `TIME_SLOTS` | [frontend/src/config.js:14](frontend/src/config.js#L14) | `['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00']` | ปุ่มเวลาเริ่มในหน้าค้นหา |  |
 | `DURATIONS` | [frontend/src/config.js:16](frontend/src/config.js#L16) | `1 / 2 / 3 ชม.` | ปุ่มระยะเวลาจอง (ชม.) | กำหนดเองได้อีกทางผ่านปุ่ม "กำหนดเอง" |
 | `CHECKIN_OPENS_MINUTES_BEFORE` | [frontend/src/config.js:24](frontend/src/config.js#L24) | `15` | ปุ่มเช็คอินขึ้นก่อนเวลาเริ่มกี่นาที | ต้องตรงกับ booking/config.py |
-| `CHECKIN_BUTTON_MINUTES_AFTER` | [frontend/src/config.js:26](frontend/src/config.js#L26) | `15` | ปุ่มเช็คอินโชว์ถึงกี่นาทีหลังเวลาเริ่ม | backend รับเช็คอินได้ถึงเวลาจบ (ดู "เรื่องที่ควรรู้") |
-| `STARTING_SOON_MINUTES` | [frontend/src/config.js:29](frontend/src/config.js#L29) | `30` | หน้าแอดมิน: "จะเริ่มเร็วๆ" ภายในกี่นาที | ต้องตรงกับ booking/config.py |
-| `ADMIN_STATUS_REFRESH_MS` | [frontend/src/config.js:31](frontend/src/config.js#L31) | `30000` | หน้าแอดมินคำนวณสถานะห้องใหม่ทุกกี่มิลลิวินาที |  |
-| `PASSWORD_MIN_LENGTH` | [frontend/src/config.js:35](frontend/src/config.js#L35) | `8` | ตรวจความยาวรหัสผ่านก่อนส่ง | ต้องตรงกับ `AUTH_PASSWORD_VALIDATORS` ฝั่ง server |
+| `MY_BOOKINGS_PAGE_SIZE` | [frontend/src/config.js:33](frontend/src/config.js#L33) | `200` | หน้าโปรไฟล์/หน้าแรกโหลดการจองของตัวเองได้กี่รายการ | backend จำกัดสูงสุด 200 (booking/pagination.py) |
+| `STARTING_SOON_MINUTES` | [frontend/src/config.js:27](frontend/src/config.js#L27) | `30` | หน้าแอดมิน: "จะเริ่มเร็วๆ" ภายในกี่นาที | ต้องตรงกับ booking/config.py |
+| `ADMIN_STATUS_REFRESH_MS` | [frontend/src/config.js:29](frontend/src/config.js#L29) | `30000` | หน้าแอดมินคำนวณสถานะห้องใหม่ทุกกี่มิลลิวินาที |  |
+| `PASSWORD_MIN_LENGTH` | [frontend/src/config.js:37](frontend/src/config.js#L37) | `8` | ตรวจความยาวรหัสผ่านก่อนส่ง | ต้องตรงกับ `AUTH_PASSWORD_VALIDATORS` ฝั่ง server |
 
 ### 4. AI ที่ใช้งานจริง — `ml/saved/forecast.py` และ `ml/saved/param_sets.py`
 
@@ -163,7 +163,7 @@ python manage.py test booking --noinput
 | `PARAM_SETS` | เทรนใหม่ + สร้างตาราง/กราฟใหม่ทั้งหมด |
 | rounds ใน `SETS` (train_direct_sets.py) | lr ให้ rounds × lr = 24 เท่าเดิม |
 
-## เรื่องที่ควรรู้ (พบตอนทำความสะอาดโค้ด ยังไม่ได้เปลี่ยน)
+## เรื่องที่ควรรู้
 
-- **ปุ่มเช็คอินหายเร็วกว่าที่ backend อนุญาต:** หน้าเว็บโชว์ปุ่มถึง 15 นาทีหลังเวลาเริ่ม (`CHECKIN_BUTTON_MINUTES_AFTER`) แต่ backend รับเช็คอินได้ถึงเวลาจบการจอง คนที่มาสายเกิน 15 นาทีจะไม่เห็นปุ่ม ถ้าต้องการให้ตรงกัน แก้ค่านี้หรือเพิ่มกฎฝั่ง backend
-- **โค้ด ML ที่เรียกฟังก์ชันที่ไม่มีอยู่จริง** (มีมาตั้งแต่ใน git ไม่เคยมีคนเรียกถึง): `--roomcurve` ใน ml/saved/analyze_adaptive_weights_all_sets.py เรียก `plot_per_room_accuracy_curve` และ ml/saved/plotting.py เรียก `_room_labels_from_metas` เมื่อส่ง `room_metas` เข้ามา ถ้าเรียกสองทางนี้จะ error
+- **เว็บจริงไม่ได้รันโมเดลเอง:** Render ไม่มี lightgbm/xgboost และไฟล์โมเดลไม่ได้อยู่ใน git ผลพยากรณ์จึงต้องรัน `ml/saved/forecast.py --days 120` จากเครื่อง โดยชี้ `DATABASE_URL` ไปที่ Neon (ดูหัวข้อ 4)
+- **เช็คอิน:** ได้ตั้งแต่ `CHECKIN_OPENS_MINUTES_BEFORE` นาทีก่อนเริ่ม จนถึงเวลาสิ้นสุดการจอง ทั้งปุ่มในเว็บและลิงก์ในอีเมล

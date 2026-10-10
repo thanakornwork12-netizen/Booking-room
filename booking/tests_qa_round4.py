@@ -113,3 +113,26 @@ class MaintenanceRefreshTests(QABase):
         refresh_maintenance()
         mb.refresh_from_db(); self.room.refresh_from_db()
         self.assertEqual((mb.status, self.room.status), ('scheduled', 'available'))
+
+
+class PageSizeTests(QABase):
+    """หน้าโปรไฟล์/หน้าแรกขอการจองของตัวเองได้มากกว่า 20 รายการ (เดิมเห็นแค่หน้าแรก)"""
+
+    def make(self, n):
+        for i in range(n):
+            Booking.objects.create(user=self.bot, room=self.room, title=f'b{i}', attendees=5,
+                                   start_time=aware(self.tue, 8) + timedelta(days=7 * i),
+                                   end_time=aware(self.tue, 9) + timedelta(days=7 * i), status='approved')
+
+    def test_default_is_20(self):
+        self.make(25)
+        self.assertEqual(len(self.client.get('/api/bookings/').data['results']), 20)
+
+    def test_page_size_returns_more(self):
+        self.make(25)
+        self.assertEqual(len(self.client.get('/api/bookings/?page_size=200').data['results']), 25)
+
+    def test_page_size_capped_at_200(self):
+        from booking.pagination import StandardPagination
+        self.assertEqual(StandardPagination.max_page_size, 200)
+        self.assertEqual(self.client.get('/api/bookings/?page_size=100000').status_code, 200)

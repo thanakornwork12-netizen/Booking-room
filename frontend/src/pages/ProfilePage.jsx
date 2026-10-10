@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import api, { getUser, updateStoredUser, changePassword } from '../api/axios'
 import { canCheckIn, isPast } from '../utils/booking'
+import { MY_BOOKINGS_PAGE_SIZE } from '../config'
 
 const roleLabels = {
   admin: 'ผู้ดูแลระบบ',
@@ -82,7 +83,7 @@ function BookingHistory() {
 
   useEffect(() => {
     let active = true
-    api.get('bookings/')
+    api.get('bookings/', { params: { page_size: MY_BOOKINGS_PAGE_SIZE } })
       .then(res => { if (active) setBookings(res.data.results || res.data || []) })
       .catch(() => { if (active) setError('โหลดประวัติการจองไม่สำเร็จ') })
       .finally(() => { if (active) setLoading(false) })
