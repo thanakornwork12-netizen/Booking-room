@@ -161,7 +161,6 @@ let _pendingLoginRequest = null
 // ── Helper: login แล้วเก็บ token อัตโนมัติ ────────────────────────────────
 export async function loginWithLDAP(username, password, remember = true) {
   if (_pendingLoginRequest) {
-    console.log('[DIAG] loginWithLDAP: request already in flight, reusing existing promise')
     return _pendingLoginRequest
   }
   _pendingLoginRequest = _doLoginWithLDAP(username, password, remember)
@@ -173,9 +172,7 @@ export async function loginWithLDAP(username, password, remember = true) {
 }
 
 async function _doLoginWithLDAP(username, password, remember) {
-  console.log('[DIAG] loginWithLDAP: start, posting to auth/login/')
   const res = await api.post('auth/login/', { username, password })
-  console.log('[DIAG] loginWithLDAP: got response', res.status, res.data)
   const user = res.data.user || res.data
   const displayName =
     user.display_name ||
@@ -185,7 +182,6 @@ async function _doLoginWithLDAP(username, password, remember) {
     user.username
 
   _setTokens({ access: res.data.access, refresh: res.data.refresh, remember })
-  console.log('[DIAG] loginWithLDAP: tokens stored, access_token in storage now =', !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token')))
   const store = remember ? localStorage : sessionStorage
   store.setItem('user', JSON.stringify({
     username: user.username,
@@ -198,7 +194,6 @@ async function _doLoginWithLDAP(username, password, remember) {
     faculty:  user.faculty,
     role:     user.role,
   }))
-  console.log('[DIAG] loginWithLDAP: done, returning')
 
   return res.data
 }

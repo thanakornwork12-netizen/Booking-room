@@ -40,7 +40,8 @@ const normalizeDisplayName = (values) => {
     if (!token) continue
 
     const lower = token.toLowerCase()
-    const looksLikeEnglishLabel = /^[a-z0-9._-]+$/i.test(token)
+    // เหมือน AppShell: ข้าม username/ป้ายระบบ แต่รับชื่ออังกฤษจริงที่ขึ้นต้นตัวใหญ่
+    const looksLikeEnglishLabel = /[0-9._-]/.test(token) || (/^[a-z]+$/i.test(token) && token === token.toLowerCase())
     if (blockedLabels.has(lower) || looksLikeEnglishLabel) continue
 
     return token
@@ -196,6 +197,8 @@ const TERM_STATUS = {
 }
 const termStatus = (tb) => TERM_STATUS[tb.status] || TERM_STATUS.pending
 const hhmm = (t) => (t || '').slice(0, 5)
+// วันที่แบบไทยสั้น (2 ธ.ค. 69) สำหรับช่วงเทอม — สร้างจาก YYYY-MM-DD ตามเวลาเครื่อง
+const thDate = (iso) => iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'
 
 function TermBookingModal({ booking, onClose, onCancel }) {
   if (!booking) return null
@@ -238,7 +241,7 @@ function TermBookingModal({ booking, onClose, onCancel }) {
             </div>
             <div className="flex items-center gap-3 text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
               <CalendarDays size={16} className="text-purple-600 shrink-0" />
-              <div className="min-w-0"><p className="text-[10px] text-slate-400">ระยะเวลาของเทอม</p><p className="text-sm font-bold truncate">{booking.term_name}</p></div>
+              <div className="min-w-0"><p className="text-[10px] text-slate-400">ระยะเวลาของเทอม</p><p className="text-sm font-bold truncate">{booking.term_name || 'ไม่ระบุภาคเรียน'}</p><p className="text-xs text-slate-500">{thDate(booking.term_start)} – {thDate(booking.term_end)}</p></div>
             </div>
           </div>
           {canCancel && (

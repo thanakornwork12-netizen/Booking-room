@@ -67,7 +67,10 @@ const normalizeDisplayName = (values) => {
     if (!token) continue
 
     const lower = token.toLowerCase()
-    const looksLikeEnglishLabel = /^[a-z0-9._-]+$/i.test(token)
+    // ข้ามสิ่งที่หน้าตาเหมือน username/ป้ายระบบ (มีตัวเลขหรือ . _ - หรือตัวเล็กล้วน)
+    // แต่รับชื่ออังกฤษจริงที่ขึ้นต้นตัวใหญ่ — เดิมข้ามคำอังกฤษทุกคำ คนที่ชื่อเป็น
+    // ภาษาอังกฤษ (เช่นบัญชีที่สมัครเอง) เห็นมุมขวาบนเป็น "ผู้ใช้ระบบ" เสมอ
+    const looksLikeEnglishLabel = /[0-9._-]/.test(token) || (/^[a-z]+$/i.test(token) && token === token.toLowerCase())
     if (blockedLabels.has(lower) || looksLikeEnglishLabel) continue
 
     return token

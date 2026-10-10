@@ -211,6 +211,16 @@ const getDefaultTermNumber = () => {
   if (m >= 11 || m <= 3) return 2
   return 3
 }
+// ชื่อภาคเรียนตาม "วันเริ่มเทอมที่เลือก" (ไม่ใช่วันนี้) — เดิมใช้ภาคเรียนของวันนี้เสมอ
+// เลือกช่วง ธ.ค.–ม.ค. ตอนเดือน ต.ค. จึงได้ชื่อ "ภาคเรียนที่ 1" ทั้งที่เป็นภาค 2
+const termNameForDate = (isoDate) => {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return ''
+  const m = d.getMonth() + 1
+  const yearBE = m >= 6 ? d.getFullYear() + 543 : d.getFullYear() + 543 - 1
+  const termNum = (m >= 6 && m <= 10) ? 1 : (m >= 11 || m <= 3) ? 2 : 3
+  return buildTermName(yearBE, termNum)
+}
 const isClassroomType = room => {
   if (!room.room_type) return false
   const t = room.room_type.toLowerCase().trim()
@@ -1593,7 +1603,7 @@ export default function SearchPage({ embedded = false }) {
       const payload = {
         attendees, start_time: startTime, end_time: endTime, building_code: building || undefined,
         booking_type: bookingType === 'term' ? 'term' : 'dynamic',
-        ...(bookingType === 'term' ? { day_of_week: dayOfWeek, term_start: termStart, term_end: termEnd, term_name: termName || buildTermName(academicYearBE, termNumber) } : { date })
+        ...(bookingType === 'term' ? { day_of_week: dayOfWeek, term_start: termStart, term_end: termEnd, term_name: (termStart && termNameForDate(termStart)) || termName || buildTermName(academicYearBE, termNumber) } : { date })
       }
       const res = await api.post('/rooms/search/', payload)
       const roomsData = Array.isArray(res.data) ? res.data : []
@@ -1648,13 +1658,13 @@ export default function SearchPage({ embedded = false }) {
       if (bookingType === 'term' && splitPlan) {
         response = await api.post('term-bookings/split-book/', {
           subject_name: title.trim(), attendees: parseInt(attendees, 10), day_of_week: dayOfWeek,
-          start_time: startTime, end_time: endTime, term_name: termName,
+          start_time: startTime, end_time: endTime, term_name: termNameForDate(termStart) || termName,
           first_room_id: splitPlan.first_half.room_id, first_term_start: splitPlan.first_half.term_start, first_term_end: splitPlan.first_half.term_end,
           second_room_id: splitPlan.second_half.room_id, second_term_start: splitPlan.second_half.term_start, second_term_end: splitPlan.second_half.term_end,
         })
         setSplitPlan(null)
       } else if (bookingType === 'term') {
-        response = await api.post('term-bookings/', { room: selectedRoom.id, subject_name: title, attendees: parseInt(attendees), day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, term_start: termStart, term_end: termEnd, term_name: termName })
+        response = await api.post('term-bookings/', { room: selectedRoom.id, subject_name: title, attendees: parseInt(attendees), day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, term_start: termStart, term_end: termEnd, term_name: termNameForDate(termStart) || termName })
       } else {
         response = await api.post('bookings/', { room: selectedRoom.id, title: title, attendees: parseInt(attendees), start_time: `${date}T${startTime}:00`, end_time: `${date}T${endTime}:00` })
       }

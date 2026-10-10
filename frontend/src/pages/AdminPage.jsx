@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import api from '../api/axios'
 import { isPast, localDateStr } from '../utils/booking'
+import { extractErrorMessage } from '../utils/errors'
 import { ADMIN_STATUS_REFRESH_MS, STARTING_SOON_MINUTES } from '../config'
 
 const ANIM = `
@@ -2116,7 +2117,7 @@ export default function AdminPage() {
       await api.post(`bookings/${id}/cancel/`)
       setBookings(prev => prev.map(b => b.id===id ? {...b,status:'cancelled'} : b))
       if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'cancelled'}))
-    } catch { alert('เกิดข้อผิดพลาด') }
+    } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
   const handleApprove = async (id) => {
@@ -2125,7 +2126,7 @@ export default function AdminPage() {
       await api.post(`bookings/${id}/approve/`)
       setBookings(prev => prev.map(b => b.id===id ? {...b,status:'approved'} : b))
       if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'approved'}))
-    } catch { alert('เกิดข้อผิดพลาด') }
+    } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
   const handleReject = async (id) => {
@@ -2135,7 +2136,7 @@ export default function AdminPage() {
       await api.post(`bookings/${id}/reject/`, { reason })
       setBookings(prev => prev.map(b => b.id===id ? {...b,status:'rejected',reject_reason:reason} : b))
       if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'rejected',reject_reason:reason}))
-    } catch { alert('เกิดข้อผิดพลาด') }
+    } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
   const handleApproveTerm = async (id) => {
@@ -2143,7 +2144,7 @@ export default function AdminPage() {
     try {
       await api.post(`term-bookings/${id}/approve/`)
       setTermBookings(prev => prev.map(tb => tb.id===id ? {...tb,status:'active'} : tb))
-    } catch (err) { alert(err.response?.data?.detail || err.response?.data?.error || 'เกิดข้อผิดพลาด') }
+    } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
   const handleRejectTerm = async (id) => {
@@ -2152,7 +2153,7 @@ export default function AdminPage() {
     try {
       await api.post(`term-bookings/${id}/reject/`, { reason })
       setTermBookings(prev => prev.map(tb => tb.id===id ? {...tb,status:'rejected',reject_reason:reason} : tb))
-    } catch (err) { alert(err.response?.data?.error || 'เกิดข้อผิดพลาด') }
+    } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
   const fmtDate     = dt => new Date(dt).toLocaleDateString('th-TH',{day:'numeric',month:'short'})
