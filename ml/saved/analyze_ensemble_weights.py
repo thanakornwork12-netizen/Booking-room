@@ -58,13 +58,12 @@ def build_all_rooms_daily(raw: pd.DataFrame, rooms) -> dict:
         if len(rdf_r) == 0:
             all_rooms_daily[r] = pd.Series(dtype=float)
             continue
-        daily_r = (
-            rdf_r.groupby('date')['duration'].sum()
-                 .reindex(pd.date_range(rdf_r['date'].min(), rdf_r['date'].max(), freq='D').date, fill_value=0.0)
-                 .astype(float)
-        )
-        daily_r.index = pd.to_datetime(daily_r.index)
-        all_rooms_daily[r] = daily_r
+        # Must match how every other daily series is built: a raw groupby by
+        # start date drops a multi-day booking's whole span (up to 416h) onto
+        # day one and leaves the days it covered at zero, so the peer-profile
+        # features would describe a different series than the models saw.
+        daily_r = F._prepare_daily_series(rdf_r, None, None)
+        all_rooms_daily[r] = daily_r if daily_r is not None else pd.Series(dtype=float)
     return all_rooms_daily
 
 
@@ -182,17 +181,29 @@ def evaluate_scheme(rooms_data: list, weights: dict, split: str = 'cal') -> dict
     weight schemes (or a full grid search) is fast.
 
     split='cal': used to SEARCH for weights (calibration set — safe to reuse
-    for many trials). split='test': used for the FINAL reported numbers on
-    data the search never saw, using the same threshold-optimized accuracy
-    (_evaluate_with_best_threshold) as hyperparam_comparison.csv / meta.pkl's
-    'Ensemble Acc', so these numbers are directly comparable to those.
+    for many trials). split='test': the FINAL reported numbers, on data the
+    search never saw.
+
+    Predictions are de-shrunk with a quantile map fit on the calibration
+    blend before scoring; the thresholds stay fixed. This previously called
+    _evaluate_with_best_threshold, which searches the threshold multiplier
+    on the split being scored. That was wrong twice over: on test it fit the
+    data it reported, and scaling thresholds relabels y_true as well, so a
+    higher 'accuracy' there mostly meant a more degenerate label mix.
     """
+    def _blend(sl):
+        b = weights['lstm'] * sl['lstm'] + weights['lgb'] * sl['lgb'] + weights['xgb'] * sl['xgb']
+        return np.maximum(0.0, b)
+
     accs, r2s, maes = [], [], []
     for d in rooms_data:
         s = d[split]
-        blended = weights['lstm'] * s['lstm'] + weights['lgb'] * s['lgb'] + weights['xgb'] * s['xgb']
-        blended = np.maximum(0.0, blended)
-        _, cls = F._evaluate_with_best_threshold(s['y'], blended, d['thr_high'], d['thr_med'], d['peak_ref'])
+        blended = _blend(s)
+        if split == 'test':
+            cal_map = F.fit_prediction_calibration(d['cal']['y'], _blend(d['cal']))
+            blended = F.apply_prediction_calibration(blended, cal_map)
+        cls = F.compute_classification_metrics(
+            s['y'], blended, d['thr_high'], d['thr_med'], d['peak_ref'])
         accs.append(cls['accuracy'])
         r2s.append(F.r2_score(s['y'], blended))
         maes.append(F.mean_absolute_error(s['y'], blended))

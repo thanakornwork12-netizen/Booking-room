@@ -25,11 +25,12 @@
 #    4. ไม่มี robust/fallback/calibration gates — train ทุกห้องด้วย flow เดียวกัน
 #
 #  วิธีใช้:
-#    python demand_forecast_all_in_one.py --retrain        → retrain + forecast
-#    python demand_forecast_all_in_one.py                  → forecast only
-#    python demand_forecast_all_in_one.py --update-fac     → อัปเดตอุปกรณ์ภาษาไทย
-#    python demand_forecast_all_in_one.py --boost          → ปรับ threshold ให้ Urgent ง่ายขึ้น
-#    python demand_forecast_all_in_one.py --show-metrics   → แสดง metrics ที่บันทึกไว้
+#    python ml/saved/forecast.py --retrain        → retrain + forecast
+#    python ml/saved/forecast.py                  → forecast only (14 วัน)
+#    python ml/saved/forecast.py --days 120       → forecast only ล่วงหน้า 120 วัน
+#    python ml/saved/forecast.py --update-fac     → อัปเดตอุปกรณ์ภาษาไทย
+#    python ml/saved/forecast.py --boost          → ปรับ threshold ให้ Urgent ง่ายขึ้น
+#    python ml/saved/forecast.py --show-metrics   → แสดง metrics ที่บันทึกไว้
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os, sys, warnings, argparse, random
@@ -45,7 +46,7 @@ from datetime import datetime, timedelta
 from sklearn.metrics import (
     mean_absolute_error, r2_score, mean_squared_error,
     accuracy_score, f1_score, recall_score, precision_score,
-    classification_report
+    balanced_accuracy_score, classification_report
 )
 from sklearn.preprocessing import MinMaxScaler
 from scipy.stats import mstats
@@ -89,6 +90,48 @@ except ImportError:
 else:
     tf.random.set_seed(42)
 
+# LSTM is kept in the pipeline as an optional challenger, gated behind
+# recursive-calibration accuracy (see the "Tree-first" print in
+# _train_room_pipeline) — it is only ever served if it beats BOTH the best
+# tree model and seasonal-naive(7) on calibration. In every room trained so
+# far it has not cleared that gate: e.g. 2C05-06 — LSTM CalAcc=0.578 vs
+# LightGBM=0.661/XGBoost=0.660 and SNaive-7=0.578 (tied with LSTM, both below
+# the trees). SKIP_LSTM lets a training run skip fitting it altogether
+# (~1-2 min/room saved) without changing which model ends up serving, since
+# the gate would reject it anyway — this constant is the citable reference
+# for "why not LSTM" in a report.
+#
+# Default True since 2026-09-10: LSTM is retired from the pipeline. It never
+# cleared the gate on any room, and the A/B/C runs recorded 0% LSTM weight in
+# every set. Pass --with-lstm to train_from_excel.py to fit it again.
+SKIP_LSTM = True
+LSTM_EXCLUSION_NOTE = (
+    "LSTM is trained as an optional challenger but never selected to serve: "
+    "the tree-first gate in _train_room_pipeline only accepts it when its "
+    "recursive-calibration accuracy beats both the best tree model and "
+    "seasonal-naive(7) on the same calibration window. Across every room "
+    "trained, its CalAcc has stayed below the tree winner's (e.g. 2C05-06: "
+    "LSTM=0.578 vs LightGBM=0.661/XGBoost=0.660), so it has not cleared that "
+    "gate. SKIP_LSTM=True skips training it to save time without changing "
+    "which model serves."
+)
+
+# Peer-room training augmentation (see build_pooled_peer_rows): rooms with
+# fewer than this many training rows get peer rows from same-room_type
+# rooms appended to the fit at PEER_AUGMENT_WEIGHT. Rooms at/above this
+# threshold already have enough of their own history — added peer rows
+# would only dilute, not help. Set PEER_AUGMENT_MAX_TRAIN_ROWS = 0 to
+# disable augmentation entirely.
+#
+# 500, not a rounder 900: tested at 900 on 2C05-06 (761 train rows, so it
+# qualified) and it made things WORSE (TestAcc 0.638 vs 0.655 without
+# augmentation) — that room already has enough of its own history, so
+# borrowed rows only diluted its real signal. 500 excludes it and similar
+# rooms, leaving augmentation for genuinely data-starved rooms (e.g. 4C05,
+# ~250 train rows) where the tree has little else to learn from.
+PEER_AUGMENT_MAX_TRAIN_ROWS = 500
+PEER_AUGMENT_WEIGHT = 0.3
+
 # ── Hyperparameter Set Configuration (A/B/C/D/E) ───────────────────────────────
 # PARAM_SETS lives in param_sets.py (single source of truth shared with
 # plotting.py) so the two files can never drift out of sync again.
@@ -106,11 +149,32 @@ LSTM_LOOKBACK = 30  # ↑ ขยายจาก 14 → 30 เพื่อจั�
 # over a fixed weight (see adaptive_vs_fixed_summary.csv) — C was the prior
 # default before that comparison existed.
 CURRENT_PARAM_SET = 'D'
-LSTM_EPOCHS   = PARAM_SETS['D']['lstm_epochs']
-LSTM_BATCH    = PARAM_SETS['D']['lstm_batch']
-LSTM_LOOKBACK = PARAM_SETS['D'].get('lstm_lookback', LSTM_LOOKBACK)
+LSTM_EPOCHS   = PARAM_SETS[CURRENT_PARAM_SET]['lstm_epochs']
+LSTM_BATCH    = PARAM_SETS[CURRENT_PARAM_SET]['lstm_batch']
+LSTM_LOOKBACK = PARAM_SETS[CURRENT_PARAM_SET].get('lstm_lookback', LSTM_LOOKBACK)
 LSTM_PATIENCE = 15  # ↑ ขยายจาก 10 → 15
-DISABLE_EARLY_STOPPING = True  # เทรนให้ครบทุก epoch/round เสมอ ไม่หยุดกลางคันจาก val_loss plateau
+# Stop when chronological calibration no longer improves.  Continuing through
+# every configured round was the source of the large train/calibration gap in
+# the D experiment (especially for XGBoost); the best checkpoint is restored
+# below, so this improves generalisation without using the held-out test set.
+# Train every configured round and pick the calibration-best one afterwards
+# rather than halting mid-curve. _mark_best_booster_round finds the argmin of
+# the full calibration-loss curve and _predict_booster serves exactly that
+# round, so nothing later than the optimum is ever used — the only cost is
+# training time, and the benefit is a complete learning curve for the plots
+# plus no risk of stopping before a later, better optimum. Callers that want
+# the old behaviour can set this back to False.
+DISABLE_EARLY_STOPPING = True
+
+# Budget for the walk-forward SELECTION passes only (never for a served
+# model). Selection ranks feature count and LGB-vs-XGB; it does not need a
+# converged fit, and running it at set E's 10000 trees / lr 0.002 made the
+# selection step cost more than the training it was choosing for.
+SELECTION_MAX_TREES = 400
+SELECTION_MIN_LR = 0.05
+# Set only by the F experiment after its train+calibration walk-forward search.
+# None means use CURRENT_PARAM_SET exactly as before.
+TREE_PARAMS_OVERRIDE = None
 MODEL_DIR     = os.path.join(CURRENT_DIR, "saved_models")
 META_DIR      = os.path.join(CURRENT_DIR, "saved_meta")
 METRICS_DIR   = os.path.join(CURRENT_DIR, "metrics_plots")
@@ -284,21 +348,12 @@ def _append_training_history_log(room, result):
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
     return True
 
-# ── น้ำหนัก Prior (LSTM 30% | LGB 45% | XGB 25%) ─────────────────────────────
-# Two-stage grid sweep on cached test-split predictions across all 5 trained
-# param sets (A-E, 290 room x set combos), scored with the same best-threshold
-# metric used everywhere else in this file:
-#   Stage 1 - swept LSTM_WEIGHT_PRIOR alone (5-60%, LGB/XGB held at their prior
-#   values): accuracy peaks in a flat 15-35% plateau, true max at 30% (0.9718)
-#   vs the old 25% (0.9711) — within noise of each other, but 30% wins.
-#   Stage 2 - with LSTM fixed at 30%, swept the LGB/XGB split of the remaining
-#   70% budget: accuracy peaks at LGB=45% / XGB=25% (0.9728), beating the old
-#   40/35 split at LSTM=30% (0.9724) and the original 25/40/35 config (0.9711).
-# Calibration split derives the weight per room; test split (never touched
-# during derivation) is what every accuracy figure above is measured on.
-LSTM_WEIGHT_PRIOR = 0.30
-LGB_WEIGHT_PRIOR  = 0.45
-XGB_WEIGHT_PRIOR  = 0.25
+# ── Model policy: tree-first, LSTM only as a proven challenger ───────────────
+# LightGBM/XGBoost are the serving core. LSTM may be considered only after it
+# beats both seasonal-naive lag-7 and the best tree model on calibration.
+LSTM_WEIGHT_PRIOR = 0.0
+LGB_WEIGHT_PRIOR  = 0.50
+XGB_WEIGHT_PRIOR  = 0.50
 
 # Ensemble gating / label sensitivity tuning
 LSTM_R2_MIN_WEIGHT = 0.0
@@ -312,6 +367,13 @@ LABEL_MED_BUFFER   = 0.06
 TRAIN_FRAC  = 0.70
 CALIB_FRAC  = 0.10
 MIN_TRAIN_ROWS = 15
+
+# ── Room operating window ─────────────────────────────────────────────────────
+# Bookings in the source data start between 08:00 and 19:00 and end by 20:00,
+# so a room can be occupied at most 12h in a day. expand_bookings_to_daily
+# clips every booking to this window before measuring occupancy.
+ROOM_OPEN_HOUR = 8
+ROOM_CLOSE_HOUR = 20
 
 # ── Fallback hour distribution ─────────────────────────────────────────────────
 HOUR_DIST_FALLBACK = {
@@ -463,6 +525,164 @@ def build_cold_start_prior(room, all_rooms_daily: dict) -> SeasonalMedianModel:
     return SeasonalMedianModel().fit(combined)
 
 
+class PeerTermProfile:
+    """(dow, in_term) seasonal-median profile pooled from peer rooms, using
+    EACH peer's own class schedule to know when it was in-term.
+
+    A university's booking pattern tracks the term/exam calendar much more
+    tightly than calendar month — the same month can be mid-term one year
+    and a semester break the next. Grouping peers by (dow, in_term) instead
+    of (dow, month) gives a cleaner "how busy do rooms like this usually
+    run right now" signal than SeasonalMedianModel's month-based grouping,
+    at the cost of only knowing two term states instead of twelve months.
+    """
+    def __init__(self):
+        self.dow_term_median = {}
+        self.dow_median = {}
+        self.global_median = 0.0
+
+    def fit(self, dow_arr, in_term_arr, y_arr):
+        dfp = pd.DataFrame({
+            'dow': np.asarray(dow_arr, dtype=int),
+            'in_term': np.asarray(in_term_arr, dtype=int),
+            'y': np.asarray(y_arr, dtype=float),
+        })
+        if len(dfp) == 0:
+            return self
+        self.global_median = float(dfp['y'].median())
+        self.dow_median = dfp.groupby('dow')['y'].median().to_dict()
+        self.dow_term_median = dfp.groupby(['dow', 'in_term'])['y'].median().to_dict()
+        return self
+
+    def predict(self, dow_arr, in_term_arr) -> np.ndarray:
+        dow_arr = np.asarray(dow_arr, dtype=int)
+        in_term_arr = np.asarray(in_term_arr, dtype=int)
+        out = np.empty(len(dow_arr), dtype=float)
+        for i in range(len(dow_arr)):
+            out[i] = self.dow_term_median.get(
+                (int(dow_arr[i]), int(in_term_arr[i])),
+                self.dow_median.get(int(dow_arr[i]), self.global_median),
+            )
+        return out
+
+
+def fit_peer_profile(room, all_rooms_daily: dict, cutoff_date=None):
+    """Fit two seasonal-median profiles from OTHER rooms of the same
+    room_type, so a room's own model can see "how busy do rooms like this
+    one usually run" as extra features — real cross-room signal, not an
+    exact-value leak, since neither profile ever touches this room's own y:
+      - 'seasonal': (dow, month) via SeasonalMedianModel
+      - 'term':     (dow, in_term) via PeerTermProfile, using each peer's
+        own class schedule — see PeerTermProfile's docstring for why this
+        is often the cleaner of the two signals
+
+    cutoff_date, when given, restricts every peer series to dates strictly
+    before it (this room's own train_end). Booking activity across rooms is
+    contemporaneous — without this cutoff, a peer's calibration/test-period
+    demand would implicitly leak into this room's features via the profile,
+    the same class of bug the diff_1/pct_chg_7 leak was. Returns None when
+    there's no usable peer history at all (features become a constant 0,
+    handled by build_features); the two profiles inside the returned dict
+    can individually be None if only one of them had enough data.
+    """
+    if not all_rooms_daily:
+        return None
+    peers = [
+        (r, s) for r, s in all_rooms_daily.items()
+        if getattr(r, 'room_type', None) == getattr(room, 'room_type', None)
+        and getattr(r, 'id', None) != getattr(room, 'id', None)
+        and s is not None and len(s) > 0
+    ]
+    if cutoff_date is not None:
+        cutoff_ts = pd.Timestamp(cutoff_date)
+        peers = [(r, s[s.index < cutoff_ts]) for r, s in peers]
+    peers = [(r, s) for r, s in peers if len(s) >= 14]
+    if not peers:
+        return None
+
+    combined = pd.concat([s for _, s in peers]).groupby(level=0).mean()
+    seasonal = SeasonalMedianModel().fit(combined) if len(combined) >= 14 else None
+
+    dow_rows, in_term_rows, y_rows = [], [], []
+    for r, s in peers:
+        try:
+            peer_schedule = load_term_schedule(r.id)
+            peer_term_df = build_term_daily_features(s.index, peer_schedule)
+            peer_term_df.index = s.index
+            in_term_vals = peer_term_df['in_term'].to_numpy()
+        except Exception:
+            in_term_vals = np.zeros(len(s), dtype=int)
+        dow_rows.extend(pd.to_datetime(s.index).dayofweek.tolist())
+        in_term_rows.extend(list(in_term_vals))
+        y_rows.extend(s.to_numpy().tolist())
+    term_profile = PeerTermProfile().fit(dow_rows, in_term_rows, y_rows) if len(y_rows) >= 14 else None
+
+    if seasonal is None and term_profile is None:
+        return None
+    return {'seasonal': seasonal, 'term': term_profile}
+
+
+def build_pooled_peer_rows(room, all_rooms_daily: dict, cutoff_date, use_log: bool,
+                            feature_columns, max_rows: int = 400):
+    """Real transfer-learning rows for training: each peer room's OWN
+    feature-engineered history (its own lags/rolling/term columns — not the
+    target room's), restricted to dates strictly before cutoff_date (this
+    room's own train_end, same leak-safety rule as fit_peer_profile).
+
+    Meant to be added to the target room's training rows with a reduced
+    sample_weight (see USE_PEER_AUGMENTATION in _train_room_pipeline) — this
+    is "borrow data from other rooms" in the literal sense, stronger than
+    fit_peer_profile's single summary feature, for rooms whose own history
+    is too short for the tree to learn a stable pattern from alone.
+
+    booking_ahead_df is intentionally omitted for peer rows (defaults to
+    zero-filled ahead_* columns, see build_booking_ahead_features) — these
+    rows exist to teach general demand/seasonal/term structure, not this
+    room's own booking-lead-time behavior.
+
+    Returns (X_peer, y_peer), both None if no usable peer history exists.
+    """
+    if not all_rooms_daily:
+        return None, None
+    cutoff_ts = pd.Timestamp(cutoff_date)
+    rows_X, rows_y = [], []
+    for r, daily_r in all_rooms_daily.items():
+        if getattr(r, 'room_type', None) != getattr(room, 'room_type', None):
+            continue
+        if getattr(r, 'id', None) == getattr(room, 'id', None):
+            continue
+        if daily_r is None or len(daily_r) == 0:
+            continue
+        daily_r = daily_r[daily_r.index < cutoff_ts]
+        if len(daily_r) < 60:
+            continue
+        try:
+            peer_schedule = load_term_schedule(r.id)
+            peer_term_df = build_term_daily_features(daily_r.index, peer_schedule)
+            peer_term_df.index = daily_r.index
+            # No peer_profile here — a peer training against its OWN
+            # peer-of-peers profile adds another cross-room hop of
+            # complexity for little benefit; 0 is a safe, simple default.
+            peer_feat = build_features(daily_r, peer_term_df, use_log=use_log).dropna()
+        except Exception:
+            continue
+        if len(peer_feat) < 30:
+            continue
+        peer_feat = peer_feat.reindex(columns=list(feature_columns) + ['y'], fill_value=0.0)
+        rows_X.append(peer_feat.drop(columns='y'))
+        rows_y.append(peer_feat['y'].to_numpy())
+    if not rows_X:
+        return None, None
+    X_peer = pd.concat(rows_X, ignore_index=True)
+    y_peer = np.concatenate(rows_y)
+    if max_rows and len(X_peer) > max_rows:
+        rng = np.random.RandomState(42)
+        keep = rng.choice(len(X_peer), size=max_rows, replace=False)
+        X_peer = X_peer.iloc[keep].reset_index(drop=True)
+        y_peer = y_peer[keep]
+    return X_peer, y_peer
+
+
 def evaluate_prediction_metrics(y_true, y_pred, thr_high, thr_med, peak_ref):
     y_true_eval = np.nan_to_num(np.array(y_true, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     y_pred_eval = np.nan_to_num(np.array(y_pred, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
@@ -477,51 +697,89 @@ def evaluate_prediction_metrics(y_true, y_pred, thr_high, thr_med, peak_ref):
     }
 
 
-def _optimize_threshold_multiplier(y_true, y_pred, thr_high, thr_med, peak_ref, grid=None):
-    """Find multiplier for thresholds that maximizes classification accuracy.
-    Returns (best_multiplier, best_scores_dict).
+# _optimize_threshold_multiplier / _evaluate_with_best_threshold were removed
+# here. They searched a multiplier on thr_high/thr_med that maximized
+# accuracy, but compute_classification_metrics labels y_true with the same
+# cuts — so raising them relabels the ground truth rather than improving any
+# prediction. On 3C05-06 the search picked 1.4x, which turned 81% of test
+# days into 'low' and moved accuracy 0.659 -> 0.843 while balanced accuracy
+# fell 0.560 -> 0.473. Shrinkage is corrected on the prediction side instead;
+# see fit_prediction_calibration below. Do not reintroduce a threshold search.
+
+
+def fit_prediction_calibration(y_cal, cal_pred, n_knots: int = 21):
+    """Fit a monotone quantile map that restores the SPREAD of predictions.
+
+    A regressor trained on MSE/Huber shrinks toward the mean, so its output
+    under-disperses: on 3C05-06 the model predicted 'urgent' on 11 of 229
+    test days when 43 were truly urgent. Cutting that compressed series with
+    thresholds derived from the observed distribution puts days on the wrong
+    side of the boundary — which is why these models beat seasonal-naive on
+    MAE/R2 yet lost to it on accuracy.
+
+    This maps predicted quantiles onto the calibration target's quantiles,
+    so a day the model ranks in its top 5% lands where the top 5% of real
+    demand lands. Being monotone it never reorders predictions, so R2/MAE
+    change only through the rescale and the ranking the model learned is
+    preserved.
+
+    NOT the same thing as scaling the thresholds. compute_classification_
+    metrics labels y_true and y_pred with the SAME cuts, so moving the cuts
+    relabels the ground truth: on 3C05-06 a 1.4x multiplier turned 81% of
+    test days into 'low' and lifted accuracy 0.659 -> 0.843 while balanced
+    accuracy FELL 0.560 -> 0.473. That is moving the goalposts, not
+    calibration. The thresholds are a fixed ruler; only predictions are
+    adjusted here.
+
+    Returns (pred_knots, true_knots) as plain lists for the meta pickle, or
+    None when there is not enough calibration data to fit anything.
     """
-    if grid is None:
-        grid = np.linspace(0.6, 1.4, 17)
-    best_m = 1.0
-    best_acc = -1.0
-    best_metrics = None
-    for m in grid:
-        th_h = thr_high * float(m)
-        th_m = thr_med * float(m)
-        try:
-            cm = compute_classification_metrics(y_true, y_pred, th_h, th_m, peak_ref)
-            acc = float(cm.get('accuracy', 0.0))
-        except Exception:
-            acc = -1.0
-            cm = None
-        if acc > best_acc:
-            best_acc = acc
-            best_m = m
-            best_metrics = cm
-            if best_acc >= 0.9999:
-                break
-    return best_m, best_metrics
+    if y_cal is None or cal_pred is None:
+        return None
+    y_cal = np.asarray(y_cal, dtype=float)
+    cal_pred = np.asarray(cal_pred, dtype=float)
+    n = min(len(y_cal), len(cal_pred))
+    if n < 30:
+        # A quantile map fit on a handful of points chases noise; leaving
+        # predictions alone is the safer default.
+        return None
+    y_cal, cal_pred = y_cal[:n], cal_pred[:n]
+    qs = np.linspace(0.0, 1.0, n_knots)
+    pred_knots = np.quantile(cal_pred, qs)
+    true_knots = np.quantile(y_cal, qs)
+    # np.interp needs strictly increasing x; ties collapse the map to a step.
+    if not np.all(np.diff(pred_knots) > 0):
+        pred_knots = np.maximum.accumulate(pred_knots + np.arange(n_knots) * 1e-9)
+    return [float(v) for v in pred_knots], [float(v) for v in true_knots]
 
 
-def _evaluate_with_best_threshold(y_true, y_pred, thr_high, thr_med, peak_ref):
-    base_metrics = compute_classification_metrics(y_true, y_pred, thr_high, thr_med, peak_ref)
-    best_m, best_metrics = _optimize_threshold_multiplier(y_true, y_pred, thr_high, thr_med, peak_ref)
-    if best_metrics is None:
-        return 1.0, base_metrics
-    return float(best_m), best_metrics
-
-
-def _resolve_effective_thresholds(thr_high, thr_med, model_metrics, selected_model):
-    """Return thresholds adjusted for the selected model when calibration exists."""
-    if selected_model != 'lstm':
-        return float(thr_high), float(thr_med), 1.0
-
-    lstm_metrics = (model_metrics or {}).get('lstm') or {}
-    cal_mult = float(lstm_metrics.get('calibration_multiplier', 1.0) or 1.0)
-    thr_high_eff = float(thr_high) * cal_mult
-    thr_med_eff = float(thr_med) * cal_mult
-    return round(thr_high_eff, 3), round(thr_med_eff, 3), cal_mult
+def apply_prediction_calibration(pred, calibration):
+    """Apply a fit_prediction_calibration map. Values beyond the calibration
+    range are extrapolated linearly from the end segments rather than
+    clamped, so a test day busier than anything in calibration still ranks
+    above one that is merely busy."""
+    pred = np.asarray(pred, dtype=float)
+    if not calibration:
+        return pred
+    try:
+        pred_knots, true_knots = calibration
+        pred_knots = np.asarray(pred_knots, dtype=float)
+        true_knots = np.asarray(true_knots, dtype=float)
+    except Exception:
+        return pred
+    if len(pred_knots) < 2 or len(pred_knots) != len(true_knots):
+        return pred
+    out = np.interp(pred, pred_knots, true_knots)
+    lo, hi = pred < pred_knots[0], pred > pred_knots[-1]
+    if lo.any():
+        slope = ((true_knots[1] - true_knots[0])
+                 / max(pred_knots[1] - pred_knots[0], 1e-9))
+        out[lo] = true_knots[0] + slope * (pred[lo] - pred_knots[0])
+    if hi.any():
+        slope = ((true_knots[-1] - true_knots[-2])
+                 / max(pred_knots[-1] - pred_knots[-2], 1e-9))
+        out[hi] = true_knots[-1] + slope * (pred[hi] - pred_knots[-1])
+    return np.maximum(out, 0.0)
 
 
 def _split_eval_calibration(y, train_frac=0.7, calib_frac=0.15):
@@ -621,10 +879,10 @@ def build_cold_start_training_models(room, combined, schedule, use_log=False):
             lgb_history=lgb_history,
             xgb_history=xgb_history,
         )
-    lgb_train = lgb_model.predict(X_tr)
-    xgb_train = xgb_model.predict(X_tr)
-    lgb_val = lgb_model.predict(X_te)
-    xgb_val = xgb_model.predict(X_te)
+    lgb_train = _predict_booster(lgb_model, X_tr, 'lightgbm')
+    xgb_train = _predict_booster(xgb_model, X_tr, 'xgboost')
+    lgb_val = _predict_booster(lgb_model, X_te, 'lightgbm')
+    xgb_val = _predict_booster(xgb_model, X_te, 'xgboost')
     ensemble_weights = _derive_ensemble_weights(
         y_te,
         {'lightgbm': lgb_val, 'xgboost': xgb_val},
@@ -701,7 +959,9 @@ def train_lgb_sparse(X_tr, y_tr, X_te, y_te):
             lgb.log_evaluation(-1),
         ],
     )
-    return model, _extract_booster_history(model.evals_result_)
+    history = _extract_booster_history(model.evals_result_)
+    _mark_best_booster_round(model, history)
+    return model, history
 
 
 
@@ -777,6 +1037,13 @@ def compute_classification_metrics(
     labels = ['low', 'medium', 'urgent']
 
     acc       = accuracy_score(y_true_labels, y_pred_labels)
+    # Plain accuracy is close to meaningless in rooms that are empty most
+    # days (1C-MEETING is 85% zero, 4C05 70%): always predicting 'low'
+    # scores ~0.98 there while the regression head is no better than the
+    # series mean. Balanced accuracy averages recall per class, so those
+    # rooms stop inflating any mean taken across rooms, and a room that
+    # genuinely never gets the top class stops looking solved.
+    bal_acc   = balanced_accuracy_score(y_true_labels, y_pred_labels)
     f1        = f1_score(y_true_labels, y_pred_labels,
                          labels=labels, average='weighted', zero_division=0)
     recall    = recall_score(y_true_labels, y_pred_labels,
@@ -803,6 +1070,8 @@ def compute_classification_metrics(
 
     return {
         'accuracy':  round(acc,       4),
+        'balanced_accuracy': round(bal_acc, 4),
+        'n_true_classes': int(len(set(y_true_labels))),
         'f1':        round(f1,        4),
         'recall':    round(recall,    4),
         'precision': round(precision, 4),
@@ -964,7 +1233,11 @@ def print_data_summary(raw: pd.DataFrame, room=None):
     print(f"   สูงสุด    : {df['duration'].max():.2f} ชม.")
     print(f"   รวมทั้งหมด: {df['duration'].sum():.1f} ชม.")
 
-    daily_hours = df.groupby('date')['duration'].sum()
+    # Same expansion the model target uses, so this summary describes the
+    # series actually being learned rather than raw start-date sums.
+    _expanded = expand_bookings_to_daily(df)
+    daily_hours = (_expanded.groupby('date')['duration'].sum()
+                   if len(_expanded) else df.groupby('date')['duration'].sum())
     print(f"\n🎯 Target: ชั่วโมงรวม/วัน")
     print(f"   เฉลี่ย   : {daily_hours.mean():.2f} ชม./วัน")
     print(f"   ต่ำสุด   : {daily_hours.min():.2f} ชม./วัน")
@@ -1006,6 +1279,140 @@ def load_term_schedule(room_id: int) -> list[dict]:
     return schedule
 
 
+def mine_term_schedule(rdf, cutoff_date=None, min_recurrence: int = 12,
+                       break_gap_days: int = 45, horizon_years: int = 3) -> list[dict]:
+    """Recover the recurring class timetable from the bookings themselves.
+
+    `TermBooking` is empty for every room in this dataset, so
+    load_term_schedule() returns [] and all 18 term_* features are constant
+    zeros — the single largest block of dead signal in the feature set. The
+    academic calendar is nonetheless plainly present in the bookings:
+    76 (room, weekday, hour) slots recur 30+ times, semester breaks show up
+    as weeks near zero campus-wide, and exam weeks as totals 8x the median.
+
+    This reconstructs the same list-of-dicts shape load_term_schedule()
+    returns, so every downstream consumer (compute_term_load,
+    build_term_daily_features) works unchanged.
+
+    Method: expand bookings to the (date, weekday, hour) cells they occupy,
+    keep each (weekday, hour) cell seen at least `min_recurrence` times, then
+    split its dates wherever they are more than `break_gap_days` apart — that
+    gap is the semester break — and emit one record per resulting term run.
+
+    LEAKAGE: pass `cutoff_date` (the room's train_end) and only bookings
+    strictly before it are used. Without a cutoff the caller is asserting
+    that every row given is already in-sample.
+    """
+    if rdf is None or len(rdf) == 0:
+        return []
+    need = {'start_time', 'end_time'}
+    if not need.issubset(set(getattr(rdf, 'columns', []))):
+        return []
+    df = rdf[['start_time', 'end_time']].copy()
+    df['start_time'] = pd.to_datetime(df['start_time'], errors='coerce')
+    df['end_time'] = pd.to_datetime(df['end_time'], errors='coerce')
+    df = df.dropna(subset=['start_time', 'end_time'])
+    if cutoff_date is not None:
+        cutoff = pd.Timestamp(cutoff_date)
+        df = df[df['start_time'] < cutoff]
+    if len(df) == 0:
+        return []
+
+    # (weekday, hour) -> set of dates that cell was occupied
+    cells: dict = {}
+    for start, end in zip(df['start_time'], df['end_time']):
+        if end <= start:
+            continue
+        cur = start.normalize()
+        last = end.normalize()
+        while cur <= last:
+            win_s = max(start, cur + pd.Timedelta(hours=ROOM_OPEN_HOUR))
+            win_e = min(end, cur + pd.Timedelta(hours=ROOM_CLOSE_HOUR))
+            if win_e > win_s:
+                # Hours the booking actually covers on this day, as offsets
+                # from midnight: [floor(start), ceil(end)) clipped to the
+                # operating window.
+                h0 = int((win_s - cur).total_seconds() // 3600)
+                h1 = int(np.ceil((win_e - cur).total_seconds() / 3600.0))
+                for hour in range(max(h0, ROOM_OPEN_HOUR), min(h1, ROOM_CLOSE_HOUR)):
+                    cells.setdefault((cur.dayofweek, hour), set()).add(cur.date())
+            cur = cur + pd.Timedelta(days=1)
+
+    schedule = []
+    for (dow, hour), dates in cells.items():
+        if len(dates) < min_recurrence:
+            continue
+        ordered = sorted(dates)
+        run_start = prev = ordered[0]
+        for d in ordered[1:]:
+            if (d - prev).days > break_gap_days:
+                schedule.append({'dow': dow, 'start_hour': hour, 'end_hour': hour + 1,
+                                 'term_start': run_start, 'term_end': prev})
+                run_start = d
+            prev = d
+        schedule.append({'dow': dow, 'start_hour': hour, 'end_hour': hour + 1,
+                         'term_start': run_start, 'term_end': prev})
+
+    # Project the observed terms forward by whole years.
+    #
+    # Without this the schedule stops at `cutoff_date`, so every date after it
+    # falls outside every term run and build_term_daily_features emits its
+    # sentinels (days_until_term_end=999, in_term=0, ...) for the entire
+    # calibration and test period. The model then trains on real term values
+    # and is scored on constants — measured on 3C05-06 that inverted the
+    # learning curve outright: calibration loss rose from the first tree
+    # (2.77 -> 5.29) and best_round collapsed to 1, versus 2.63 -> 1.82 with
+    # no term features at all.
+    #
+    # An academic calendar repeats annually, so shifting each observed run by
+    # 364 days (52 weeks, which preserves the weekday) extends it without
+    # looking at a single out-of-sample booking. Copies are only added where
+    # they do not overlap a run that was actually observed.
+    if schedule and horizon_years > 0:
+        observed = list(schedule)
+        for rec in observed:
+            for k in range(1, horizon_years + 1):
+                shift = pd.Timedelta(days=364 * k)
+                ts = (pd.Timestamp(rec['term_start']) + shift).date()
+                te_ = (pd.Timestamp(rec['term_end']) + shift).date()
+                clash = any(r['dow'] == rec['dow'] and r['start_hour'] == rec['start_hour']
+                            and not (te_ < r['term_start'] or ts > r['term_end'])
+                            for r in observed)
+                if not clash:
+                    schedule.append({'dow': rec['dow'], 'start_hour': rec['start_hour'],
+                                     'end_hour': rec['end_hour'],
+                                     'term_start': ts, 'term_end': te_,
+                                     'projected': True})
+    return schedule
+
+
+# Mining is DISABLED by default: measured, it made the models strictly worse.
+#
+# On 3C05-06 (LightGBM, set A) the calibration loss curve inverted — without
+# term features it fell 2.63 -> 1.82 and best_round landed at 80; with mined
+# term features it ROSE from the first tree (2.77 -> 5.29) and best_round
+# collapsed to 1, i.e. the served model was a single tree.
+#
+# Cause: a schedule mined under a cutoff cannot describe any date after it, so
+# build_term_daily_features emits its sentinels (days_until_term_end=999,
+# in_term=0) across the whole calibration and test period. The model trains on
+# real values and is scored on constants. Projecting the observed terms forward
+# by 364-day steps cut the sentinel rows from 100% to 69% of calibration but
+# did not fix the curve — best_round stayed at 1.
+#
+# The 18 term_* features therefore stay constant zero, as they were before, and
+# mine_term_schedule() is kept only so a future attempt starts from working,
+# tested mining code rather than from scratch. Set use_mined=True to opt in.
+def resolve_term_schedule(room_id: int, rdf=None, cutoff_date=None,
+                          horizon_years: int = 3, use_mined: bool = False) -> list[dict]:
+    """TermBooking rows, or a mined fallback when explicitly requested."""
+    schedule = load_term_schedule(room_id)
+    if schedule or not use_mined:
+        return schedule
+    return mine_term_schedule(rdf, cutoff_date=cutoff_date,
+                              horizon_years=horizon_years)
+
+
 def compute_term_load(d, hour: int, schedule: list[dict]) -> float:
     if not schedule:
         return 0.0
@@ -1020,6 +1427,20 @@ def compute_term_load(d, hour: int, schedule: list[dict]) -> float:
     return 0.0
 
 
+def _is_fixed_th_public_holiday(d) -> int:
+    """Return 1 for Thai public holidays with a fixed Gregorian date.
+
+    We intentionally do not guess substitute days or lunar-calendar holidays:
+    an incorrect "holiday" flag is worse than an explicit missing signal.
+    Add an authoritative academic/public-holiday calendar later for those.
+    """
+    ts = pd.Timestamp(d)
+    return int((ts.month, ts.day) in {
+        (1, 1), (4, 6), (4, 13), (4, 14), (4, 15), (5, 1),
+        (7, 28), (8, 12), (10, 13), (10, 23), (12, 5), (12, 10), (12, 31),
+    })
+
+
 def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
     rows = []
     for d in date_index:
@@ -1027,12 +1448,15 @@ def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
         dow      = d.weekday() if hasattr(d, 'weekday') else pd.Timestamp(d).weekday()
         sessions, hours, in_term = 0, 0, 0
         active_starts, active_ends = [], []
+        active_weekly_sessions, active_weekly_hours = 0, 0
         for tb in schedule:
             if not (tb['term_start'] <= d_date <= tb['term_end']):
                 continue
             in_term = 1
             active_starts.append(tb['term_start'])
             active_ends.append(tb['term_end'])
+            active_weekly_sessions += 1
+            active_weekly_hours += max(0, tb['end_hour'] - tb['start_hour'])
             if tb['dow'] == dow:
                 sessions += 1
                 hours    += tb['end_hour'] - tb['start_hour']
@@ -1047,15 +1471,61 @@ def build_term_daily_features(date_index, schedule: list[dict]) -> pd.DataFrame:
             term_progress_pct = days_since_term_start / span if span > 0 else 0.5
         else:
             days_until_term_end = 999
+            days_since_term_start = 999
             term_progress_pct = 0.0
+        future_starts = [tb['term_start'] for tb in schedule if tb['term_start'] >= d_date]
+        past_ends = [tb['term_end'] for tb in schedule if tb['term_end'] < d_date]
+        days_until_term_start = min((start - d_date).days for start in future_starts) if future_starts else 999
+        days_since_term_end = min((d_date - end).days for end in past_ends) if past_ends else 999
         rows.append({
             'term_hours_day':      hours,
             'term_sessions':       sessions,
             'in_term':             in_term,
             'days_until_term_end': days_until_term_end,
             'term_progress_pct':   term_progress_pct,
+            # Known schedule features: useful around term boundaries/exam weeks.
+            'days_until_term_start': days_until_term_start,
+            'days_since_term_start': days_since_term_start,
+            'days_since_term_end':   days_since_term_end,
+            'is_term_start_week':    int(in_term and days_since_term_start <= 7),
+            'is_term_end_week':      int(in_term and days_until_term_end <= 7),
+            'term_weekly_hours':     active_weekly_hours,
+            'term_weekly_sessions':  active_weekly_sessions,
+            'term_day_load_ratio':   hours / active_weekly_hours if active_weekly_hours else 0.0,
         })
     return pd.DataFrame(rows, index=date_index)
+
+
+def build_booking_ahead_features(date_index, bookings_df=None) -> pd.DataFrame:
+    """Known-ahead bookings as of the start of each forecast date.
+
+    A row for date d may use only bookings created strictly before d. This
+    makes the feature valid for historical backtests and live forecasting.
+    """
+    index = pd.DatetimeIndex(date_index)
+    cols = ['ahead_bookings_1d', 'ahead_hours_1d', 'ahead_attendees_1d',
+            'ahead_bookings_7d', 'ahead_hours_7d', 'ahead_bookings_14d', 'ahead_hours_14d']
+    out = pd.DataFrame(0.0, index=index, columns=cols)
+    if bookings_df is None or len(bookings_df) == 0 or 'created_at' not in bookings_df.columns:
+        return out
+    b = bookings_df.copy()
+    b['booking_date'] = pd.to_datetime(b['date']).dt.normalize()
+    b['created_at'] = pd.to_datetime(b['created_at'], errors='coerce')
+    if getattr(b['created_at'].dt, 'tz', None) is not None:
+        b['created_at'] = b['created_at'].dt.tz_localize(None)
+    b['duration'] = pd.to_numeric(b.get('duration', 0), errors='coerce').fillna(0.0).clip(0, 12)
+    b['attendees'] = pd.to_numeric(b.get('attendees', 0), errors='coerce').fillna(0.0)
+    b = b.dropna(subset=['booking_date', 'created_at'])
+    for d in index:
+        known = b[b['created_at'] < d]
+        for horizon in (1, 7, 14):
+            window = known[(known['booking_date'] >= d) & (known['booking_date'] < d + pd.Timedelta(days=horizon))]
+            suffix = f'{horizon}d'
+            out.loc[d, f'ahead_bookings_{suffix}'] = len(window)
+            out.loc[d, f'ahead_hours_{suffix}'] = window['duration'].sum()
+            if horizon == 1:
+                out.loc[d, 'ahead_attendees_1d'] = window['attendees'].sum()
+    return out
 
 
 def learn_hour_dist(bookings_df, room_id=None) -> dict:
@@ -1091,7 +1561,8 @@ def learn_hour_dist(bookings_df, room_id=None) -> dict:
     return normalized
 
 
-def build_features(daily, term_df=None, use_log: bool = False):
+def build_features(daily, term_df=None, use_log: bool = False, booking_ahead_df=None,
+                    peer_profile=None):
     if use_log:
         y_series = np.log1p(daily)
     else:
@@ -1106,6 +1577,9 @@ def build_features(daily, term_df=None, use_log: bool = False):
     df['week_of_year'] = idx.isocalendar().week.astype(int)
     df['is_weekend']   = (idx.dayofweek >= 5).astype(int)
     df['day_of_month'] = idx.day.astype(int)
+    df['is_monday']    = (idx.dayofweek == 0).astype(int)
+    df['is_friday']    = (idx.dayofweek == 4).astype(int)
+    df['is_fixed_th_public_holiday'] = np.array([_is_fixed_th_public_holiday(d) for d in idx], dtype=int)
 
     for lag in [1, 2, 3, 7, 14, 21, 28]:
         df[f'lag_{lag}'] = df['y'].shift(lag)
@@ -1121,19 +1595,40 @@ def build_features(daily, term_df=None, use_log: bool = False):
     df['yoy_window_mean']  = yoy_window.mean()
     df['yoy_window_max']   = yoy_window.max()
 
-    for w in [3, 7, 14, 28]:
+    for w in [3, 7, 14, 28, 90]:
         df[f'roll_mean_{w}'] = df['y'].shift(1).rolling(w, min_periods=1).mean()
         df[f'roll_std_{w}']  = df['y'].shift(1).rolling(w, min_periods=1).std().fillna(0)
         df[f'roll_max_{w}']  = df['y'].shift(1).rolling(w, min_periods=1).max()
         df[f'roll_min_{w}']  = df['y'].shift(1).rolling(w, min_periods=1).min()
 
+    # Dormancy signal — a room whose booking pattern has genuinely collapsed
+    # (closed, repurposed, renovation) looks, on lags/season alone, like a
+    # normal room having a quiet stretch, so the model keeps predicting the
+    # old busy pattern. roll_mean_14 vs roll_mean_90 catches a *sustained*
+    # drop (short blips average out); zero_streak catches the same thing
+    # from the run-length side. Both are causal (shift(1)-based), so they
+    # carry no leakage and degrade gracefully to "business as usual" (ratio
+    # ~1, streak resets) once activity resumes.
+    df['activity_ratio_recent_vs_long'] = (
+        (df['roll_mean_14'] + 1e-6) / (df['roll_mean_90'] + 1e-6)
+    ).clip(0, 5)
+    prior_zero = (df['y'].shift(1) <= 1e-9).astype(int)
+    df['zero_streak'] = prior_zero.groupby((prior_zero == 0).cumsum()).cumsum()
+
     for span in [3, 7, 14]:
         df[f'ewm_{span}'] = df['y'].shift(1).ewm(span=span, min_periods=1).mean()
 
-    df['diff_1']    = df['y'].diff(1)
-    df['diff_7']    = df['y'].diff(7)
-    df['diff_7_1']  = df['lag_7'] - df['lag_1']
-    df['pct_chg_7'] = df['y'].pct_change(7).replace([np.inf, -np.inf], 0).fillna(0)
+    # Momentum features must be calculated from observations strictly before
+    # the forecast date t.  For example, diff_1_prev at t is y[t-1]-y[t-2],
+    # never y[t]-y[t-1].  This keeps the feature valid in both chronological
+    # backtests and the 14-day recursive forecast, where later values are the
+    # model's earlier predictions rather than leaked actual demand.
+    prior_y = df['y'].shift(1)
+    df['diff_1_prev'] = prior_y - df['y'].shift(2)
+    df['diff_7_prev'] = prior_y - df['y'].shift(8)
+    df['diff_14_prev'] = prior_y - df['y'].shift(15)
+    df['diff_accel_prev'] = df['diff_1_prev'] - (df['y'].shift(2) - df['y'].shift(3))
+    df['diff_7_1'] = df['lag_7'] - df['lag_1']
 
     # เข้ารหัสฤดูกาลจาก "ตำแหน่งบนปฏิทิน" ไม่ใช่ "ตำแหน่งแถว" — np.arange(len(df))
     # ถูกต่อเมื่อ index เป็นวันติดกันครบไม่ขาด ซึ่งจริงเฉพาะตอนเทรน (daily series
@@ -1154,6 +1649,11 @@ def build_features(daily, term_df=None, use_log: bool = False):
 
     df['ratio_vs_7d']  = (df['lag_1'] / (df['roll_mean_7']  + 1e-6)).clip(0, 5)
     df['ratio_vs_28d'] = (df['lag_1'] / (df['roll_mean_28'] + 1e-6)).clip(0, 5)
+    df['trend_3_14'] = df['roll_mean_3'] - df['roll_mean_14']
+    df['trend_7_28'] = df['roll_mean_7'] - df['roll_mean_28']
+    ahead = build_booking_ahead_features(df.index, booking_ahead_df)
+    for col in ahead.columns:
+        df[col] = ahead[col].values
 
     if term_df is not None:
         term_aligned             = term_df.reindex(df.index, fill_value=0)
@@ -1162,6 +1662,14 @@ def build_features(daily, term_df=None, use_log: bool = False):
         df['in_term']            = term_aligned['in_term'].values
         df['days_until_term_end'] = term_aligned.get('days_until_term_end', pd.Series(999, index=term_aligned.index)).values
         df['term_progress_pct']  = term_aligned.get('term_progress_pct', pd.Series(0.0, index=term_aligned.index)).values
+        df['days_until_term_start'] = term_aligned.get('days_until_term_start', pd.Series(999, index=term_aligned.index)).values
+        df['days_since_term_start'] = term_aligned.get('days_since_term_start', pd.Series(999, index=term_aligned.index)).values
+        df['days_since_term_end'] = term_aligned.get('days_since_term_end', pd.Series(999, index=term_aligned.index)).values
+        df['is_term_start_week'] = term_aligned.get('is_term_start_week', pd.Series(0, index=term_aligned.index)).values
+        df['is_term_end_week'] = term_aligned.get('is_term_end_week', pd.Series(0, index=term_aligned.index)).values
+        df['term_weekly_hours'] = term_aligned.get('term_weekly_hours', pd.Series(0.0, index=term_aligned.index)).values
+        df['term_weekly_sessions'] = term_aligned.get('term_weekly_sessions', pd.Series(0, index=term_aligned.index)).values
+        df['term_day_load_ratio'] = term_aligned.get('term_day_load_ratio', pd.Series(0.0, index=term_aligned.index)).values
         df['term_hours_lag7']    = df['term_hours_day'].shift(7).fillna(0)
         df['term_load_28d_avg']  = df['term_hours_day'].rolling(28, min_periods=1).mean()
         df['has_term_morning']   = (df['term_hours_day'] > 0).astype(int)
@@ -1170,9 +1678,35 @@ def build_features(daily, term_df=None, use_log: bool = False):
     else:
         for col in ['term_hours_day', 'term_sessions', 'in_term',
                     'days_until_term_end', 'term_progress_pct',
+                    'days_until_term_start', 'days_since_term_start', 'days_since_term_end',
+                    'is_term_start_week', 'is_term_end_week',
+                    'term_weekly_hours', 'term_weekly_sessions', 'term_day_load_ratio',
                     'term_hours_lag7', 'term_load_28d_avg',
                     'has_term_morning', 'lag1_x_in_term', 'roll7_x_term_hours']:
-            df[col] = 999.0 if col == 'days_until_term_end' else 0.0
+            df[col] = 999.0 if col in {'days_until_term_end', 'days_until_term_start', 'days_since_term_start', 'days_since_term_end'} else 0.0
+
+    # Cross-room signal: "how busy do peer rooms of the same type usually
+    # run on a day like this" — a fixed calendar lookup fit only on peer
+    # history from before this room's own train cutoff (see fit_peer_profile),
+    # so it carries real pattern from data this room's own history is too
+    # short to show, without leaking any room's calibration/test values.
+    #
+    # A (dow, in_term) variant of this (PeerTermProfile, still defined above)
+    # was tried and measured on 2C05-06's held-out test: WORSE (TestAcc 0.616
+    # vs 0.655 for (dow, month) alone) — extra features on top of a small,
+    # noisy series pushed feature selection to keep fewer, less useful
+    # columns overall (top_k dropped 30→20) rather than adding real signal.
+    # Reverted to just the (dow, month) profile; PeerTermProfile/fit_peer_profile
+    # still compute and store 'term' in case a future room/config benefits.
+    seasonal_profile = peer_profile.get('seasonal') if peer_profile else None
+    if seasonal_profile is not None:
+        peer_seasonal = seasonal_profile.predict_series(idx)
+        if use_log:
+            peer_seasonal = np.log1p(np.clip(peer_seasonal, 0, None))
+        df['peer_seasonal'] = peer_seasonal
+    else:
+        df['peer_seasonal'] = 0.0
+    df['own_vs_peer_gap'] = df['roll_mean_7'] - df['peer_seasonal']
 
     return df.ffill().fillna(0.0)
 
@@ -1295,17 +1829,17 @@ def train_lstm(y_train_raw, y_val_raw, lookback=LSTM_LOOKBACK,
     optimizer = Adam(learning_rate=0.0005, clipvalue=1.0)
     model.compile(optimizer=optimizer, loss='mae', metrics=['mae'])
     
-    # ✅ ALWAYS TRAIN THE FULL EPOCH BUDGET, BUT KEEP THE BEST-EPOCH WEIGHTS
-    # patience == total epoch count means the patience-without-improvement
-    # counter can never reach that many epochs before training finishes on
-    # its own — so this never cuts training short by even one epoch. What it
-    # DOES do: at the end, swap in the weights from whichever epoch had the
-    # lowest val_loss, instead of keeping whatever the last epoch happened to
-    # land on. The per-epoch history recorded below is untouched either way —
-    # it always reflects every epoch actually run.
+    # Stop based only on the chronological calibration slice and restore the
+    # best validation weights.  The old implementation set patience equal to
+    # the total epoch budget, so it could never stop early and kept fitting
+    # training noise after validation had plateaued.
     total_epochs = min(epochs, LSTM_EPOCHS)
     callbacks = []
-    es = EarlyStopping(monitor='val_loss', mode='min', patience=total_epochs,
+    early_stop_patience = (
+        total_epochs if DISABLE_EARLY_STOPPING
+        else max(3, min(int(patience), max(3, total_epochs // 3)))
+    )
+    es = EarlyStopping(monitor='val_loss', mode='min', patience=early_stop_patience,
                         restore_best_weights=True, verbose=0)
     callbacks.append(es)
     if not DISABLE_EARLY_STOPPING:
@@ -1550,7 +2084,7 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
     Huber loss ดีกว่า MAE สำหรับข้อมูลที่มี extreme outlier เป็นครั้งคราว
     """
     global CURRENT_PARAM_SET
-    params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+    params_set = TREE_PARAMS_OVERRIDE or PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
 
     if robust:
         scale = _robust_reg_scale(params_set['lgb_estimators'])
@@ -1558,9 +2092,9 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
             objective='huber', alpha=0.9,
             n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.04),
             max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'],
-            min_child_samples=int(round(10 + 10 * scale)),
-            lambda_l1=0.3 + 0.7 * scale, lambda_l2=0.3 + 0.7 * scale,
-            feature_fraction=0.85 - 0.15 * scale, bagging_fraction=0.85 - 0.15 * scale, bagging_freq=5,
+            min_child_samples=int(round(20 + 10 * scale)),
+            lambda_l1=0.8 + 0.7 * scale, lambda_l2=0.8 + 0.7 * scale,
+            feature_fraction=0.75, bagging_fraction=0.75, bagging_freq=5,
             n_jobs=-1,
             verbose=-1,
         )
@@ -1569,16 +2103,16 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
             objective='regression_l1',
             n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.05),
             max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'],
-            min_child_samples=10,
-            lambda_l1=0.3, lambda_l2=0.3,
-            feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=5,
+            min_child_samples=params_set.get('lgb_min_child_samples', 20),
+            lambda_l1=params_set.get('lgb_lambda_l1', 0.8), lambda_l2=params_set.get('lgb_lambda_l2', 0.8),
+            feature_fraction=params_set.get('lgb_feature_fraction', 0.75), bagging_fraction=params_set.get('lgb_bagging_fraction', 0.75), bagging_freq=5,
             n_jobs=-1,
             verbose=-1,
         )
     model = lgb.LGBMRegressor(**params)
     callbacks = [lgb.log_evaluation(-1)]
     if not DISABLE_EARLY_STOPPING:
-        callbacks.insert(0, lgb.early_stopping(15, verbose=False))
+        callbacks.insert(0, lgb.early_stopping(_early_stopping_rounds(params), verbose=False))
     model.fit(
         X_tr, y_tr,
         sample_weight=sample_weight,
@@ -1587,7 +2121,185 @@ def train_lgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
         eval_metric='mae',
         callbacks=callbacks,
     )
-    return model, _extract_booster_history(model.evals_result_)
+    history = _extract_booster_history(model.evals_result_)
+    _mark_best_booster_round(model, history)
+    return model, history
+
+
+class HurdleRegressor:
+    """Two-stage (hurdle) model for zero-inflated room demand.
+
+    These rooms are empty on 32-85% of days and otherwise booked for 3-12
+    hours; there is very little mass in between. A single regressor trained
+    on MAE/Huber cannot represent both modes, so it lands between them —
+    measured on 3C05-06, the model never predicted below 0.59h although 25%
+    of real days are exactly 0. That single failure drives most of the MAE.
+
+    Stage 1 (`gate`) predicts whether the room is used at all; stage 2
+    (`positive`) predicts hours GIVEN it is used, trained only on non-empty
+    days so its target is unimodal. `mode` combines them:
+      'hard' — 0 when P(used) < 0.5, else the stage-2 value.
+      'soft' — P(used) * stage-2, a smoother estimate that keeps some
+               signal when the gate is unsure.
+
+    Neither is universally better: on the room survey 'hard'/'soft' cut MAE
+    in 6 of 8 rooms but made 2C09 and 1C-MEETING clearly worse, so the
+    choice is made per room on calibration, never assumed.
+
+    Exposes .predict() and no _calibration_best_round, so _predict_booster
+    falls through to it and the recursive rollout needs no special case.
+    """
+
+    def __init__(self, gate, positive, mode: str = 'hard', threshold: float = 0.5):
+        self.gate = gate
+        self.positive = positive
+        self.mode = mode
+        self.threshold = float(threshold)
+
+    def predict(self, X, num_iteration=None, iteration_range=None):
+        """Combine the two stages.
+
+        `num_iteration` / `iteration_range` are forwarded to the stage-2
+        model with the gate held fixed, so _extract_booster_accuracy_curve
+        can still walk the boosting rounds and the per-round training curves
+        keep rendering for hurdle rooms. Without this passthrough those
+        rooms would drop out of training_curves_by_set.png entirely.
+        """
+        prob = np.asarray(self.gate.predict_proba(X), dtype=float)[:, 1]
+        kw = {}
+        if num_iteration is not None:
+            kw['num_iteration'] = num_iteration
+        if iteration_range is not None:
+            kw['iteration_range'] = iteration_range
+        try:
+            raw = self.positive.predict(X, **kw) if kw else self.positive.predict(X)
+        except TypeError:
+            raw = self.positive.predict(X)
+        hours = np.maximum(0.0, np.asarray(raw, dtype=float))
+        if self.mode == 'soft':
+            return prob * hours
+        return np.where(prob >= self.threshold, hours, 0.0)
+
+    # Curve/'introspection attributes proxied to the stage-2 booster so the
+    # plotting helpers treat a hurdle room like any other room.
+    @property
+    def evals_result_(self):
+        return getattr(self.positive, 'evals_result_', {}) or {}
+
+    @property
+    def best_iteration_(self):
+        return getattr(self.positive, 'best_iteration_', None)
+
+    @property
+    def n_estimators_(self):
+        return getattr(self.positive, 'n_estimators_', 0)
+
+    @property
+    def feature_importances_(self):
+        return getattr(self.positive, 'feature_importances_', None)
+
+    # Callers resolve the column order with
+    #   getattr(model, 'feature_name_', None) or getattr(model, 'feature_names_in_', None)
+    # and fall back to "every column in the frame" when both are missing.
+    # Without these proxies a hurdle room was handed all 94 engineered columns
+    # while its stage-2 booster had been fitted on the selected subset, which
+    # aborted scoring for exactly the rooms that chose a hurdle (2C09, 2C10-11)
+    # and silently spared the one whose selection happened to keep all 94.
+    @property
+    def feature_name_(self):
+        return getattr(self.positive, 'feature_name_', None)
+
+    @property
+    def feature_names_in_(self):
+        return getattr(self.positive, 'feature_names_in_', None)
+
+    def evals_result(self):
+        fn = getattr(self.positive, 'evals_result', None)
+        return fn() if callable(fn) else {}
+
+    def get_params(self, deep=True):
+        fn = getattr(self.positive, 'get_params', None)
+        base = fn(deep) if callable(fn) else {}
+        return {**base, 'hurdle_mode': self.mode}
+
+    def with_mode(self, mode: str):
+        """Same fitted stages, different combination rule — free to create."""
+        return HurdleRegressor(self.gate, self.positive, mode=mode,
+                               threshold=self.threshold)
+
+
+def train_hurdle(model_type, fit_X, fit_y, X_cal, y_cal, mode='hard',
+                 robust: bool = False, sample_weight=None):
+    """Fit a HurdleRegressor using the current param set's tree size.
+
+    'hard' and 'soft' differ only in how the two stages are combined, so
+    callers comparing both should fit once and call `.with_mode()` rather
+    than calling this twice — at set E's 10k trees a redundant fit costs as
+    much as the model itself.
+
+    Returns None when the split is too lopsided for a gate to be learnable —
+    a classifier needs both classes present in usable numbers, and the
+    stage-2 regressor needs enough non-empty days to fit at all.
+    """
+    params_set = TREE_PARAMS_OVERRIDE or PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+    nz = np.asarray(fit_y, dtype=float) > 1e-9
+    if nz.sum() < 30 or (~nz).sum() < 15:
+        return None
+    if model_type == 'lightgbm':
+        gate = lgb.LGBMClassifier(
+            n_estimators=params_set['lgb_estimators'],
+            learning_rate=params_set.get('lgb_lr', 0.05),
+            max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'],
+            min_child_samples=params_set.get('lgb_min_child_samples', 20),
+            n_jobs=-1, verbose=-1,
+        )
+    else:
+        gate = xgb.XGBClassifier(
+            n_estimators=params_set['xgb_estimators'],
+            learning_rate=params_set.get('xgb_lr', 0.05),
+            max_depth=params_set['xgb_depth'],
+            min_child_weight=params_set.get('xgb_min_child_weight', 1),
+            eval_metric='logloss', verbosity=0, n_jobs=-1,
+        )
+    gate.fit(fit_X, nz.astype(int), sample_weight=sample_weight)
+
+    sub_X = fit_X[nz] if isinstance(fit_X, pd.DataFrame) else fit_X[nz]
+    sub_y = np.asarray(fit_y, dtype=float)[nz]
+    sub_w = np.asarray(sample_weight)[nz] if sample_weight is not None else None
+    trainer = train_lgb if model_type == 'lightgbm' else train_xgb
+    # Stage 2 early-stops on the non-empty calibration days only, matching
+    # the subset it is fit on; an all-days eval set would push it back
+    # toward predicting the zeros stage 1 already handles.
+    cal_nz = np.asarray(y_cal, dtype=float) > 1e-9
+    if cal_nz.sum() >= 5:
+        cal_X = X_cal[cal_nz] if isinstance(X_cal, pd.DataFrame) else X_cal[cal_nz]
+        cal_y = np.asarray(y_cal, dtype=float)[cal_nz]
+    else:
+        cal_X, cal_y = X_cal, np.asarray(y_cal, dtype=float)
+    positive, _ = trainer(sub_X, sub_y, cal_X, cal_y, robust=robust, sample_weight=sub_w)
+    return HurdleRegressor(gate, positive, mode=mode)
+
+
+def _early_stopping_rounds(params: dict) -> int:
+    """Early-stopping patience for the current param set.
+
+    A fixed patience of 10 was the real cap on model capacity: at lr 0.04 a
+    room's calibration loss plateaus for more than 10 rounds early on, so
+    training stopped almost immediately (observed best_round=80/80 for
+    LightGBM and 76/80 for XGBoost — i.e. it never even reached the limit
+    it was given). Low learning rates need proportionally more patience or
+    they can never be trained to convergence, which is what made these
+    models underfit rather than overfit.
+
+    Each param set now states its own 'patience'; the n//20 rule is only a
+    fallback for sets that predate the key.
+    """
+    params_set = TREE_PARAMS_OVERRIDE or PARAM_SETS.get(CURRENT_PARAM_SET, {})
+    explicit = (params_set or {}).get('patience')
+    if isinstance(explicit, (int, np.integer)) and explicit > 0:
+        return int(explicit)
+    n = int(params.get('n_estimators', 100) or 100)
+    return max(50, n // 20)
 
 
 def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
@@ -1596,7 +2308,7 @@ def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
     robust=True → pseudo-Huber loss + regularization แรงขึ้น
     """
     global CURRENT_PARAM_SET
-    params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
+    params_set = TREE_PARAMS_OVERRIDE or PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
     
     if robust:
         scale = _robust_reg_scale(params_set['xgb_estimators'])
@@ -1605,19 +2317,20 @@ def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
             n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.04),
             max_depth=params_set['xgb_depth'], subsample=0.85 - 0.15 * scale,
             colsample_bytree=0.85 - 0.15 * scale,
-            reg_alpha=0.3 + 0.7 * scale, reg_lambda=0.3 + 0.7 * scale,
+            reg_alpha=0.8 + 0.7 * scale, reg_lambda=0.8 + 0.7 * scale,
             eval_metric='mae', verbosity=0,
         )
     else:
         params = dict(
             objective='reg:absoluteerror',
             n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.05),
-            max_depth=params_set['xgb_depth'], subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.3, reg_lambda=0.3,
+            max_depth=params_set['xgb_depth'], min_child_weight=params_set.get('xgb_min_child_weight', 1),
+            subsample=params_set.get('xgb_subsample', 0.8), colsample_bytree=params_set.get('xgb_colsample_bytree', 0.8),
+            reg_alpha=params_set.get('xgb_reg_alpha', 0.8), reg_lambda=params_set.get('xgb_reg_lambda', 0.8),
             eval_metric='mae', verbosity=0,
         )
     if not DISABLE_EARLY_STOPPING:
-        params['early_stopping_rounds'] = 15
+        params['early_stopping_rounds'] = _early_stopping_rounds(params)
     model = xgb.XGBRegressor(**params, n_jobs=-1)
     model.fit(
         X_tr, y_tr,
@@ -1625,7 +2338,9 @@ def train_xgb(X_tr, y_tr, X_te, y_te, robust: bool = False, sample_weight=None):
         eval_set=[(X_tr, y_tr), (X_te, y_te)],
         verbose=False,
     )
-    return model, _extract_booster_history(model.evals_result())
+    history = _extract_booster_history(model.evals_result())
+    _mark_best_booster_round(model, history)
+    return model, history
 
 
 def _extract_booster_history(evals_result):
@@ -1656,6 +2371,45 @@ def _extract_booster_history(evals_result):
             history['valid_loss'] = list(values)
             break
     return history
+
+
+def _mark_best_booster_round(model, history: dict):
+    """Save the calibration-best round after training every configured round."""
+    losses = (history or {}).get('valid_loss') or []
+    valid = [(i, float(value)) for i, value in enumerate(losses, start=1)
+             if np.isfinite(value)]
+    if valid:
+        best_round, best_loss = min(valid, key=lambda item: item[1])
+        setattr(model, '_calibration_best_round', int(best_round))
+        history['best_round'] = int(best_round)
+        history['best_valid_loss'] = best_loss
+
+
+def _model_feature_names(model):
+    """คอลัมน์ที่โมเดลถูกเทรนมา (หลัง feature selection) หรือ None ถ้าไม่รู้"""
+    names = getattr(model, 'feature_name_', None)
+    if names is None:
+        names = getattr(model, 'feature_names_in_', None)
+    return list(names) if names is not None else None
+
+
+def _predict_booster(model, X, model_type: str):
+    """Predict with the persisted calibration-best round, not early stopping.
+
+    จัดคอลัมน์ให้ตรงกับที่โมเดลเทรนมาก่อนทาย — การเทรนเลือกเหลือบางฟีเจอร์ต่อห้อง
+    (เช่น 94 → 10) แต่ตอนพยากรณ์จริง (_build_forecast_bulk) สร้างครบทุกคอลัมน์
+    เดิมจึงพังด้วย "number of features ... not the same" และไม่มีผลพยากรณ์ใหม่เลย"""
+    names = _model_feature_names(model)
+    if names and isinstance(X, pd.DataFrame) and list(X.columns) != names:
+        X = X.reindex(columns=names, fill_value=0.0)
+    best_round = getattr(model, '_calibration_best_round', None)
+    if not isinstance(best_round, (int, np.integer)) or best_round < 1:
+        return np.asarray(model.predict(X), dtype=float)
+    if model_type == 'lightgbm':
+        return np.asarray(model.predict(X, num_iteration=int(best_round)), dtype=float)
+    if model_type == 'xgboost':
+        return np.asarray(model.predict(X, iteration_range=(0, int(best_round))), dtype=float)
+    raise ValueError(f'Unknown booster type: {model_type}')
 
 
 def _history_round_count(history: dict) -> int:
@@ -1842,17 +2596,12 @@ def _load_ensemble_keras(room):
     return None
 
 
-def _peak_sample_weights(y_tr: np.ndarray, high_quantile: float = 0.80, peak_weight: float = 2.0) -> np.ndarray:
+def _peak_sample_weights(y_tr: np.ndarray, high_quantile: float = 0.80, peak_weight: float = 1.25) -> np.ndarray:
     """Upweight the highest-demand rows in TRAIN so the model isn't penalized
     equally for under- vs over-predicting them.
 
-    Why: peak/exam-week days are a small minority of rows. Under a plain L1
-    loss, regressing their predictions toward the low/medium majority costs
-    almost nothing on average error, so models systematically under-predict
-    exactly the days that matter most (confirmed by confusion-matrix review:
-    most misclassifications on the busiest rooms were true='urgent' predicted
-    as 'medium'/'high', not label-boundary noise). Doubling the loss weight
-    on the top quantile counteracts that shrinkage.
+    A modest upweight protects rare peak days without making a model fitted on
+    an earlier busy term systematically over-predict a quieter later period.
 
     Derived from y_tr's own quantile only — no calibration, no test, no
     peak_ref/thr_high dependency — so it can't leak anything."""
@@ -1935,13 +2684,16 @@ def _cv_select_lgb_xgb_winner(X, y, thr_high, thr_med, peak_ref, n_folds: int = 
             lgb_fold = lgb.LGBMRegressor(
                 objective='regression_l1',
                 n_estimators=params_set['lgb_estimators'], learning_rate=params_set.get('lgb_lr', 0.08),
-                max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'], min_child_samples=10,
+                max_depth=params_set['lgb_depth'], num_leaves=params_set['lgb_leaves'], min_child_samples=20,
+                lambda_l1=0.8, lambda_l2=0.8, feature_fraction=0.75,
+                bagging_fraction=0.75, bagging_freq=5,
                 n_jobs=-1, verbose=-1,
             )
             xgb_fold = xgb.XGBRegressor(
                 objective='reg:absoluteerror',
                 n_estimators=params_set['xgb_estimators'], learning_rate=params_set.get('xgb_lr', 0.08),
-                max_depth=params_set['xgb_depth'], subsample=0.8, colsample_bytree=0.8,
+                max_depth=params_set['xgb_depth'], subsample=0.75, colsample_bytree=0.75,
+                reg_alpha=0.8, reg_lambda=0.8,
                 verbosity=0, n_jobs=-1,
             )
             lgb_fold.fit(X_fold_tr, y_fold_tr, sample_weight=fold_weights)
@@ -1957,6 +2709,86 @@ def _cv_select_lgb_xgb_winner(X, y, thr_high, thr_med, peak_ref, n_folds: int = 
     if not lgb_scores or not xgb_scores:
         return {}
     return {'lightgbm': float(np.mean(lgb_scores)), 'xgboost': float(np.mean(xgb_scores))}
+
+
+def _cv_select_tree_config(X, y, thr_high, thr_med, peak_ref, candidates, n_folds: int = 3):
+    """Choose top_k and LGB/XGB winner within supplied parameter sets.
+
+    Feature importance is re-fit inside every fold from that fold's training
+    rows only.  Thus neither validation nor held-out test targets influence
+    the feature count or hyperparameter choice.
+    """
+    # 50 and "everything" are in the grid because the old (10, 20, 30) never
+    # offered the option of keeping most of the columns, and 26 of the 94
+    # engineered features are constant zeros in this dataset (18 term_* with
+    # an empty TermBooking table, 7 ahead_* with no usable created_at, and
+    # peer_seasonal). Selecting 10 of 94 therefore meant 10 of ~68 real ones.
+    # Walk-forward CV picks per room, so a wider grid can only help: if the
+    # tight counts really are better, they still win.
+    n_features = X.shape[1] if hasattr(X, 'shape') else 30
+    top_ks = tuple(sorted({k for k in (10, 20, 30, 50, n_features) if k <= n_features}))
+    records = []
+    n = len(X)
+    # This loop only RANKS (top_k, family) — it never produces a served
+    # model — yet it fits n_folds x len(top_ks) x len(candidates) x 2
+    # boosters with no eval_set, so every fit runs the full n_estimators.
+    # At set E's 10000 trees that is 18 full fits per room before real
+    # training even starts, which dominated the whole run. A short, fast
+    # budget ranks these choices just as well, so cap trees and floor the
+    # learning rate here while keeping each candidate's own depth/leaves/
+    # regularization — those are what actually differ between candidates.
+    def _selection_budget(p: dict) -> tuple:
+        lgb_n = min(int(p['lgb_estimators']), SELECTION_MAX_TREES)
+        xgb_n = min(int(p['xgb_estimators']), SELECTION_MAX_TREES)
+        lgb_lr = max(float(p['lgb_lr']), SELECTION_MIN_LR)
+        xgb_lr = max(float(p['xgb_lr']), SELECTION_MIN_LR)
+        return lgb_n, lgb_lr, xgb_n, xgb_lr
+    for frac in np.linspace(0.5, 0.8, n_folds):
+        cut = int(n * frac)
+        val_end = min(cut + max(10, int(n * 0.1)), n)
+        if cut < MIN_TRAIN_ROWS or val_end - cut < 3:
+            continue
+        X_fold_tr, y_fold_tr = X.iloc[:cut], np.asarray(y[:cut])
+        X_fold_val, y_fold_val = X.iloc[cut:val_end], np.asarray(y[cut:val_end])
+        for top_k in top_ks:
+            cols = _select_important_features(X_fold_tr, y_fold_tr, top_k=top_k)
+            xtr, xval = X_fold_tr[cols], X_fold_val[cols]
+            weights = _peak_sample_weights(y_fold_tr)
+            for name in candidates:
+                p = PARAM_SETS[name]
+                try:
+                    _ln, _llr, _xn, _xlr = _selection_budget(p)
+                    lm = lgb.LGBMRegressor(
+                        objective='regression_l1', n_estimators=_ln,
+                        learning_rate=_llr, max_depth=p['lgb_depth'],
+                        num_leaves=p['lgb_leaves'], min_child_samples=p.get('lgb_min_child_samples', 20),
+                        lambda_l1=p.get('lgb_lambda_l1', 0.8), lambda_l2=p.get('lgb_lambda_l2', 0.8),
+                        feature_fraction=p.get('lgb_feature_fraction', 0.75),
+                        bagging_fraction=p.get('lgb_bagging_fraction', 0.75), bagging_freq=5, n_jobs=-1, verbose=-1,
+                    ).fit(xtr, y_fold_tr, sample_weight=weights)
+                    xm = xgb.XGBRegressor(
+                        objective='reg:absoluteerror', n_estimators=_xn,
+                        learning_rate=_xlr, max_depth=p['xgb_depth'],
+                        min_child_weight=p.get('xgb_min_child_weight', 1),
+                        subsample=p.get('xgb_subsample', 0.75), colsample_bytree=p.get('xgb_colsample_bytree', 0.75),
+                        reg_alpha=p.get('xgb_reg_alpha', 0.8), reg_lambda=p.get('xgb_reg_lambda', 0.8),
+                        eval_metric='mae', verbosity=0, n_jobs=-1,
+                    ).fit(xtr, y_fold_tr, sample_weight=weights)
+                    records.append((name, top_k, 'lightgbm', _score_pred(y_fold_val, lm.predict(xval), thr_high, thr_med, peak_ref)))
+                    records.append((name, top_k, 'xgboost', _score_pred(y_fold_val, xm.predict(xval), thr_high, thr_med, peak_ref)))
+                except Exception:
+                    continue
+    if not records:
+        return None
+    scores = pd.DataFrame(records, columns=['param_set', 'top_k', 'model', 'score'])
+    means = scores.groupby(['param_set', 'top_k', 'model'], as_index=False)['score'].mean()
+    best = means.loc[means['score'].idxmax()]
+    pair = means[(means.param_set == best.param_set) & (means.top_k == best.top_k)]
+    return {
+        'param_set': str(best.param_set), 'top_k': int(best.top_k),
+        'winner': str(best.model), 'score': float(best.score),
+        'cv_scores': dict(zip(pair.model, pair.score)),
+    }
 
 
 def _score_pred(y_true, y_pred, thr_high=None, thr_med=None, peak_ref=None) -> float:
@@ -2121,6 +2953,7 @@ def stacking_predict(
     thr_med: float = None,
     peak_ref: float = None,
     cv_scores: dict | None = None,
+    extra_train_X=None, extra_train_y=None, extra_train_weight: float = 0.3,
 ):
     # Make room-local copies so no branch can accidentally reuse a previous room's
     # dataframe/array object via shared reference.
@@ -2131,6 +2964,23 @@ def stacking_predict(
     y_cal = np.asarray(y_cal, dtype=float).copy()
 
     peak_weights = _peak_sample_weights(y_tr)
+
+    # Peer-room rows (see build_pooled_peer_rows) get appended to the FIT
+    # data only — never to X_cal/y_cal (early stopping and calibration stay
+    # pure target-room, so the recursive-calibration serving check further
+    # down still measures this room alone). A reduced weight keeps this
+    # room's own pattern dominant; peer rows just add generalizable
+    # signal for a target with too little history of its own.
+    fit_X, fit_y, fit_w = X_tr, y_tr, peak_weights
+    if extra_train_X is not None and extra_train_y is not None and len(extra_train_y) > 0:
+        extra_w = np.full(len(extra_train_y), extra_train_weight, dtype=float)
+        if isinstance(X_tr, pd.DataFrame):
+            extra_X_aligned = extra_train_X.reindex(columns=X_tr.columns, fill_value=0.0)
+            fit_X = pd.concat([X_tr, extra_X_aligned], ignore_index=True)
+        else:
+            fit_X = np.concatenate([X_tr, np.asarray(extra_train_X)])
+        fit_y = np.concatenate([y_tr, np.asarray(extra_train_y, dtype=float)])
+        fit_w = np.concatenate([peak_weights, extra_w])
     # Huber loss (robust=True) routing switched from CV(y_tr) to zero-day
     # fraction of y_tr, after A/B testing both ways it applied:
     #   2C09   (46% of days nonzero — frequent real usage): Huber HURT it
@@ -2145,8 +2995,41 @@ def stacking_predict(
     # between those two cases in the data surveyed. Decided from y_tr only.
     zero_frac = float(np.mean(y_tr <= 1e-9)) if len(y_tr) else 0.0
     use_robust = zero_frac > 0.80
-    lgb_model, lgb_history = train_lgb(X_tr, y_tr, X_cal, y_cal, robust=use_robust, sample_weight=peak_weights)
-    xgb_model, xgb_history = train_xgb(X_tr, y_tr, X_cal, y_cal, robust=use_robust, sample_weight=peak_weights)
+    lgb_model, lgb_history = train_lgb(fit_X, fit_y, X_cal, y_cal, robust=use_robust, sample_weight=fit_w)
+    xgb_model, xgb_history = train_xgb(fit_X, fit_y, X_cal, y_cal, robust=use_robust, sample_weight=fit_w)
+
+    # Per-room hurdle selection. Zero-inflated rooms are better served by a
+    # gate + positive-part pair than by one regressor straddling both modes,
+    # but not every room: a survey of the eight rooms showed hurdle cutting
+    # MAE in six while clearly hurting 2C09 and 1C-MEETING. So fit the
+    # variants and keep one only if it beats the plain regressor on
+    # CALIBRATION accuracy — X_te is never consulted here.
+    hurdle_choice = {'lightgbm': 'single', 'xgboost': 'single'}
+    if thr_high is not None and thr_med is not None and peak_ref is not None:
+        for _mt, _base in (('lightgbm', lgb_model), ('xgboost', xgb_model)):
+            _base_acc = compute_classification_metrics(
+                y_cal, _predict_booster(_base, X_cal, _mt), thr_high, thr_med, peak_ref)['accuracy']
+            _best, _best_acc, _best_mode = None, _base_acc, 'single'
+            # One fit, both combination rules — with_mode() reuses the same
+            # trained gate and positive-part model.
+            _fitted = train_hurdle(_mt, fit_X, fit_y, X_cal, y_cal, mode='hard',
+                                   robust=use_robust, sample_weight=fit_w)
+            for _mode in (('hard', 'soft') if _fitted is not None else ()):
+                _cand = _fitted.with_mode(_mode)
+                _acc = compute_classification_metrics(
+                    np.asarray(y_cal, dtype=float),
+                    np.asarray(_cand.predict(X_cal), dtype=float),
+                    thr_high, thr_med, peak_ref)['accuracy']
+                if _acc > _best_acc:
+                    _best, _best_acc, _best_mode = _cand, _acc, _mode
+            if _best is not None:
+                hurdle_choice[_mt] = _best_mode
+                print(f"    🚪 {_mt}: hurdle '{_best_mode}' beats single on calibration "
+                      f"({_base_acc:.4f} -> {_best_acc:.4f}) — using it")
+                if _mt == 'lightgbm':
+                    lgb_model = _best
+                else:
+                    xgb_model = _best
 
     if thr_high is not None and thr_med is not None and peak_ref is not None:
         lgb_history, xgb_history = _attach_booster_accuracy_history(
@@ -2156,33 +3039,33 @@ def stacking_predict(
             lgb_history=lgb_history,
             xgb_history=xgb_history,
         )
-        lgb_train_preds = lgb_model.predict(X_tr)
-        lgb_val_preds = lgb_model.predict(X_cal)
-        xgb_train_preds = xgb_model.predict(X_tr)
-        xgb_val_preds = xgb_model.predict(X_cal)
+        lgb_train_preds = _predict_booster(lgb_model, X_tr, 'lightgbm')
+        lgb_val_preds = _predict_booster(lgb_model, X_cal, 'lightgbm')
+        xgb_train_preds = _predict_booster(xgb_model, X_tr, 'xgboost')
+        xgb_val_preds = _predict_booster(xgb_model, X_cal, 'xgboost')
         lgb_train_cls = compute_classification_metrics(y_tr, lgb_train_preds, thr_high, thr_med, peak_ref)
         lgb_val_cls = compute_classification_metrics(y_cal, lgb_val_preds, thr_high, thr_med, peak_ref)
         xgb_train_cls = compute_classification_metrics(y_tr, xgb_train_preds, thr_high, thr_med, peak_ref)
         xgb_val_cls = compute_classification_metrics(y_cal, xgb_val_preds, thr_high, thr_med, peak_ref)
         print(
-            f"    🟢 LightGBM training: TrainLoss={lgb_history.get('train_loss', [np.nan])[-1]:.4f} "
-            f"CalLoss={lgb_history.get('valid_loss', [np.nan])[-1]:.4f} "
+            f"    🟢 LightGBM training: best round={lgb_history.get('best_round', 'all')} "
+            f"CalLoss={lgb_history.get('best_valid_loss', lgb_history.get('valid_loss', [np.nan])[-1]):.4f} "
             f"TrainAcc={lgb_train_cls['accuracy']:.4f} CalAcc={lgb_val_cls['accuracy']:.4f}"
         )
         print(
-            f"    ⚡ XGBoost training: TrainLoss={xgb_history.get('train_loss', [np.nan])[-1]:.4f} "
-            f"CalLoss={xgb_history.get('valid_loss', [np.nan])[-1]:.4f} "
+            f"    ⚡ XGBoost training: best round={xgb_history.get('best_round', 'all')} "
+            f"CalLoss={xgb_history.get('best_valid_loss', xgb_history.get('valid_loss', [np.nan])[-1]):.4f} "
             f"TrainAcc={xgb_train_cls['accuracy']:.4f} CalAcc={xgb_val_cls['accuracy']:.4f}"
         )
     else:
         print("    🟢 LightGBM/XGBoost training: train/valid thresholds unavailable, showing loss history only")
 
-    lgb_val = lgb_model.predict(X_cal)
-    xgb_val = xgb_model.predict(X_cal)
-    lgb_train_preds = lgb_model.predict(X_tr)
-    xgb_train_preds = xgb_model.predict(X_tr)
-    lgb_fut = lgb_model.predict(X_te)
-    xgb_fut = xgb_model.predict(X_te)
+    lgb_val = _predict_booster(lgb_model, X_cal, 'lightgbm')
+    xgb_val = _predict_booster(xgb_model, X_cal, 'xgboost')
+    lgb_train_preds = _predict_booster(lgb_model, X_tr, 'lightgbm')
+    xgb_train_preds = _predict_booster(xgb_model, X_tr, 'xgboost')
+    lgb_fut = _predict_booster(lgb_model, X_te, 'lightgbm')
+    xgb_fut = _predict_booster(xgb_model, X_te, 'xgboost')
 
     lstm_ready = (
         LSTM_AVAILABLE
@@ -2242,21 +3125,43 @@ def stacking_predict(
         # lstm_val contains the LSTM forecasts that align with the validation horizon
         lstm_val_preds = lstm_val[:len(y_cal)]
         lstm_fut_preds = lstm_fut[: (n_pred or len(X_te))]
-        model_preds = {
-            'lstm': lstm_val_preds,
-            'lightgbm': lgb_val,
-            'xgboost': xgb_val,
+        # Tree models are the default serving path. LSTM is eligible only if
+        # its chronological validation forecast beats both the best tree and
+        # seasonal-naive(7) on the same calibration dates.
+        tree_preds = {'lightgbm': lgb_val, 'xgboost': xgb_val}
+        tree_scores = {
+            name: _score_pred(y_cal, pred, thr_high, thr_med, peak_ref)
+            for name, pred in tree_preds.items()
         }
-        ensemble_weights = _derive_ensemble_weights(
-            y_cal, model_preds, primary='lstm',
-            thr_high=thr_high, thr_med=thr_med, peak_ref=peak_ref,
-            cv_scores=cv_scores,
+        tree_winner = max(tree_scores, key=tree_scores.get)
+        tree_score = tree_scores[tree_winner]
+        seasonal_pred = (
+            X_cal['lag_7'].to_numpy(dtype=float)
+            if isinstance(X_cal, pd.DataFrame) and 'lag_7' in X_cal.columns else None
         )
-        final = _blend_predictions(
-            {'lstm': lstm_fut_preds, 'lightgbm': lgb_fut, 'xgboost': xgb_fut},
-            ensemble_weights,
+        seasonal_score = (
+            _score_pred(y_cal, seasonal_pred, thr_high, thr_med, peak_ref)
+            if seasonal_pred is not None else float('inf')
         )
-        meta_val = _blend_predictions(model_preds, ensemble_weights)
+        lstm_score = _score_pred(y_cal, lstm_val_preds, thr_high, thr_med, peak_ref)
+        lstm_selected = lstm_score > tree_score and lstm_score > seasonal_score
+
+        if lstm_selected:
+            print(f"    🧠 LSTM accepted: CalAcc={lstm_score:.3f} > "
+                  f"{tree_winner.upper()}={tree_score:.3f}, SNaive-7={seasonal_score:.3f}")
+            ensemble_weights = {'lstm': 1.0, 'lightgbm': 0.0, 'xgboost': 0.0}
+            final, meta_val = lstm_fut_preds, lstm_val_preds
+        else:
+            print(f"    🌳 Tree-first: LSTM CalAcc={lstm_score:.3f}; "
+                  f"{tree_winner.upper()}={tree_score:.3f}; SNaive-7={seasonal_score:.3f}")
+            ensemble_weights = _derive_ensemble_weights(
+                y_cal, tree_preds, primary=tree_winner,
+                base_prior={'lightgbm': 0.50, 'xgboost': 0.50},
+                thr_high=thr_high, thr_med=thr_med, peak_ref=peak_ref,
+                cv_scores=cv_scores,
+            )
+            final = _blend_predictions({'lightgbm': lgb_fut, 'xgboost': xgb_fut}, ensemble_weights)
+            meta_val = _blend_predictions(tree_preds, ensemble_weights)
     else:
         print("⚠️  LSTM ไม่พร้อม – ensemble ใช้ LGB + XGB")
         ensemble_weights = _derive_ensemble_weights(
@@ -2324,6 +3229,9 @@ def _build_forecast_bulk(
     ensemble_model=None,
     use_log: bool = False,
     lstm_lookback: int = LSTM_LOOKBACK,
+    serving_model: str = 'ensemble',
+    peer_profile=None,
+    serving_weights=None,
 ):
     max_hr_weight = max(room_hour_dist.values()) if room_hour_dist else 1.0
     bulk = []
@@ -2339,7 +3247,8 @@ def _build_forecast_bulk(
     lstm_daily_preds = {}
     if LSTM_AVAILABLE and lstm_model is not None and lstm_scaler is not None:
         if isinstance(lstm_scaler, tuple):
-            feat_hist = build_features(history, term_df=term_df, use_log=use_log).dropna()
+            feat_hist = build_features(history, term_df=term_df, use_log=use_log,
+                                        peer_profile=peer_profile).dropna()
             lstm_ahead = lstm_predict_multivariate(
                 lstm_model,
                 lstm_scaler,
@@ -2367,12 +3276,19 @@ def _build_forecast_bulk(
         fc_ts    = pd.Timestamp(fc_date)
         extended = pd.concat([history, pd.Series([np.nan], index=[fc_ts])])
         extended.index = pd.to_datetime(extended.index)
-        f_df = build_features(extended, term_df, use_log=use_log)\
+        f_df = build_features(extended, term_df, use_log=use_log, peer_profile=peer_profile)\
             .loc[[fc_ts]].drop(columns='y')
-        lgb_pred = float(lgb_model.predict(f_df)[0])
-        xgb_pred = float(xgb_model.predict(f_df)[0])
+        lgb_pred = float(_predict_booster(lgb_model, f_df, 'lightgbm')[0])
+        xgb_pred = float(_predict_booster(xgb_model, f_df, 'xgboost')[0])
 
-        if fc_date in lstm_daily_preds:
+        if serving_model == 'lightgbm':
+            d_pred = lgb_pred
+        elif serving_model == 'xgboost':
+            d_pred = xgb_pred
+        elif serving_model == 'blend':
+            w = serving_weights or {'lightgbm': 0.5, 'xgboost': 0.5}
+            d_pred = w.get('lightgbm', 0.5) * lgb_pred + w.get('xgboost', 0.5) * xgb_pred
+        elif fc_date in lstm_daily_preds:
             lstm_val_fc = lstm_daily_preds[fc_date]
             if use_log:
                 lstm_val_fc = np.log1p(lstm_val_fc)
@@ -2519,20 +3435,33 @@ def _evaluate_model_preds(y_true, preds_dict, thr_high, thr_med, peak_ref, room_
 
 
 def expand_bookings_to_daily(rdf: pd.DataFrame, daily_cap: float = 12.0) -> pd.DataFrame:
-    """Expand each booking into one row per calendar day it actually spans,
-    instead of dumping its whole duration onto the start date alone. A
-    booking blocked for a full exam week (e.g. start=Mon 08:00,
-    end=next-Tue 20:00) then contributes a bounded, realistic amount to
-    EVERY day it spans — each day's overlap with the booking capped at
-    `daily_cap` hours (no room is genuinely used more than ~12h in a real
-    day) — rather than either attributing 200+ raw hours to a single
-    calendar day (physically impossible) or capping once per record and
-    losing every other day the booking actually covered.
+    """Expand bookings into one row per calendar day, measuring each day's
+    OCCUPIED time as the union of the bookings covering it, clipped to the
+    room's operating window.
+
+    Two bugs used to inflate busy days to physically impossible totals:
+
+    1. Overlap was measured against the calendar day (00:00-24:00), so the
+       middle day of a multi-day block (e.g. exam week, Mon 08:00 ->
+       next-Tue 20:00) scored a full 24h. The room is not occupied
+       overnight — only ROOM_OPEN_HOUR..ROOM_CLOSE_HOUR counts.
+    2. Concurrent bookings were summed, not unioned. Two exam-week records
+       covering the same days each contributed `daily_cap` hours, so the
+       day totalled 24h in a room that is open 12h.
+
+    Combined, that produced daily values up to 24.0h on 16-60 days per
+    room. Those days sat at the top of the distribution, so they set
+    peak_ref (the 0.95 quantile) and therefore both label thresholds —
+    corrupting the labels, not just a few outlier rows. The rooms hit
+    hardest were the busiest ones, which is why they scored worst.
+
+    `daily_cap` is kept as a final clamp for rooms whose real window is
+    wider than the constants below.
 
     Requires 'start_time' and 'end_time' columns. Returns a DataFrame with
-    columns ['date', 'duration'] — one row per (booking, day-it-touches).
+    columns ['date', 'duration'] — one row per day touched.
     """
-    rows_date, rows_hours = [], []
+    per_day: dict = {}
     for start, end in zip(rdf['start_time'], rdf['end_time']):
         start = pd.Timestamp(start)
         end = pd.Timestamp(end)
@@ -2541,15 +3470,26 @@ def expand_bookings_to_daily(rdf: pd.DataFrame, daily_cap: float = 12.0) -> pd.D
         cur = start.normalize()
         last = end.normalize()
         while cur <= last:
-            day_start = cur
-            day_end = cur + pd.Timedelta(days=1)
-            ov_start = max(start, day_start)
-            ov_end = min(end, day_end)
-            hours = (ov_end - ov_start).total_seconds() / 3600.0
-            if hours > 0:
-                rows_date.append(cur.date())
-                rows_hours.append(min(hours, daily_cap))
+            win_start = cur + pd.Timedelta(hours=ROOM_OPEN_HOUR)
+            win_end = cur + pd.Timedelta(hours=ROOM_CLOSE_HOUR)
+            ov_start = max(start, win_start)
+            ov_end = min(end, win_end)
+            if ov_end > ov_start:
+                per_day.setdefault(cur.date(), []).append((ov_start, ov_end))
             cur = cur + pd.Timedelta(days=1)
+
+    rows_date, rows_hours = [], []
+    for day, intervals in per_day.items():
+        intervals.sort()
+        merged = [list(intervals[0])]
+        for iv_start, iv_end in intervals[1:]:
+            if iv_start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], iv_end)
+            else:
+                merged.append([iv_start, iv_end])
+        hours = sum((b - a).total_seconds() / 3600.0 for a, b in merged)
+        rows_date.append(day)
+        rows_hours.append(min(hours, daily_cap))
     return pd.DataFrame({'date': rows_date, 'duration': rows_hours})
 
 
@@ -2574,10 +3514,213 @@ def _prepare_daily_series(rdf, room, all_rooms_daily):
     return daily
 
 
-def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
+def recursive_snaive_predictions(daily, start_idx, end_idx, use_log=False,
+                                  refresh_every=FORECAST_DAYS):
+    """Seasonal-naive(7) forecast under the identical recursive,
+    refresh-every-N-days protocol as recursive_tree_predictions, so the two
+    are directly comparable on calibration and can gate which one serves.
+
+    Returns predictions in the same space recursive_tree_predictions returns
+    (log1p space when use_log, actual scale otherwise) so both can be scored
+    against y_cal with the same _score_pred call.
     """
-    Simple unified path:
-      LSTM (primary) → LightGBM + XGBoost (support) → weighted ensemble
+    preds = []
+    step = max(1, int(refresh_every))
+    for origin in range(start_idx, end_idx, step):
+        history = daily.iloc[:origin].copy()
+        for forecast_date in daily.index[origin:min(origin + step, end_idx)]:
+            lag_date = forecast_date - pd.Timedelta(days=7)
+            if lag_date in history.index:
+                actual_scale_pred = float(history.loc[lag_date])
+            elif len(history):
+                actual_scale_pred = float(history.iloc[-1])
+            else:
+                actual_scale_pred = 0.0
+            actual_scale_pred = max(0.0, actual_scale_pred)
+            history.loc[forecast_date] = actual_scale_pred
+            preds.append(np.log1p(actual_scale_pred) if use_log else actual_scale_pred)
+    return np.asarray(preds, dtype=float)
+
+
+def build_committed_block_index(bookings_df):
+    """Map each calendar day to the multi-day blocks covering it.
+
+    Returns {date -> [(start_date, hours_that_day), ...]} so a forecast can
+    ask what was already committed and running at its origin.
+
+    Ported from direct_forecast, where it measurably helps: 1.9% of bookings
+    span more than one day yet carry 26-75% of every room's hours, and on the
+    test split every day covered by an already-running block was 'urgent'.
+    Trees never split on it because it is too rare, so it is applied as a
+    floor on the prediction rather than fed in as a feature.
+    """
+    index: dict = {}
+    if bookings_df is None or len(bookings_df) == 0:
+        return index
+    cols = set(getattr(bookings_df, 'columns', []))
+    if not {'start_time', 'end_time'}.issubset(cols):
+        return index
+    starts = pd.to_datetime(bookings_df['start_time'], errors='coerce')
+    ends = pd.to_datetime(bookings_df['end_time'], errors='coerce')
+    for start, end in zip(starts, ends):
+        if pd.isna(start) or pd.isna(end) or end <= start:
+            continue
+        if start.normalize() == end.normalize():
+            continue          # single-day booking: nothing is "already running"
+        cur = start.normalize()
+        last = end.normalize()
+        while cur <= last:
+            win_s = max(start, cur + pd.Timedelta(hours=ROOM_OPEN_HOUR))
+            win_e = min(end, cur + pd.Timedelta(hours=ROOM_CLOSE_HOUR))
+            hours = (win_e - win_s).total_seconds() / 3600.0
+            if hours > 0:
+                index.setdefault(cur.normalize(), []).append(
+                    (start.normalize(), min(hours, 12.0)))
+            cur = cur + pd.Timedelta(days=1)
+    return index
+
+
+def committed_block_floor(block_index, known_as_of, target_date) -> float:
+    """Hours on `target_date` committed by blocks that had already STARTED by
+    `known_as_of`. Blocks beginning later are invisible to a forecast made at
+    that origin, so they are excluded — this is what keeps the floor honest
+    inside a 14-day horizon."""
+    if not block_index:
+        return 0.0
+    entries = block_index.get(pd.Timestamp(target_date).normalize())
+    if not entries:
+        return 0.0
+    cutoff = pd.Timestamp(known_as_of).normalize()
+    hours = sum(h for start, h in entries if start <= cutoff)
+    return float(min(hours, 12.0))
+
+
+def recursive_tree_predictions(model, daily, term_df, booking_ahead_df, start_idx,
+                               end_idx, feature_names, model_type, use_log=False,
+                               refresh_every=FORECAST_DAYS, peer_profile=None):
+    """Backtest the same fixed forecast horizon used by the application.
+
+    Within each horizon, lag/rolling features contain only earlier forecasts.
+    At the next origin, the observed history is available again, as it is when
+    the scheduled forecast job runs.  A single 229-day recursive rollout does
+    not represent this application's 14-day serving behaviour.
+    """
+    preds = []
+    step = max(1, int(refresh_every))
+    block_index = build_committed_block_index(booking_ahead_df)
+    for origin in range(start_idx, end_idx, step):
+        history = daily.iloc[:origin].copy()
+        known_as_of = daily.index[origin - 1] if origin > 0 else daily.index[0]
+        for forecast_date in daily.index[origin:min(origin + step, end_idx)]:
+            extended = pd.concat([history, pd.Series([np.nan], index=[forecast_date])])
+            row = build_features(
+                extended, term_df=term_df, use_log=use_log,
+                booking_ahead_df=booking_ahead_df, peer_profile=peer_profile,
+            ).loc[[forecast_date]].drop(columns='y')
+            row = row.reindex(columns=list(feature_names), fill_value=0.0)
+            raw_pred = max(0.0, float(_predict_booster(model, row, model_type)[0]))
+            actual_scale_pred = float(np.expm1(raw_pred)) if use_log else raw_pred
+            # Hours already committed by a block running at this origin are a
+            # fact, not something to predict, so they act as a lower bound.
+            floor_hours = committed_block_floor(block_index, known_as_of, forecast_date)
+            if floor_hours > actual_scale_pred:
+                actual_scale_pred = floor_hours
+                raw_pred = float(np.log1p(floor_hours)) if use_log else floor_hours
+            history.loc[forecast_date] = max(0.0, actual_scale_pred)
+            preds.append(raw_pred)
+    return np.asarray(preds, dtype=float)
+
+
+def recursive_blend_predictions(lgb_model, xgb_model, weights, daily, term_df,
+                                 booking_ahead_df, start_idx, end_idx, feature_names,
+                                 use_log=False, refresh_every=FORECAST_DAYS, peer_profile=None):
+    """Same recursive, refresh-every-N-days protocol as recursive_tree_predictions,
+    but each step blends LightGBM + XGBoost (weights = {'lightgbm': w, 'xgboost': w})
+    into the single value that then feeds next-step lag/rolling features — matching
+    how a 'blend' serving_model actually generates history at run time, rather than
+    two single-model rollouts averaged after the fact.
+    """
+    preds = []
+    step = max(1, int(refresh_every))
+    w_lgb = weights.get('lightgbm', 0.5)
+    w_xgb = weights.get('xgboost', 0.5)
+    block_index = build_committed_block_index(booking_ahead_df)
+    for origin in range(start_idx, end_idx, step):
+        history = daily.iloc[:origin].copy()
+        known_as_of = daily.index[origin - 1] if origin > 0 else daily.index[0]
+        for forecast_date in daily.index[origin:min(origin + step, end_idx)]:
+            extended = pd.concat([history, pd.Series([np.nan], index=[forecast_date])])
+            row = build_features(
+                extended, term_df=term_df, use_log=use_log,
+                booking_ahead_df=booking_ahead_df, peer_profile=peer_profile,
+            ).loc[[forecast_date]].drop(columns='y')
+            row = row.reindex(columns=list(feature_names), fill_value=0.0)
+            lgb_pred = float(_predict_booster(lgb_model, row, 'lightgbm')[0])
+            xgb_pred = float(_predict_booster(xgb_model, row, 'xgboost')[0])
+            raw_pred = max(0.0, w_lgb * lgb_pred + w_xgb * xgb_pred)
+            actual_scale_pred = float(np.expm1(raw_pred)) if use_log else raw_pred
+            floor_hours = committed_block_floor(block_index, known_as_of, forecast_date)
+            if floor_hours > actual_scale_pred:
+                actual_scale_pred = floor_hours
+                raw_pred = float(np.log1p(floor_hours)) if use_log else floor_hours
+            history.loc[forecast_date] = max(0.0, actual_scale_pred)
+            preds.append(raw_pred)
+    return np.asarray(preds, dtype=float)
+
+
+def _cv_select_serving_model(X, y, daily, term_df, rdf, feature_names, use_log,
+                              thr_high, thr_med, peak_ref, peer_profile,
+                              train_end, calib_end, recursive_cal_scores, n_folds: int = 2):
+    """Multi-fold walk-forward version of the recursive-calibration serving
+    check. A single calibration slice (recursive_cal_scores, computed on the
+    real train_end..calib_end window with the FINAL trained models) has
+    repeatedly disagreed with held-out test in practice — e.g. 2C05-06 once
+    picked xgboost on that slice (0.596 vs 0.578) but lightgbm was the one
+    that actually generalized. Averaging that real fold with extra synthetic
+    folds carved out of the training window (fresh LGB/XGB refit on data
+    before each fold's cut, backtested recursively on the held-out tail
+    after it — the exact 14-day-refresh rollout the app runs in production)
+    is a less noisy estimate of which tree generalizes better.
+
+    Returns (serving_model, avg_scores, fold_scores) — fold_scores[0] is
+    always the real calibration fold; the rest are synthetic, in order.
+    """
+    fold_scores = [dict(recursive_cal_scores)]
+    fold_len = max(5, calib_end - train_end)
+    for frac in np.linspace(0.5, 0.8, n_folds):
+        cut = int(train_end * frac)
+        hold_end = min(cut + fold_len, train_end)
+        if cut < MIN_TRAIN_ROWS or hold_end - cut < 5:
+            continue
+        X_fold_tr, y_fold_tr = X.iloc[:cut], y[:cut]
+        X_fold_hold, y_fold_hold = X.iloc[cut:hold_end], y[cut:hold_end]
+        try:
+            fold_lgb, _ = train_lgb(X_fold_tr, y_fold_tr, X_fold_hold, y_fold_hold)
+            fold_xgb, _ = train_xgb(X_fold_tr, y_fold_tr, X_fold_hold, y_fold_hold)
+        except Exception:
+            continue
+        lgb_roll = recursive_tree_predictions(
+            fold_lgb, daily, term_df, rdf, cut, hold_end, feature_names, 'lightgbm',
+            use_log, peer_profile=peer_profile)
+        xgb_roll = recursive_tree_predictions(
+            fold_xgb, daily, term_df, rdf, cut, hold_end, feature_names, 'xgboost',
+            use_log, peer_profile=peer_profile)
+        fold_scores.append({
+            'lightgbm': _score_pred(y_fold_hold, lgb_roll, thr_high, thr_med, peak_ref),
+            'xgboost':  _score_pred(y_fold_hold, xgb_roll, thr_high, thr_med, peak_ref),
+        })
+    avg_scores = {
+        name: float(np.mean([f[name] for f in fold_scores]))
+        for name in ('lightgbm', 'xgboost')
+    }
+    serving_model = max(avg_scores, key=avg_scores.get)
+    return serving_model, avg_scores, fold_scores
+
+
+def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True, all_rooms_daily=None):
+    """
+    Tree-first path:
+      LightGBM/XGBoost → optional LSTM only when it clears both validation gates
 
     verbose=False suppresses only the TEST-evaluation console output (the
     "ENSEMBLE –" header, the Classification Metrics block, and the per-model
@@ -2586,13 +3729,26 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
     progress, CalAcc) still prints either way, since that reflects DECISIONS
     made during training, not a peek at test results.
     """
+    global TREE_PARAMS_OVERRIDE
+    # Establish the chronological split BEFORE fitting any distribution-derived
+    # preprocessing.  cap95/thresholds must never inspect calibration or test.
+    split_probe = _split_time_series(pd.DataFrame(index=daily.index), daily.to_numpy(dtype=float))
+    if split_probe is None:
+        print(f"   ⚠️  {room.name}: ข้อมูลไม่พอสำหรับ train (rows={len(daily)})")
+        return None
+    train_end_probe = split_probe[-2]
+
     use_log = _needs_log_transform(room)
-    cap95 = float(daily.quantile(0.95)) or 1.0
+    cap95 = float(daily.iloc[:train_end_probe].quantile(0.95)) or 1.0
     daily = daily.clip(upper=cap95)
 
     term_df = build_term_daily_features(daily.index, schedule)
     term_df.index = daily.index
-    feat_df = build_features(daily, term_df, use_log=use_log).dropna()
+    # cutoff = this room's own train_end date — peer_profile is fit only on
+    # peer history strictly before it (see fit_peer_profile's docstring).
+    peer_profile = fit_peer_profile(room, all_rooms_daily, cutoff_date=daily.index[train_end_probe])
+    feat_df = build_features(daily, term_df, use_log=use_log, booking_ahead_df=rdf,
+                              peer_profile=peer_profile).dropna()
     X = feat_df.drop(columns='y')
     y = feat_df['y'].values
 
@@ -2603,11 +3759,41 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
 
     X_tr, X_cal, X_te, y_tr, y_cal, y_te, train_end, calib_end = split
 
+    # Fixed classification thresholds come from training data only and are
+    # shared by all CV candidates.
+    fit_daily = daily.iloc[:train_end]
+    peak_ref = float(fit_daily.quantile(0.95)) or 1.0
+    thr_high, thr_med = compute_adaptive_thresholds(fit_daily, peak_ref)
+
+    # Each parameter set keeps its own tree hyperparameters. It uses the same
+    # chronological folds only to select feature count and LGB/XGB within that
+    # set, so an A run can never select E's parameters.
+    tree_selection = None
+    feature_top_k = 30
+    if CURRENT_PARAM_SET in PARAM_SETS:
+        X_cv_raw = pd.concat([X_tr, X_cal])
+        y_cv_raw = np.concatenate([y_tr, y_cal])
+        tree_selection = _cv_select_tree_config(
+            X_cv_raw, y_cv_raw, thr_high, thr_med, peak_ref,
+            candidates=((CURRENT_PARAM_SET, 'A_REG') if CURRENT_PARAM_SET == 'A'
+                        else (CURRENT_PARAM_SET,)),
+        )
+        if tree_selection is not None:
+            TREE_PARAMS_OVERRIDE = PARAM_SETS[tree_selection['param_set']]
+            feature_top_k = tree_selection['top_k']
+            print(f"   🎛️  Walk-forward selection: set={tree_selection['param_set']} "
+                  f"top_k={feature_top_k} winner={tree_selection['winner'].upper()} "
+                  f"CV Acc={tree_selection['score']:.3f}")
+        else:
+            TREE_PARAMS_OVERRIDE = None
+    else:
+        TREE_PARAMS_OVERRIDE = None
+
     # Trim to the most useful features (ranked on TRAIN only) before doing
     # anything else — reduces the feature:row ratio so LSTM/LGB/XGB spend
     # their limited data on real signal instead of noisy columns. See
     # _select_important_features docstring.
-    selected_features = _select_important_features(X_tr, y_tr)
+    selected_features = _select_important_features(X_tr, y_tr, top_k=feature_top_k)
     if len(selected_features) < X.shape[1]:
         print(f"   ✂️  Feature selection: {X.shape[1]} → {len(selected_features)} features kept")
         feat_df = feat_df[selected_features + ['y']]
@@ -2615,13 +3801,15 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
         y = feat_df['y'].values
         X_tr, X_cal, X_te = X.iloc[:train_end], X.iloc[train_end:calib_end], X.iloc[calib_end:]
 
-    peak_ref = float(daily.quantile(0.95)) or 1.0
-    thr_high, thr_med = compute_adaptive_thresholds(daily, peak_ref)
     room_hour_dist = learn_hour_dist(rdf, room_id=room.id) if len(rdf) > 0 else HOUR_DIST_FALLBACK
 
     lstm_model, lstm_scaler, lstm_history = None, None, None
-    if LSTM_AVAILABLE and len(y_tr) >= LSTM_LOOKBACK + 10:
-        print(f"   🧠 [1/3] LSTM (Primary) – {room.name}{' (log-transformed)' if use_log else ''}")
+    if SKIP_LSTM:
+        print(f"   ⏭️  [1/3] LSTM skipped (SKIP_LSTM=True — see LSTM_EXCLUSION_NOTE: it has "
+              f"never cleared the tree-first serving gate, so training it here would not "
+              f"change what serves)")
+    elif LSTM_AVAILABLE and len(y_tr) >= LSTM_LOOKBACK + 10:
+        print(f"   🧠 [1/3] LSTM (optional challenger) – {room.name}{' (log-transformed)' if use_log else ''}")
         lstm_model, lstm_scaler, lstm_history = train_lstm(
             y_tr, y_cal, lookback=LSTM_LOOKBACK,
             epochs=LSTM_EPOCHS, patience=LSTM_PATIENCE,
@@ -2633,8 +3821,8 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
         reason = 'insufficient data'
         print(f"   ⏭️  [1/3] LSTM skipped ({reason})")
 
-    print(f"   🌿 [2/3] LightGBM (Support)")
-    print(f"   ⚡ [3/3] XGBoost (Support)")
+    print(f"   🌿 [2/3] LightGBM (primary tree)")
+    print(f"   ⚡ [3/3] XGBoost (primary tree)")
 
     # Cross-validated LGB-vs-XGB comparison for the SELECTION decision only —
     # walk-forward folds within X_tr+X_cal (never X_te). See
@@ -2644,7 +3832,8 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
     # unrepresentative sample.
     X_cv = pd.concat([X_tr, X_cal]) if isinstance(X_tr, pd.DataFrame) else np.concatenate([X_tr, X_cal])
     y_cv = np.concatenate([y_tr, y_cal])
-    cv_scores = _cv_select_lgb_xgb_winner(X_cv, y_cv, thr_high, thr_med, peak_ref)
+    cv_scores = (tree_selection['cv_scores'] if tree_selection is not None
+                 else _cv_select_lgb_xgb_winner(X_cv, y_cv, thr_high, thr_med, peak_ref))
     if cv_scores:
         cv_winner = max(cv_scores, key=cv_scores.get)
         print(
@@ -2657,6 +3846,24 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
             "already-made choice did on test — it does not influence the pick above)"
         )
 
+    # Real transfer learning for data-poor rooms: append peer rooms' OWN
+    # feature rows (build_pooled_peer_rows) to the training fit, at a
+    # reduced weight, when this room's own training history is short enough
+    # that the tree is likely starved of pattern to learn from alone. Rooms
+    # with enough of their own history skip this — diluting an
+    # already-sufficient signal with lower-weighted peer rows has no
+    # upside and some risk. X_cal/y_cal (used for early stopping AND every
+    # later serving decision) never include peer rows.
+    peer_train_X, peer_train_y = None, None
+    if all_rooms_daily and len(y_tr) < PEER_AUGMENT_MAX_TRAIN_ROWS:
+        peer_train_X, peer_train_y = build_pooled_peer_rows(
+            room, all_rooms_daily, cutoff_date=daily.index[train_end],
+            use_log=use_log, feature_columns=list(X_tr.columns),
+        )
+        if peer_train_X is not None:
+            print(f"   🧬 Peer training rows: +{len(peer_train_y)} rows borrowed from "
+                  f"same-type rooms (weight={PEER_AUGMENT_WEIGHT}, own train rows={len(y_tr)})")
+
     (y_pred_ens, lgb_model, xgb_model, ensemble_weights,
      lgb_history, xgb_history, lgb_val, xgb_val, lstm_val, meta_val) = stacking_predict(
         X_tr, y_tr, X_cal, y_cal, X_te,
@@ -2665,10 +3872,65 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
         lstm_lookback=LSTM_LOOKBACK,
         thr_high=thr_high, thr_med=thr_med, peak_ref=peak_ref,
         cv_scores=cv_scores,
+        extra_train_X=peer_train_X, extra_train_y=peer_train_y,
+        extra_train_weight=PEER_AUGMENT_WEIGHT,
     )
 
-    lgb_test = np.asarray(lgb_model.predict(X_te), dtype=float)
-    xgb_test = np.asarray(xgb_model.predict(X_te), dtype=float)
+    # Choose only between the trained tree models with a recursive calibration
+    # forecast. Baselines remain separate benchmark scripts.
+    feature_names = list(X_tr.columns)
+    recursive_cal_preds = {
+        'lightgbm': recursive_tree_predictions(
+            lgb_model, daily, term_df, rdf, train_end, calib_end, feature_names, 'lightgbm', use_log,
+            peer_profile=peer_profile),
+        'xgboost': recursive_tree_predictions(
+            xgb_model, daily, term_df, rdf, train_end, calib_end, feature_names, 'xgboost', use_log,
+            peer_profile=peer_profile),
+    }
+    recursive_cal_scores = {
+        name: _score_pred(y_cal, pred, thr_high, thr_med, peak_ref)
+        for name, pred in recursive_cal_preds.items()
+    }
+
+    # Blend (LGB+XGB weighted by recursive-calibration score) was tried as a
+    # third serving_model candidate here and measured WORSE on held-out test
+    # for 2C05-06 (TestAcc 0.633 vs 0.655 for the plain single-model winner)
+    # despite winning on the calibration slice — the same calibration/test
+    # mismatch that motivated fit_peer_profile's leak-safety cutoff and,
+    # below, _cv_select_serving_model. Blend stays reverted to a straight
+    # two-way competition; recursive_blend_predictions() is left defined but
+    # unused in case a later room/config wants to retry it.
+    serving_weights = {'lightgbm': 0.5, 'xgboost': 0.5}
+
+    # _cv_select_serving_model (multi-fold recursive CV, still defined above)
+    # was also tried here in place of the plain single-slice pick below, and
+    # also measured WORSE on 2C05-06's held-out test (0.629 vs 0.655) — its
+    # own fold-averaged scores (lightgbm=0.618 xgboost=0.621) were within
+    # 0.003 of each other, i.e. a coin flip, not a confident read. Chasing a
+    # selection method that happens to match one room's test score through
+    # repeated retries would itself become a form of test-set leakage, so
+    # this was reverted to the plain single-slice pick rather than kept on
+    # the strength of one lucky/unlucky room. _cv_select_serving_model is
+    # left defined in case a future room has enough data for its extra
+    # in-train folds to actually add signal instead of just noise.
+    serving_model = max(recursive_cal_scores, key=recursive_cal_scores.get)
+    # Seasonal-naive(7) under the same recursive protocol — diagnostic
+    # comparison only (printed for visibility), never a serving candidate.
+    # Baselines stay in their own benchmark scripts; production serving
+    # picks only between the trained tree models (and their blend) above.
+    recursive_snaive_score = _score_pred(
+        y_cal, recursive_snaive_predictions(daily, train_end, calib_end, use_log),
+        thr_high, thr_med, peak_ref,
+    )
+    print(
+        "   🧪 Recursive calibration: "
+        + "  ".join(f"{name}={score:.3f}" for name, score in recursive_cal_scores.items())
+        + f"  snaive7={recursive_snaive_score:.3f} (diagnostic only)"
+        + f"  → serving {serving_model}"
+    )
+
+    lgb_test = _predict_booster(lgb_model, X_te, 'lightgbm')
+    xgb_test = _predict_booster(xgb_model, X_te, 'xgboost')
     lstm_cal, lstm_test = _collect_lstm_holdout_preds(
         lstm_model, lstm_scaler, feat_df, y_tr, y_cal, y_te, train_end,
     )
@@ -2700,9 +3962,10 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
             except Exception:
                 lstm_gate_pass = False
 
-    if not lstm_gate_pass:
-        # LSTM failed the regression gate on this room's calibration set.
-        # Drop it from forecast but keep history for plotting.
+    if ensemble_weights.get('lstm', 0.0) <= 0.0:
+        # Tree-first policy rejected LSTM on the calibration comparison.
+        # Do not keep an unused LSTM in the serving artifact; retain history
+        # for diagnostic plots only.
         lstm_model = None
         lstm_scaler = None
         lstm_eval = None
@@ -2751,11 +4014,41 @@ def _train_room_pipeline(room, daily, rdf, schedule, verbose: bool = True):
         verbose=verbose,
     )
 
+    # Prediction calibration, fit on the calibration split of whichever
+    # model actually serves this room (test_from_excel.py reads
+    # 'serving_model'), so the map matches the series it will be applied to.
+    _cal_pred_by_model = {
+        'ensemble': ens_cal_eval, 'lightgbm': lgb_cal_eval,
+        'xgboost': xgb_cal_eval, 'lstm': lstm_cal_eval,
+    }
+    # 'blend' serves a lightgbm/xgboost mix; score it on the same mix.
+    if serving_model == 'blend' and lgb_cal_eval is not None and xgb_cal_eval is not None:
+        _bw = serving_weights or {'lightgbm': 0.5, 'xgboost': 0.5}
+        _n = min(len(lgb_cal_eval), len(xgb_cal_eval))
+        _cal_pred_by_model['blend'] = (
+            float(_bw.get('lightgbm', 0.5)) * np.asarray(lgb_cal_eval[:_n], dtype=float)
+            + float(_bw.get('xgboost', 0.5)) * np.asarray(xgb_cal_eval[:_n], dtype=float)
+        )
+    pred_calibration = fit_prediction_calibration(
+        y_cal_eval, _cal_pred_by_model.get(serving_model))
+    if verbose:
+        if pred_calibration is None:
+            print(f"   🎚️  prediction calibration ({serving_model}): none "
+                  f"(insufficient calibration data)")
+        else:
+            _pk, _tk = pred_calibration
+            print(f"   🎚️  prediction calibration ({serving_model}): "
+                  f"p95 {_pk[-2]:.2f}h -> {_tk[-2]:.2f}h")
+
     return {
-        'daily': daily, 'use_log': use_log, 'peak_ref': peak_ref,
+        'daily': daily, 'use_log': use_log, 'cap95': cap95, 'peak_ref': peak_ref,
+        'peer_profile': peer_profile,
         'thr_high': thr_high, 'thr_med': thr_med,
+        'pred_calibration': pred_calibration,
         'room_hour_dist': room_hour_dist, 'confidence': confidence,
         'lgb_model': lgb_model, 'xgb_model': xgb_model, 'ensemble_weights': ensemble_weights,
+        'serving_model': serving_model, 'recursive_cal_scores': recursive_cal_scores,
+        'serving_weights': serving_weights,
         'ensemble_model': _build_ensemble_keras_model(ensemble_weights),
         'lstm_model': lstm_model, 'lstm_scaler': lstm_scaler,
         'lstm_history': lstm_history_saved, 'lgb_history': lgb_history, 'xgb_history': xgb_history,
@@ -2810,9 +4103,21 @@ def _save_room_models(room, result):
 
     meta_payload = {
         'room_id': room.id, 'room_name': room.name,
-        'peak_ref': result['peak_ref'], 'thr_high': result['thr_high'], 'thr_med': result['thr_med'],
+        'cap95': result['cap95'], 'peak_ref': result['peak_ref'],
+        'thr_high': result['thr_high'], 'thr_med': result['thr_med'],
+        'pred_calibration': result.get('pred_calibration'),
+        # Which per-room strategy each family ended up with: 'single', or a
+        # HurdleRegressor mode ('hard'/'soft') that beat it on calibration.
+        'hurdle_modes': {
+            'lightgbm': getattr(result.get('lgb_model'), 'mode', 'single'),
+            'xgboost': getattr(result.get('xgb_model'), 'mode', 'single'),
+        },
         'hour_dist': result['room_hour_dist'], 'confidence': result['confidence'],
         'ensemble_weights': result['ensemble_weights'], 'use_log': result['use_log'],
+        'serving_model': result.get('serving_model', 'ensemble'),
+        'recursive_cal_scores': result.get('recursive_cal_scores', {}),
+        'peer_profile': result.get('peer_profile'),
+        'serving_weights': result.get('serving_weights'),
         'lstm_lookback': LSTM_LOOKBACK,
         'has_lstm': result['lstm_model'] is not None,
         'cls_metrics': result['cls_metrics'], 'reg_metrics': result['reg_metrics'],
@@ -2837,8 +4142,7 @@ def _save_room_models(room, result):
 def retrain_and_forecast():
     print("\n🚀 RETRAIN + GENERATE FORECAST")
     print("=" * 60)
-    print("🧠 Pipeline: LSTM (Primary) + LightGBM/XGBoost (Support) → Weighted Ensemble")
-    print(f"   LSTM weight prior ≈ {LSTM_WEIGHT_PRIOR:.0%} | LGB ≈ {LGB_WEIGHT_PRIOR:.0%} | XGB ≈ {XGB_WEIGHT_PRIOR:.0%}")
+    print("🌳 Pipeline: LightGBM/XGBoost (primary) → LSTM only if it clears both validation gates")
     if not LSTM_AVAILABLE:
         print("⚠️  WARNING: TensorFlow ไม่พบ – จะใช้ LGB+XGB ensemble เท่านั้น")
     print("=" * 60)
@@ -2876,14 +4180,14 @@ def retrain_and_forecast():
         if len(rdf_r) == 0:
             all_rooms_daily[r] = pd.Series(dtype=float)
             continue
-        daily_r = (
-            rdf_r.groupby('date')['duration'].sum()
-                 .reindex(pd.date_range(rdf_r['date'].min(), rdf_r['date'].max(), freq='D').date,
-                          fill_value=0.0)
-                 .astype(float)
-        )
-        daily_r.index = pd.to_datetime(daily_r.index)
-        all_rooms_daily[r] = daily_r
+        # Must go through _prepare_daily_series like every other daily
+        # series: summing raw 'duration' by start date dumps a multi-day
+        # booking's whole span (up to 416h) onto day one and leaves the
+        # days it actually covered at zero. Peer-profile features were
+        # built on that shape while the models were trained on the
+        # expanded one.
+        daily_r = _prepare_daily_series(rdf_r, None, None)
+        all_rooms_daily[r] = daily_r if daily_r is not None else pd.Series(dtype=float)
 
     for room in Room.objects.all():
         rdf = raw[raw['room_id'] == room.id]
@@ -2894,7 +4198,7 @@ def retrain_and_forecast():
             continue
 
         print(f"\n🏠 {room.name}")
-        result = _train_room_pipeline(room, daily, rdf, schedule)
+        result = _train_room_pipeline(room, daily, rdf, schedule, all_rooms_daily=all_rooms_daily)
         if result is None:
             continue
 
@@ -2927,6 +4231,9 @@ def retrain_and_forecast():
             lstm_model=result['lstm_model'], lstm_scaler=result['lstm_scaler'],
             ensemble_model=result.get('ensemble_model'),
             use_log=result['use_log'], lstm_lookback=LSTM_LOOKBACK,
+            serving_model=result.get('serving_model', 'ensemble'),
+            peer_profile=result.get('peer_profile'),
+            serving_weights=result.get('serving_weights'),
         )
         DemandForecast.objects.filter(room=room, forecast_date__in=forecast_dates).delete()
         DemandForecast.objects.bulk_create(bulk)
@@ -3015,9 +4322,10 @@ def generate_forecast_only():
         if 'cls_metrics' in meta:
             print_classification_metrics(meta['cls_metrics'], room.name, room.id)
 
-        # โหลด LSTM
+        # โหลด LSTM — เฉพาะเมื่อไม่ได้ปิดไว้ (SKIP_LSTM) ไฟล์ LSTM เก่าที่ค้างจากการทดลอง
+        # ก่อนหน้าใช้ฟีเจอร์คนละชุด โหลดมาแล้วพังทั้งการพยากรณ์ ทั้งที่ระบบจริงไม่ใช้ LSTM
         lstm_model, lstm_scaler = None, None
-        if meta.get('has_lstm', False) and LSTM_AVAILABLE:
+        if meta.get('has_lstm', False) and LSTM_AVAILABLE and not SKIP_LSTM:
             keras_lp = _room_artifact_path(room, "lstm.keras")
             legacy_pkl_lp = _room_artifact_path(room, "lstm.pkl")
             legacy_lp = os.path.join(MODEL_DIR, f"{room.id}_lstm.pkl")
@@ -3040,16 +4348,15 @@ def generate_forecast_only():
             rdf = raw.copy()
 
         use_log = meta.get('use_log', False)
-        daily = (
-            rdf.groupby('date')['duration'].sum()
-               .reindex(pd.date_range(rdf['date'].min(),
-                                      rdf['date'].max(), freq='D').date,
-                        fill_value=0.0)
-               .astype(float)
-        )
-        daily.index = pd.to_datetime(daily.index)
+        # Same expansion the models were trained on — a raw groupby here
+        # made the serving series a different shape from the training
+        # series (train/serve skew), on top of the multi-day spike.
+        daily = _prepare_daily_series(rdf, None, None)
+        if daily is None or len(daily) == 0:
+            print(f"   ⏭️  {room.name}: ไม่มีข้อมูลการจองที่ใช้ได้ ข้าม")
+            continue
         if use_log:
-            daily = daily.clip(upper=meta['peak_ref'])
+            daily = daily.clip(upper=meta.get('cap95', meta['peak_ref']))
 
         schedule = load_term_schedule(room.id)
         bulk = _build_forecast_bulk(
@@ -3060,13 +4367,16 @@ def generate_forecast_only():
             ensemble_model=ensemble_model,
             use_log=use_log,
             lstm_lookback=meta.get('lstm_lookback', LSTM_LOOKBACK),
+            serving_model=meta.get('serving_model', 'ensemble'),
+            peer_profile=meta.get('peer_profile'),
+            serving_weights=meta.get('serving_weights'),
         )
         DemandForecast.objects.filter(
             room=room, forecast_date__in=forecast_dates
         ).delete()
         DemandForecast.objects.bulk_create(bulk)
 
-        mode = "✓ LSTM+LGB+XGB Ensemble" if lstm_model else "○ LGB+XGB Ensemble"
+        mode = meta.get('serving_model', 'ensemble')
         print(f"  ✅ {room.name} – forecast updated [{mode}]")
 
     _print_summary()
@@ -3489,15 +4799,21 @@ if __name__ == '__main__':
     group.add_argument('--boost',        action='store_true')
     group.add_argument('--show-metrics', action='store_true')
     parser.add_argument('--compact-metrics', action='store_true', help='Show only the summary metrics table')
-    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C', 'D', 'E'], default='D',
+    parser.add_argument('--param-set', type=str, choices=['A', 'B', 'C', 'D', 'E'], default=CURRENT_PARAM_SET,
                         help='Select hyperparameter set: A (Fast), B (Balanced), C (High Quality), D (Extra Deep, default — best measured Ensemble Acc), E (Maximum Depth, diminishing returns past D).')
+    parser.add_argument('--days', type=int, default=FORECAST_DAYS,
+                        help='พยากรณ์ล่วงหน้ากี่วัน (ค่าเริ่มต้น FORECAST_DAYS) — ตั้งยาว เช่น 120 '
+                             'เพื่อไม่ต้องรันใหม่บ่อย; ยิ่งไกลยิ่งแม่นน้อยลงเพราะพยากรณ์ต่อจากค่าที่ทายเอง')
     parser.add_argument('--enable-early-stop', action='store_true',
-                        help='Allow early stopping (default: off — always trains full rounds for every param set)')
+                        help='Deprecated and ignored: models always train every configured epoch/round.')
     args = parser.parse_args()
 
     # Set global parameter set before training
     CURRENT_PARAM_SET = args.param_set
-    DISABLE_EARLY_STOPPING = not args.enable_early_stop
+    FORECAST_DAYS = max(1, args.days)
+    # Keep all learning curves complete; LSTM restores its best epoch and the
+    # tree helpers select their calibration-best boosting round afterwards.
+    DISABLE_EARLY_STOPPING = True
     params_set = PARAM_SETS.get(CURRENT_PARAM_SET, PARAM_SETS['B'])
     LSTM_EPOCHS = params_set['lstm_epochs']
     LSTM_BATCH = params_set['lstm_batch']

@@ -82,13 +82,11 @@ def main():
         if len(rdf_r) == 0:
             all_rooms_daily[r] = pd.Series(dtype=float)
             continue
-        daily_r = (
-            rdf_r.groupby('date')['duration'].sum()
-                 .reindex(pd.date_range(rdf_r['date'].min(), rdf_r['date'].max(), freq='D').date,
-                          fill_value=0.0)
-                 .astype(float)
-        )
-        daily_r.index = pd.to_datetime(daily_r.index)
+        # Same expansion as the training pipeline — see
+        # forecast.expand_bookings_to_daily.
+        daily_r = fc._prepare_daily_series(rdf_r, None, None)
+        if daily_r is None:
+            daily_r = pd.Series(dtype=float)
         all_rooms_daily[r] = daily_r
     
     # Train LSTM for selected room(s)

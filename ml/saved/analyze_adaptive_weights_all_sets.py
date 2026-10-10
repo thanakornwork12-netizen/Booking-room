@@ -51,9 +51,22 @@ FIXED_WEIGHTS = {'lstm': 0.20, 'lightgbm': 0.40, 'xgboost': 0.40}
 SET_NAMES_DEFAULT = ['A', 'B', 'C', 'D', 'E']
 
 
-def compute_full_metrics(y_true, y_pred, thr_high, thr_med, peak_ref) -> dict:
+def compute_full_metrics(y_true, y_pred, thr_high, thr_med, peak_ref,
+                         cal_y=None, cal_pred=None) -> dict:
+    """Score a test-split prediction.
+
+    Predictions are de-shrunk with a quantile map fit on (cal_y, cal_pred);
+    the thresholds stay fixed. This used to search a threshold multiplier on
+    y_true/y_pred — the test split itself — which both fit the data it
+    reported and relabelled the ground truth, inflating every number written
+    to adaptive_weight_analysis.jsonl and the adaptive-vs-fixed plots.
+    """
     y_pred = np.maximum(0.0, np.asarray(y_pred, dtype=float))
-    _, cls = F._evaluate_with_best_threshold(y_true, y_pred, thr_high, thr_med, peak_ref)
+    cal_map = F.fit_prediction_calibration(
+        cal_y,
+        np.maximum(0.0, np.asarray(cal_pred, dtype=float)) if cal_pred is not None else None)
+    y_pred = F.apply_prediction_calibration(y_pred, cal_map)
+    cls = F.compute_classification_metrics(y_true, y_pred, thr_high, thr_med, peak_ref)
     return {
         'accuracy': float(cls['accuracy']),
         'loss': float(cls['loss']),
@@ -151,13 +164,30 @@ def process_set(set_name: str, jsonl_file) -> dict:
             + FIXED_WEIGHTS['lightgbm'] * test['lgb']
             + FIXED_WEIGHTS['xgboost'] * test['xgb']
         )
+        # Same blends on the calibration split — the threshold multiplier is
+        # fit on these, never on the test split being scored.
+        adaptive_cal_pred = (
+            adaptive_w.get('lstm', 0.0) * cal['lstm']
+            + adaptive_w.get('lightgbm', 0.0) * cal['lgb']
+            + adaptive_w.get('xgboost', 0.0) * cal['xgb']
+        )
+        fixed_cal_pred = (
+            FIXED_WEIGHTS['lstm'] * cal['lstm']
+            + FIXED_WEIGHTS['lightgbm'] * cal['lgb']
+            + FIXED_WEIGHTS['xgboost'] * cal['xgb']
+        )
 
         room_metrics = {
-            'lstm': compute_full_metrics(test['y'], test['lstm'], thr_high, thr_med, peak_ref),
-            'lightgbm': compute_full_metrics(test['y'], test['lgb'], thr_high, thr_med, peak_ref),
-            'xgboost': compute_full_metrics(test['y'], test['xgb'], thr_high, thr_med, peak_ref),
-            'fixed_ensemble': compute_full_metrics(test['y'], fixed_pred, thr_high, thr_med, peak_ref),
-            'adaptive_ensemble': compute_full_metrics(test['y'], adaptive_pred, thr_high, thr_med, peak_ref),
+            'lstm': compute_full_metrics(test['y'], test['lstm'], thr_high, thr_med, peak_ref,
+                                         cal['y'], cal['lstm']),
+            'lightgbm': compute_full_metrics(test['y'], test['lgb'], thr_high, thr_med, peak_ref,
+                                             cal['y'], cal['lgb']),
+            'xgboost': compute_full_metrics(test['y'], test['xgb'], thr_high, thr_med, peak_ref,
+                                            cal['y'], cal['xgb']),
+            'fixed_ensemble': compute_full_metrics(test['y'], fixed_pred, thr_high, thr_med, peak_ref,
+                                                   cal['y'], fixed_cal_pred),
+            'adaptive_ensemble': compute_full_metrics(test['y'], adaptive_pred, thr_high, thr_med, peak_ref,
+                                                      cal['y'], adaptive_cal_pred),
         }
         for key, vals in room_metrics.items():
             per_room_metrics[key].append(vals)
@@ -586,12 +616,9 @@ def main():
         return
 
     if '--roomcurve' in sys.argv:
-        if not os.path.exists(JSONL_PATH):
-            print(f"❌ {JSONL_PATH} not found — run the full analysis first.")
-            return
-        curve_png = os.path.join(METRICS_DIR, 'adaptive_vs_fixed_room_curve.png')
-        plot_per_room_accuracy_curve(JSONL_PATH, curve_png)
-        print(f"📄 Saved: {curve_png}")
+        # ฟังก์ชันวาดกราฟรายห้อง (plot_per_room_accuracy_curve) ไม่เคยมีอยู่จริง — เดิม
+        # ตัวเลือกนี้พังด้วย NameError บอกให้ชัดแทนการพัง
+        print("⚠️  --roomcurve ยังไม่รองรับ (ยังไม่มีฟังก์ชันวาดกราฟรายห้อง) — ใช้ --chart หรือ --accloss แทน")
         return
 
     if '--chart' in sys.argv:

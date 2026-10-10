@@ -154,6 +154,12 @@ def _partial_mean_curve(records, model_name, metric, param_set=None):
     return np.array(xs, dtype=int), np.array(ys, dtype=float)
 
 
+def _room_labels_from_metas(room_metas):
+    """ชื่อห้องจาก room_metas ที่เป็นรายการ (ชื่อห้อง, meta) — เดิมถูกเรียกใช้แต่ไม่เคย
+    ถูกเขียนไว้ ส่ง room_metas เข้ามาเมื่อไหร่ก็พังด้วย NameError"""
+    return [label for label, _meta in (room_metas or [])]
+
+
 def validate_training_history_log(records, room_metas=None):
     if not records:
         print('Warning: training history log is empty or missing')
@@ -2924,21 +2930,29 @@ def plot_ensemble_model_comparison_from_csv(csv_path: str, out_png: str):
 
 def plot_model_configuration(out_png: str):
     """Generate a minimal hyperparameter table showing exactly the fields
-    defined in forecast.py PARAM_SETS — all three sets (A/B/C) side by side —
+    defined in param_sets.py PARAM_SETS — all three sets (A/B/C) side by side —
     nothing inferred or added beyond what that dict literally contains.
     """
-    rows = [
-        ('LSTM Epochs', 'lstm_epochs'),
-        ('LSTM Batch', 'lstm_batch'),
-        ('LSTM Lookback', 'lstm_lookback'),
-        ('LGB Estimators', 'lgb_estimators'),
-        ('LGB Depth', 'lgb_depth'),
-        ('LGB Leaves', 'lgb_leaves'),
-        ('LGB LR', 'lgb_lr'),
-        ('XGB Estimators', 'xgb_estimators'),
-        ('XGB Depth', 'xgb_depth'),
-        ('XGB LR', 'xgb_lr'),
-    ]
+    # PARAM_SET_ORDER is every key in the dict, which also carries the
+    # walk-forward candidate A_REG and the experimental D/E/F. Only A/B/C are
+    # the reported comparison, so the table is pinned to them.
+    sets = [s for s in ('A', 'B', 'C') if s in PARAM_SET_CONFIGS]
+
+    def _label(key):
+        head, *rest = key.split('_')
+        head = head.upper() if head in ('lgb', 'xgb') else head.capitalize()
+        return ' '.join([head] + [w.upper() if w == 'lr' else w.capitalize() for w in rest])
+
+    # lstm_* keys are dead config: forecast.SKIP_LSTM retires the model, so
+    # printing them would describe a network that never runs. Every remaining
+    # key is read from the dict itself rather than hand-listed, so a
+    # hyperparameter added to param_sets.py shows up here without a second edit.
+    keys = []
+    for s in sets:
+        for k in PARAM_SET_CONFIGS[s]:
+            if k != 'name' and not k.startswith('lstm_') and k not in keys:
+                keys.append(k)
+    rows = [(_label(k), k) for k in keys]
     def _header_label(s):
         name = PARAM_SET_CONFIGS.get(s, {}).get('name', '')
         # name already starts with "<letter> - ", e.g. "D - Extra Deep
@@ -2951,11 +2965,11 @@ def plot_model_configuration(out_png: str):
         rest = rest.replace('(Experimental)', '(Exp.)')
         return f'{s}\n{rest}'
 
-    header = ['Parameter'] + [_header_label(s) for s in PARAM_SET_ORDER]
+    header = ['Parameter'] + [_header_label(s) for s in sets]
     table_data = [header]
     for label, key in rows:
         table_data.append(
-            [label] + [str(PARAM_SET_CONFIGS.get(s, {}).get(key, '')) for s in PARAM_SET_ORDER]
+            [label] + [str(PARAM_SET_CONFIGS.get(s, {}).get(key, '—')) for s in sets]
         )
 
     with plt.rc_context({
@@ -2964,8 +2978,8 @@ def plot_model_configuration(out_png: str):
         'font.family': 'DejaVu Sans',
         'font.size': 10,
     }):
-        n_data_cols = len(PARAM_SET_ORDER)
-        fig = plt.figure(figsize=(3.6 + 2.2 * n_data_cols, 6.5), dpi=300)
+        n_data_cols = len(sets)
+        fig = plt.figure(figsize=(3.6 + 2.2 * n_data_cols, 1.6 + 0.42 * len(rows)), dpi=300)
         ax = fig.add_subplot(111)
         ax.axis('off')
 
@@ -2990,7 +3004,7 @@ def plot_model_configuration(out_png: str):
         light_tints = {
             'A': '#f0f0f0', 'B': '#fff3e3', 'C': '#e7f4ff', 'D': '#f2e9f7', 'E': '#fbe9e7',
         }
-        col_tints = {idx + 1: light_tints.get(s, '#f7f7f7') for idx, s in enumerate(PARAM_SET_ORDER)}
+        col_tints = {idx + 1: light_tints.get(s, '#f7f7f7') for idx, s in enumerate(sets)}
         for i in range(1, len(table_data)):
             cell = table[(i, 0)]
             cell.set_facecolor('#f7f7f7')
@@ -3004,13 +3018,17 @@ def plot_model_configuration(out_png: str):
                 cell.set_edgecolor('#cccccc')
                 cell.set_linewidth(1)
 
-        title_text = f"Hyperparameter Configuration — Sets {' / '.join(PARAM_SET_ORDER)}"
+        title_text = ("Recursive Pipeline — Hyperparameter Configuration, "
+                      f"Sets {' / '.join(sets)}")
         fig.text(0.5, 0.95, title_text, ha='center', fontsize=15, fontweight='bold',
                 bbox=dict(boxstyle='round,pad=0.8', facecolor='#2b8cbe',
                          edgecolor='#1f4e79', linewidth=2, alpha=0.9),
                 color='white')
 
-        fig.text(0.5, 0.03, 'Source: forecast.py PARAM_SETS — Set C is the current system default.',
+        fig.text(0.5, 0.03, 'Source: param_sets.py PARAM_SETS — the per-room RECURSIVE pipeline '
+                 '(saved_meta_*_excel_split). The direct forecaster that the A/B/C results come from does not read '
+                 'this file at all; see model_configuration_direct.png for its configuration. '
+                 'LightGBM + XGBoost only — LSTM is retired (forecast.SKIP_LSTM).',
                 ha='center', fontsize=8, style='italic',
                 bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5',
                          edgecolor='#cccccc', linewidth=1))

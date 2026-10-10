@@ -10,29 +10,39 @@ and only covers that one run's sets.
 Usage: python ml/saved/consolidate_results.py
 """
 import os
+import sys
 import glob
 import joblib
 import pandas as pd
 
-BASE_DIR = '/Users/macthanakorn/room_booking'
+# รากโปรเจกต์ (ml/saved/ อยู่ลึกลงไปสองชั้น) — เดิม hardcode path ของเครื่องเดียว
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 SAVED_DIR = os.path.join(BASE_DIR, 'ml', 'saved')
 OUT_CSV = os.path.join(SAVED_DIR, 'metrics_plots', 'consolidated_results.csv')
+
+# --direct reads the direct-model sets (saved_meta_{SET}_direct, written by
+# train_direct_sets.py) instead of the recursive pipeline's, and writes a
+# separate file so neither run overwrites the other's figure.
+DIRECT = '--direct' in sys.argv
+META_SUFFIX = '_direct' if DIRECT else '_excel_split'
+if DIRECT:
+    OUT_CSV = OUT_CSV.replace('.csv', '_direct.csv')
 
 ROOM_ORDER = ['2C05-06', '2C09', '2C10-11', '2C16-17', '3C05-06', '1C-MEETING', '3C16-17', '4C05']
 
 
 def find_sets():
-    pattern = os.path.join(SAVED_DIR, 'saved_meta_*_excel_split')
+    pattern = os.path.join(SAVED_DIR, f'saved_meta_*{META_SUFFIX}')
     sets = []
     for path in sorted(glob.glob(pattern)):
-        name = os.path.basename(path).replace('saved_meta_', '').replace('_excel_split', '')
+        name = os.path.basename(path).replace('saved_meta_', '').replace(META_SUFFIX, '')
         sets.append(name)
     return sets
 
 
 rows = []
 for set_name in find_sets():
-    meta_dir = os.path.join(SAVED_DIR, f'saved_meta_{set_name}_excel_split')
+    meta_dir = os.path.join(SAVED_DIR, f'saved_meta_{set_name}{META_SUFFIX}')
     for meta_path in sorted(glob.glob(os.path.join(meta_dir, '*_meta.pkl'))):
         meta = joblib.load(meta_path)
         cls = meta.get('cls_metrics', {}) or {}

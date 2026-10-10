@@ -1,15 +1,14 @@
 """
-Export the REAL booking history (no synthetic/augmented rows) as three
-Excel files, split per room in chronological order — for manual review
-before retraining, so it's clear exactly what the model trains/tests on.
+Export REAL booking history (no synthetic/augmented rows) as Excel files
+with one shared chronological cutoff across all rooms.  `created_at` is kept
+so booking-ahead features can be reconstructed without future leakage.
 
-  booking_data_original.xlsx  — all real, non-cancelled bookings (ground truth)
-  booking_data_train.xlsx     — first 80% of each room's history (by time)
-  booking_data_test.xlsx      — last 20% of each room's history (by time, held out)
+  dataset_original.xlsx  — all real, non-cancelled bookings (ground truth)
+  dataset_train.xlsx     — records before the shared cutoff day
+  dataset_test.xlsx      — records on/after the shared cutoff day
 
-Split rule per room (by record count, chronological, not random):
-  n <= 1   -> everything goes to train, test is empty (flagged in summary)
-  n >= 2   -> n_train = round(n * 0.8), clamped so test always keeps >= 1 row
+Split rule: choose the calendar-day boundary nearest 80% of all records.
+No day can appear in both train and test.
 
 Usage: python ml/saved/export_train_test_excel.py
 """
@@ -36,7 +35,7 @@ DOW_TH = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหั
 # คอลัมน์ที่โค้ดอ่านไปใช้จริง (test_from_excel.py, plot_test_curves_by_set.py
 # อ่านตามชื่อคอลัมน์ การเพิ่มคอลัมน์ใหม่จึงไม่กระทบ)
 BASE_COLS = ['room_code', 'building_code', 'room_type', 'date', 'start_time', 'end_time',
-             'duration_hours', 'attendees', 'title', 'status']
+             'created_at', 'duration_hours', 'attendees', 'title', 'status']
 # คอลัมน์อ่านง่ายสำหรับเปิดดูใน Excel — start_time/end_time เป็น datetime เต็ม
 # ซึ่งอ่านยากเวลาเปิดไฟล์ตรวจข้อมูลด้วยตา
 READABLE_COLS = ['เวลาเริ่ม', 'เวลาสิ้นสุด', 'ช่วงเวลา', 'วันในสัปดาห์', 'ข้ามวัน']
@@ -77,7 +76,7 @@ def add_readable_time_columns(df: pd.DataFrame) -> pd.DataFrame:
 def load_real_bookings() -> pd.DataFrame:
     qs = Booking.objects.exclude(status='cancelled').select_related('room', 'room__building').values(
         'room__name', 'room__room_type', 'room__building__code',
-        'start_time', 'end_time', 'status', 'title', 'attendees',
+        'start_time', 'end_time', 'created_at', 'status', 'title', 'attendees',
     )
     df = pd.DataFrame(list(qs))
     df = df.rename(columns={
@@ -85,7 +84,7 @@ def load_real_bookings() -> pd.DataFrame:
         'room__room_type': 'room_type',
         'room__building__code': 'building_code',
     })
-    for col in ['start_time', 'end_time']:
+    for col in ['start_time', 'end_time', 'created_at']:
         df[col] = pd.to_datetime(df[col])
         if df[col].dt.tz is None:
             df[col] = df[col].dt.tz_localize('UTC')
@@ -96,28 +95,16 @@ def load_real_bookings() -> pd.DataFrame:
     return add_readable_time_columns(df[BASE_COLS])
 
 
-def split_per_room(df: pd.DataFrame):
-    train_parts, test_parts, summary_rows = [], [], []
-    for room_code, g in df.groupby('room_code', sort=True):
-        g = g.sort_values('start_time')
-        n = len(g)
-        if n <= 1:
-            n_tr = n
-        else:
-            n_tr = max(1, round(n * TRAIN_FRAC))
-            n_tr = min(n_tr, n - 1)
-        train_parts.append(g.iloc[:n_tr])
-        test_parts.append(g.iloc[n_tr:])
-        summary_rows.append({
-            'room_code': room_code,
-            'total_records': n,
-            'train_records': n_tr,
-            'test_records': n - n_tr,
-            'test_empty': (n - n_tr) == 0,
-        })
-    train_df = pd.concat(train_parts).reset_index(drop=True) if train_parts else df.iloc[0:0]
-    test_df = pd.concat(test_parts).reset_index(drop=True) if test_parts else df.iloc[0:0]
-    summary_df = pd.DataFrame(summary_rows)
+def split_shared_cutoff(df: pd.DataFrame):
+    per_day = df.groupby('date').size().sort_index()
+    cutoff_day = per_day.index[int((per_day.cumsum() / len(df) - TRAIN_FRAC).abs().argmin())]
+    cutoff = pd.Timestamp(cutoff_day) + pd.Timedelta(days=1)
+    train_df = df[df['date'] < cutoff.date()].copy()
+    test_df = df[df['date'] >= cutoff.date()].copy()
+    summary_df = pd.DataFrame([{
+        'cutoff_date': cutoff.date(), 'total_records': len(df),
+        'train_records': len(train_df), 'test_records': len(test_df),
+    }])
     return train_df, test_df, summary_df
 
 
@@ -126,15 +113,13 @@ def main():
     df = load_real_bookings()
     print(f"📥 Real (non-cancelled) booking records: {len(df):,} across {df['room_code'].nunique()} rooms")
 
-    train_df, test_df, summary_df = split_per_room(df)
-
-    n_test_empty = int(summary_df['test_empty'].sum())
+    train_df, test_df, summary_df = split_shared_cutoff(df)
+    print(f"   shared cutoff: {summary_df.loc[0, 'cutoff_date']}")
     print(f"   train: {len(train_df):,} rows   test: {len(test_df):,} rows")
-    print(f"   ⚠️  rooms with 0 test rows (only 1 real record total): {n_test_empty}")
 
-    original_path = os.path.join(OUT_DIR, 'booking_data_original.xlsx')
-    train_path = os.path.join(OUT_DIR, 'booking_data_train.xlsx')
-    test_path = os.path.join(OUT_DIR, 'booking_data_test.xlsx')
+    original_path = os.path.join(OUT_DIR, 'dataset_original.xlsx')
+    train_path = os.path.join(OUT_DIR, 'dataset_train.xlsx')
+    test_path = os.path.join(OUT_DIR, 'dataset_test.xlsx')
 
     with pd.ExcelWriter(original_path, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='ประวัติการใช้งาน', index=False)

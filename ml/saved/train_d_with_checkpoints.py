@@ -170,10 +170,28 @@ def process_room(room, raw, all_rooms_daily, jsonl_file):
                 + FIXED_WEIGHTS['lightgbm'] * lgb_te_e
                 + FIXED_WEIGHTS['xgboost'] * xgb_te_e
             )
+            adaptive_cal_pred = (
+                adaptive_w.get('lstm', 0.0) * lstm_cal_e
+                + adaptive_w.get('lightgbm', 0.0) * lgb_cal_e
+                + adaptive_w.get('xgboost', 0.0) * xgb_cal_e
+            )
+            fixed_cal_pred = (
+                FIXED_WEIGHTS['lstm'] * lstm_cal_e
+                + FIXED_WEIGHTS['lightgbm'] * lgb_cal_e
+                + FIXED_WEIGHTS['xgboost'] * xgb_cal_e
+            )
 
-            def _metrics(y_true, y_pred):
+            def _metrics(y_true, y_pred, cal_pred=None):
+                # Predictions are de-shrunk with a quantile map fit on the
+                # calibration blend; thresholds stay fixed. Searching a
+                # threshold multiplier on y_true/y_pred inflated the curve
+                # by relabelling the ground truth as well as overfitting it.
                 y_pred = np.maximum(0.0, y_pred)
-                _, cls = F._evaluate_with_best_threshold(y_true, y_pred, meta['thr_high'], meta['thr_med'], meta['peak_ref'])
+                cal_map = F.fit_prediction_calibration(
+                    y_cal_e, np.maximum(0.0, cal_pred) if cal_pred is not None else None)
+                y_pred = F.apply_prediction_calibration(y_pred, cal_map)
+                cls = F.compute_classification_metrics(
+                    y_true, y_pred, meta['thr_high'], meta['thr_med'], meta['peak_ref'])
                 return {
                     'accuracy': float(cls['accuracy']), 'loss': float(cls['loss']),
                     'r2': float(F.r2_score(y_true, y_pred)), 'mae': float(F.mean_absolute_error(y_true, y_pred)),
@@ -184,9 +202,9 @@ def process_room(room, raw, all_rooms_daily, jsonl_file):
                 'room': room.name, 'checkpoint_epoch': k,
                 'adaptive_weights': {kk: round(float(vv), 4) for kk, vv in adaptive_w.items()},
                 'metrics': {
-                    'lstm': _metrics(y_te_e, lstm_te_e),
-                    'fixed_ensemble': _metrics(y_te_e, fixed_pred),
-                    'adaptive_ensemble': _metrics(y_te_e, adaptive_pred),
+                    'lstm': _metrics(y_te_e, lstm_te_e, lstm_cal_e),
+                    'fixed_ensemble': _metrics(y_te_e, fixed_pred, fixed_cal_pred),
+                    'adaptive_ensemble': _metrics(y_te_e, adaptive_pred, adaptive_cal_pred),
                 },
             }
             jsonl_file.write(json.dumps(record, ensure_ascii=False) + '\n')

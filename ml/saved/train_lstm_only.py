@@ -67,14 +67,10 @@ def main():
         if len(rdf_r) == 0:
             all_rooms_daily[r] = fc.pd.Series(dtype=float)
             continue
-        daily_r = (
-            rdf_r.groupby('date')['duration'].sum()
-                 .reindex(fc.pd.date_range(rdf_r['date'].min(), rdf_r['date'].max(), freq='D').date,
-                          fill_value=0.0)
-                 .astype(float)
-        )
-        daily_r.index = fc.pd.to_datetime(daily_r.index)
-        all_rooms_daily[r] = daily_r
+        # Same expansion as the training pipeline — a raw groupby by start
+        # date puts a multi-day booking's whole span on day one.
+        daily_r = fc._prepare_daily_series(rdf_r, None, None)
+        all_rooms_daily[r] = daily_r if daily_r is not None else fc.pd.Series(dtype=float)
 
     rooms = list(fc.Room.objects.all())
     if args.rooms:

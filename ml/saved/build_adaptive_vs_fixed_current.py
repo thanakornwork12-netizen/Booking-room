@@ -31,7 +31,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-BASE_DIR = '/Users/macthanakorn/room_booking'
+# รากโปรเจกต์ (ml/saved/ อยู่ลึกลงไปสองชั้น) — เดิม hardcode path ของเครื่องเดียว
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 SAVED_DIR = os.path.join(BASE_DIR, 'ml', 'saved')
 METRICS_DIR = os.path.join(SAVED_DIR, 'metrics_plots')
 TEST_CSV = os.path.join(METRICS_DIR, 'test_only_results.csv')
@@ -132,9 +133,8 @@ def process_set(set_name, test_df):
 
 def plot_table(df: pd.DataFrame, png_path: str):
     headers = [
-        'Set', 'Train Acc\n(fit rows)', 'Calib Acc\n(10% holdout)', 'Calib Loss\n(MAE, h)',
-        'Test Acc\n(20% holdout)', 'Test R2', 'Test MAE\n(h)',
-        'Weight Split Found by System\n(LGB / XGB)',
+        'Set', 'Train Acc', 'Calib Acc', 'Test Acc', 'Test R2', 'Test MAE (h)',
+        'Weight Split (LGB / XGB)',
     ]
     table_data = [headers]
     for _, row in df.iterrows():
@@ -146,7 +146,6 @@ def plot_table(df: pd.DataFrame, png_path: str):
             str(row['Set']),
             f"{row['Train Accuracy']:.4f}",
             f"{row['Calibration Accuracy']:.4f}",
-            f"{row['Calibration Loss']:.3f}",
             f"{row['Test Accuracy (Adaptive)']:.4f}",
             f"{row['Test R2']:.3f}",
             f"{row['Test MAE']:.3f}",
@@ -160,7 +159,7 @@ def plot_table(df: pd.DataFrame, png_path: str):
         ax = fig.add_subplot(111)
         ax.axis('off')
 
-        col_widths = [0.06, 0.11, 0.11, 0.10, 0.11, 0.08, 0.09, 0.24]
+        col_widths = [0.06, 0.12, 0.12, 0.12, 0.10, 0.12, 0.22]
         table = ax.table(cellText=table_data, cellLoc='center', loc='center', colWidths=col_widths)
         table.auto_set_font_size(False)
         table.set_fontsize(9.5)
@@ -180,26 +179,14 @@ def plot_table(df: pd.DataFrame, png_path: str):
                 cell.set_facecolor(row_tints.get(s, '#ffffff'))
                 cell.set_edgecolor('#cccccc')
                 cell.set_linewidth(1)
-                if j in (1, 4):
-                    cell.set_text_props(weight='bold')
 
         fig.text(
-            0.5, 0.94, 'Train / Calibration / Test — Accuracy, Loss, R2 and MAE by Param Set',
+            0.5, 0.94, 'Train / Calibration / Test — Accuracy, R2 and MAE by Param Set',
             ha='center', fontsize=14, fontweight='bold',
             bbox=dict(boxstyle='round,pad=0.8', facecolor='#2b8cbe', edgecolor='#1f4e79', linewidth=2, alpha=0.9),
             color='white',
         )
-        fig.text(
-            0.5, 0.03,
-            'Read straight from disk, no retraining: every column comes from the same winner-take-all model, at '
-            'the round it is served at. Calib Acc/Loss are the 10% holdout that chose that round; Test columns are '
-            'the held-out 20% (Test R2/MAE from test_only_results, MAE in hours). LSTM is retired, so only LGB/XGB '
-            'carry weight.',
-            ha='center', fontsize=8, style='italic',
-            bbox=dict(boxstyle='round,pad=0.5', facecolor='#f5f5f5', edgecolor='#cccccc', linewidth=1),
-        )
-
-        plt.tight_layout(rect=[0, 0.08, 1, 0.90])
+        plt.tight_layout(rect=[0, 0.02, 1, 0.90])
         plt.savefig(png_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
         plt.close(fig)
 

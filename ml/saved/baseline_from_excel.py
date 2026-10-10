@@ -9,11 +9,10 @@ Baseline ที่ไม่ใช้ deep learning — ไว้ตอบว่�
 baseline ที่วัด (ทั้งหมดเป็นการทำนายล่วงหน้า 1 วัน เหมือนที่โมเดลถูกวัด):
   naive_lag1      — พรุ่งนี้เท่ากับเมื่อวาน (persistence)
   snaive_lag7     — สัปดาห์หน้าวันเดียวกันเท่ากับสัปดาห์นี้ (seasonal naive)
-  moving_avg_7    — ค่าเฉลี่ย 7 วันล่าสุด
-  moving_avg_28   — ค่าเฉลี่ย 28 วันล่าสุด
-  train_mean      — ค่าคงที่ = ค่าเฉลี่ยของชุดเทรน
-  dow_mean        — ค่าเฉลี่ยรายวันในสัปดาห์จากชุดเทรน (climatology)
-  ridge_linear    — Ridge regression บนฟีเจอร์ชุดเดียวกัน (ML แต่ไม่ deep)
+
+(เดิมมี ridge_linear ด้วย แต่ตัดออกแล้ว — มันฟิตบนฟีเจอร์ diff_1/diff_7/pct_chg_7
+ที่คำนวณจาก y ของวันเดียวกัน (lag_1 + diff_1 == y พอดี) ได้ R²≈1.00 ไม่ใช่เพราะ
+โมเดลเก่ง แต่เพราะบวกกลับเฉลยได้ตรง ๆ — ดู build_features() ใน forecast.py)
 
 หมายเหตุ: baseline พวกนี้ไม่ขึ้นกับ hyperparameter set A-E จึงรันครั้งเดียวพอ
 threshold/peak_ref อ่านจาก meta ของเซ็ตที่ระบุ (ค่าเริ่มต้น A) เพื่อให้ตัดเกรด
@@ -23,7 +22,8 @@ Usage: python ml/saved/baseline_from_excel.py [--meta-set A]
 """
 import os, sys
 
-BASE_DIR = '/Users/macthanakorn/room_booking'
+# รากโปรเจกต์ (ml/saved/ อยู่ลึกลงไปสองชั้น) — เดิม hardcode path ของเครื่องเดียว
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, BASE_DIR)
 os.chdir(BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'room_booking.settings')
@@ -39,14 +39,25 @@ sys.path.insert(0, os.path.join(BASE_DIR, 'ml', 'saved'))
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.linear_model import Ridge
 import forecast as F
 from booking.models import Room
 
-TRAIN_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'booking_data_train.xlsx')
-TEST_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'booking_data_test.xlsx')
+# dataset_train/test.xlsx (จาก split_dataset_from_excel.py) แทน booking_data_*.xlsx
+# เดิม — ตัดที่ "วันตัดร่วม" เดียวกันทุกห้องและที่ขอบวัน ปิดสองรอยรั่ว: (1) ของเดิม
+# แบ่ง 80% แยกรายห้อง ทำให้ train ของห้องหนึ่งคาบเกี่ยว test ของอีกห้อง (2) ของเดิม
+# ตัดตามจำนวนแถวไม่ใช่ขอบวัน ทำให้บางวันมีทั้งรายการที่อยู่ train และ test ปนกัน
+TRAIN_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'dataset_train.xlsx')
+TEST_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'dataset_test.xlsx')
 OUT_CSV = os.path.join(BASE_DIR, 'ml', 'saved', 'metrics_plots', 'baseline_results.csv')
 MODEL_CSV = os.path.join(BASE_DIR, 'ml', 'saved', 'metrics_plots', 'test_only_results.csv')
+# --direct compares against the direct-model sets and takes thresholds from
+# their metas, so baseline and model are graded with the same cuts.
+DIRECT = '--direct' in sys.argv
+if DIRECT:
+    MODEL_CSV = MODEL_CSV.replace('.csv', '_direct.csv')
+    # Thresholds come from the direct metas in this mode, so the baseline rows
+    # differ from the pipeline's; keep them in their own file.
+    OUT_CSV = OUT_CSV.replace('.csv', '_direct.csv')
 
 ROOM_IDS = {
     '2C05-06': 443, '2C09': 445, '2C10-11': 446, '2C16-17': 447,
@@ -56,7 +67,8 @@ ROOM_IDS = {
 META_SET = 'A'
 if '--meta-set' in sys.argv:
     META_SET = sys.argv[sys.argv.index('--meta-set') + 1].strip().upper()
-META_DIR = os.path.join(BASE_DIR, 'ml', 'saved', f'saved_meta_{META_SET}_excel_split')
+META_DIR = os.path.join(BASE_DIR, 'ml', 'saved',
+                        f"saved_meta_{META_SET}{'_direct' if DIRECT else '_excel_split'}")
 
 
 def to_rdf(df: pd.DataFrame, room_id: int) -> pd.DataFrame:
@@ -81,17 +93,24 @@ def rebuild_room_features(code, room_id, train_all, test_all):
     daily_train_only = F._prepare_daily_series(to_rdf(tr_rows, room_id), None, None)
     n_train_days = len(daily_train_only) if daily_train_only is not None else 0
 
+    calib_len = max(1, int(round(n_train_days * 0.125)))
+    train_end = max(n_train_days - calib_len, F.MIN_TRAIN_ROWS)
+    calib_end = min(n_train_days, len(daily_full) - 1)
+    train_end = min(train_end, calib_end)
+
     room = Room.objects.get(id=room_id)
-    schedule = F.load_term_schedule(room.id)
+    # TermBooking is empty for every room here, so load_term_schedule() alone
+    # leaves all 18 term_* features constant zero. resolve_term_schedule falls
+    # back to mining the recurring timetable out of this room's own bookings,
+    # cut off at train_end so nothing from calibration or test is used.
+    _term_cutoff = daily_full.index[min(train_end, len(daily_full) - 1)]
+    schedule = F.resolve_term_schedule(room.id, rdf_full, cutoff_date=_term_cutoff)
     use_log = F._needs_log_transform(room)
-    cap95 = float(daily_full.quantile(0.95)) or 1.0
+    cap95 = float(daily_full.iloc[:train_end].quantile(0.95)) or 1.0
     daily_clipped = daily_full.clip(upper=cap95)
     term_df = F.build_term_daily_features(daily_clipped.index, schedule)
     term_df.index = daily_clipped.index
-    feat_df = F.build_features(daily_clipped, term_df, use_log=use_log).dropna()
-
-    calib_len = max(1, int(round(n_train_days * 0.125)))
-    train_end = max(n_train_days - calib_len, F.MIN_TRAIN_ROWS)
+    feat_df = F.build_features(daily_clipped, term_df, use_log=use_log, booking_ahead_df=rdf_full).dropna()
     calib_end = min(n_train_days, len(feat_df) - 1)
     train_end = min(train_end, calib_end)
 
@@ -99,6 +118,11 @@ def rebuild_room_features(code, room_id, train_all, test_all):
     y = feat_df['y'].values
     return {
         'room': room, 'use_log': use_log, 'feat_df': feat_df,
+        # Raw-scale daily series aligned to feat_df's index (build_features
+        # drops the first rows that have no lag history). build_baseline_preds
+        # walks this in actual hours and log1p's on the way out, so it must
+        # NOT be the log-space feat_df['y'].
+        'daily': daily_clipped.loc[feat_df.index],
         'train_end': train_end, 'calib_end': calib_end,
         'X_tr': X.iloc[:train_end], 'X_te': X.iloc[calib_end:],
         'y_tr': y[:train_end], 'y_te': y[calib_end:],
@@ -106,33 +130,27 @@ def rebuild_room_features(code, room_id, train_all, test_all):
 
 
 def build_baseline_preds(built):
-    """คืน dict ของ baseline -> ค่าพยากรณ์บนชุดทดสอบ
+    """Baselines on the same repeated 14-day recursive horizon as ML test.
 
-    lag_1 / lag_7 / roll_mean_* มีอยู่ใน feat_df อยู่แล้ว และถูกคำนวณจากค่าจริง
-    ในอดีต (shift มาแล้ว) จึงใช้เป็น naive/moving-average ได้ตรง ๆ โดยไม่รั่ว
-    ข้อมูลอนาคต และอยู่ใน log space เดียวกับ y เมื่อ use_log=True"""
-    X_te, X_tr, y_tr = built['X_te'], built['X_tr'], built['y_tr']
-    preds = {
-        'naive_lag1':    X_te['lag_1'].to_numpy(dtype=float),
-        'snaive_lag7':   X_te['lag_7'].to_numpy(dtype=float),
-        'moving_avg_7':  X_te['roll_mean_7'].to_numpy(dtype=float),
-        'moving_avg_28': X_te['roll_mean_28'].to_numpy(dtype=float),
-        'train_mean':    np.full(len(X_te), float(np.mean(y_tr))),
-    }
-
-    # climatology รายวันในสัปดาห์ — คิดจากชุดเทรนเท่านั้น วันไหนไม่เคยเจอในเทรน
-    # ให้ตกกลับไปใช้ค่าเฉลี่ยรวม
-    dow_tr = pd.Series(y_tr, index=X_tr['dow'].to_numpy())
-    dow_map = dow_tr.groupby(level=0).mean()
-    preds['dow_mean'] = (
-        pd.Series(X_te['dow'].to_numpy()).map(dow_map).fillna(float(np.mean(y_tr))).to_numpy(dtype=float)
-    )
-
-    # Ridge บนฟีเจอร์ชุดเดียวกับที่ LGBM/XGB เห็น — เส้นแบ่งว่า "ML ธรรมดา"
-    # ทำได้แค่ไหน ก่อนจะไปถึง ensemble/LSTM
-    ridge = Ridge(alpha=1.0).fit(X_tr.to_numpy(dtype=float), y_tr)
-    preds['ridge_linear'] = ridge.predict(X_te.to_numpy(dtype=float))
-    return preds
+    At each new forecast origin the observed history is available again; within
+    the horizon, only the baseline's own prior predictions may be used.
+    """
+    horizon = max(1, int(F.FORECAST_DAYS))
+    out = {'naive_lag1': [], 'snaive_lag7': []}
+    start, end = built['calib_end'], len(built['daily'])
+    for origin in range(start, end, horizon):
+        histories = {
+            name: built['daily'].iloc[:origin].copy()
+            for name in out
+        }
+        for forecast_date in built['daily'].index[origin:min(origin + horizon, end)]:
+            for name, lag in [('naive_lag1', 1), ('snaive_lag7', 7)]:
+                history = histories[name]
+                raw = float(history.iloc[-lag]) if len(history) >= lag else float(history.iloc[-1])
+                raw = max(0.0, raw)
+                out[name].append(float(np.log1p(raw)) if built['use_log'] else raw)
+                history.loc[forecast_date] = raw
+    return {name: np.asarray(pred, dtype=float) for name, pred in out.items()}
 
 
 def score(y_te, raw_pred, use_log, thr_high, thr_med, peak_ref):
@@ -150,6 +168,7 @@ def score(y_te, raw_pred, use_log, thr_high, thr_med, peak_ref):
     cls = F.compute_classification_metrics(y_true, y_pred, thr_high, thr_med, peak_ref)
     return {
         'test_accuracy': round(cls['accuracy'], 4),
+        'balanced_accuracy': round(cls['balanced_accuracy'], 4),
         'f1': round(cls['f1'], 4),
         'r2': F.r2_score(y_true, y_pred),
         'mae': F.mean_absolute_error(y_true, y_pred),
@@ -182,7 +201,7 @@ for code, room_id in ROOM_IDS.items():
     for name, pred in build_baseline_preds(built).items():
         m = score(built['y_te'], pred, use_log, thr_high, thr_med, peak_ref)
         rows.append({'room': code, 'baseline': name, **m})
-        print(f"   {name:14s} Acc={m['test_accuracy']:.3f}  F1={m['f1']:.3f}  "
+        print(f"   {name:14s} Acc={m['test_accuracy']:.3f}  BalAcc={m['balanced_accuracy']:.3f}  F1={m['f1']:.3f}  "
               f"R²={m['r2']:7.3f}  MAE={m['mae']:.2f}h")
 
 df = pd.DataFrame(rows)
@@ -190,12 +209,13 @@ df.to_csv(OUT_CSV, index=False)
 print(f"\n📄 บันทึกแล้ว: {OUT_CSV}")
 
 print("\n\n================ สรุป: ค่าเฉลี่ยทุกห้อง ต่อ baseline ================")
-summary = df.groupby('baseline')[['test_accuracy', 'f1', 'r2', 'mae']].mean().sort_values('test_accuracy', ascending=False)
+summary = df.groupby('baseline')[['test_accuracy', 'balanced_accuracy', 'f1', 'r2', 'mae']].mean().sort_values('test_accuracy', ascending=False)
 print(summary.to_string())
 
 if os.path.exists(MODEL_CSV):
     mdf = pd.read_csv(MODEL_CSV)
-    best = mdf.groupby('param_set')[['test_accuracy', 'f1', 'r2', 'mae']].mean()
+    _cols = [c for c in ['test_accuracy', 'balanced_accuracy', 'f1', 'r2', 'mae'] if c in mdf.columns]
+    best = mdf.groupby('param_set')[_cols].mean()
     print("\n================ เทียบกับโมเดลที่เทรนแล้ว (test_only_results.csv) ================")
     print(best.to_string())
     print(f"\n🏆 baseline ที่ดีที่สุด : {summary.index[0]} Acc={summary['test_accuracy'].iloc[0]:.3f} "

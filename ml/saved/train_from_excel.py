@@ -1,10 +1,10 @@
 """
 TRAINING ONLY — prints no accuracy/test numbers at all. Trains from
-booking_data_train.xlsx and saves model files; that's the whole job. For
+dataset_train.xlsx and saves model files; that's the whole job. For
 results, run the separate test_from_excel.py, which loads these saved
-models and evaluates them against booking_data_test.xlsx.
+models and evaluates them against dataset_test.xlsx.
 
-(booking_data_test.xlsx is still read here — its dates are needed to fix the
+(dataset_test.xlsx is still read here — its dates are needed to fix the
 train/calibration boundary and to keep the lag/rolling features continuous
 right up to that boundary — but its rows are never used to fit anything, and
 nothing computed from them gets printed by this script.)
@@ -13,7 +13,7 @@ No DB query for the booking rows themselves (only Room/TermBooking metadata
 comes from the DB, since forecast.py's feature builder needs the Room object
 and term schedule).
 
-Runs all 5 hyperparameter sets (A-E), each saved to its own folder.
+Runs all hyperparameter sets (A-F), each saved to its own folder.
 
 The boundary between (train+calib) and test is fixed to exactly match
 the Excel files' own split (last row in train.xlsx vs first row in
@@ -23,7 +23,8 @@ Usage: python ml/saved/train_from_excel.py [--sets A,B,C]  (default: all 5)
 """
 import os, sys
 
-BASE_DIR = '/Users/macthanakorn/room_booking'
+# รากโปรเจกต์ (ml/saved/ อยู่ลึกลงไปสองชั้น) — เดิม hardcode path ของเครื่องเดียว
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, BASE_DIR)
 os.chdir(BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'room_booking.settings')
@@ -41,8 +42,8 @@ import forecast as F
 from param_sets import PARAM_SETS
 from booking.models import Room
 
-TRAIN_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'booking_data_train.xlsx')
-TEST_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'booking_data_test.xlsx')
+TRAIN_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'dataset_train.xlsx')
+TEST_XLSX = os.path.join(BASE_DIR, 'ml', 'saved', 'data_split', 'dataset_test.xlsx')
 
 # room_code -> room_id, from the 8 rooms confirmed to have real booking history
 ROOM_IDS = {
@@ -50,10 +51,24 @@ ROOM_IDS = {
     '3C05-06': 448, '1C-MEETING': 487, '3C16-17': 505, '4C05': 506,
 }
 
-SETS = ['A', 'B', 'C', 'D', 'E']
+SETS = ['A', 'B', 'C', 'D', 'E', 'F']
 if '--sets' in sys.argv:
     idx = sys.argv.index('--sets')
     SETS = [s.strip().upper() for s in sys.argv[idx + 1].split(',') if s.strip()]
+
+ROOMS_FILTER = None
+if '--rooms' in sys.argv:
+    idx = sys.argv.index('--rooms')
+    ROOMS_FILTER = {s.strip() for s in sys.argv[idx + 1].split(',') if s.strip()}
+
+# LSTM has never won the tree-first serving gate on any room trained so far
+# (see forecast.LSTM_EXCLUSION_NOTE) — skip fitting it to cut per-room time.
+# LSTM is off by default (forecast.SKIP_LSTM = True). --no-lstm is kept so
+# existing commands still work; --with-lstm turns it back on.
+if '--no-lstm' in sys.argv:
+    F.SKIP_LSTM = True
+if '--with-lstm' in sys.argv:
+    F.SKIP_LSTM = False
 
 
 def daily_from_rows(df: pd.DataFrame) -> pd.Series:
@@ -101,6 +116,20 @@ print(f"Loaded {len(train_all)} train rows, {len(test_all)} test rows from Excel
 print("(test rows are used only to fix the train/calibration boundary and keep features "
       "continuous — nothing computed from them is fit or printed by this script)\n", flush=True)
 
+# All 8 rooms' full daily series (train+test), keyed by Room object, so a
+# room with little history can borrow a same-room_type seasonal pattern via
+# forecast.fit_peer_profile — the training call below cuts each peer's
+# series off before THIS room's own train_end, so no room's calibration/test
+# window ever leaks into another room's features through this.
+all_rooms_daily = {}
+for code, room_id in ROOM_IDS.items():
+    room_obj = Room.objects.get(id=room_id)
+    tr_rows = train_all[train_all['room_code'] == code]
+    te_rows = test_all[test_all['room_code'] == code]
+    all_rooms_daily[room_obj] = pd.concat(
+        [daily_from_rows(tr_rows), daily_from_rows(te_rows)]
+    ).sort_index()
+
 for set_name in SETS:
     params = PARAM_SETS[set_name]
     print(f"\n{'=' * 80}\n TRAINING SET {set_name} — {params['name']}\n{'=' * 80}", flush=True)
@@ -113,17 +142,29 @@ for set_name in SETS:
     F.MODEL_DIR = MODEL_DIR
 
     F.CURRENT_PARAM_SET = set_name
+    # Train every configured round, then SELECT the calibration-best round
+    # afterwards (_mark_best_booster_round records it; _predict_booster serves
+    # that round via num_iteration/iteration_range, and LSTM restores its best
+    # epoch). This matches what forecast.py's own __main__ already does.
+    #
+    # It was previously False here, so this path stopped as soon as the
+    # calibration slice plateaued — which both truncated every learning curve
+    # the plots draw and risked halting before a later, better optimum. The
+    # final Excel test split is untouched either way; only the calibration
+    # slice is ever consulted.
     F.DISABLE_EARLY_STOPPING = True
     F.LSTM_EPOCHS = params['lstm_epochs']
     F.LSTM_BATCH = params['lstm_batch']
     F.LSTM_LOOKBACK = params['lstm_lookback']
 
     for code, room_id in ROOM_IDS.items():
+        if ROOMS_FILTER is not None and code not in ROOMS_FILTER:
+            continue
         room = Room.objects.get(id=room_id)
         tr_rows = train_all[train_all['room_code'] == code]
         te_rows = test_all[test_all['room_code'] == code]
         if len(te_rows) == 0:
-            print(f"⏭️  {code}: no test rows in booking_data_test.xlsx, skipping")
+            print(f"⏭️  {code}: no test rows in dataset_test.xlsx, skipping")
             continue
 
         daily_train = daily_from_rows(tr_rows)
@@ -131,8 +172,16 @@ for set_name in SETS:
         daily_full = pd.concat([daily_train, daily_test]).sort_index()
         n_train_days = len(daily_train)
 
-        schedule = F.load_term_schedule(room.id)
         rdf_full = pd.concat([to_rdf(tr_rows, room.id), to_rdf(te_rows, room.id)], ignore_index=True)
+        # TermBooking is empty for every room, so load_term_schedule() alone
+        # leaves all 18 term_* features constant zero. Fall back to mining the
+        # recurring timetable from this room's own bookings, cut off at the
+        # same train_end custom_split uses below — the calibration slice and
+        # the Excel test split are both excluded.
+        _calib_len = max(1, int(round(n_train_days * 0.125)))
+        _train_end = max(n_train_days - _calib_len, F.MIN_TRAIN_ROWS)
+        _term_cutoff = daily_full.index[min(_train_end, len(daily_full) - 1)]
+        schedule = F.resolve_term_schedule(room.id, rdf_full, cutoff_date=_term_cutoff)
 
         orig_split = F._split_time_series
 
@@ -150,7 +199,8 @@ for set_name in SETS:
         F._split_time_series = custom_split
         try:
             print(f"\n🏠 {code}  (train days={len(daily_train)})")
-            result = F._train_room_pipeline(room, daily_full, rdf_full, schedule, verbose=False)
+            result = F._train_room_pipeline(room, daily_full, rdf_full, schedule, verbose=False,
+                                             all_rooms_daily=all_rooms_daily)
         finally:
             F._split_time_series = orig_split
 
