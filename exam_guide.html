@@ -70,15 +70,16 @@ h2{font-size:20px;margin-top:48px}
 </style>
 
 <h1>สรุปเตรียมสอบ: ระบบจองห้องอัจฉริยะ UBU (Smart Room Booking)</h1>
-<p class="m">อัปเดต 30 ก.ย. 2569 · ตรวจทุกหัวข้อเทียบกับโค้ดจริงใน repo (หลัง commit d7f7049 รวมการอนุมัติจองทั้งเทอม) · ตัวเลขผลโมเดล direct มาจากรัน 20260914-214913 ส่วนผลโมเดล production มาจาก <code>consolidated_results.csv</code></p>
+<p class="m">อัปเดต 10 ต.ค. 2569 · ตรวจทุกหัวข้อเทียบกับโค้ดจริงใน repo (หลัง QA ทั้งระบบ 4 รอบ + ทดสอบผ่านหน้าเว็บจริง) · ตัวเลขผลโมเดล direct มาจากรัน 20260914-214913 ส่วนผลโมเดล production มาจาก <code>consolidated_results.csv</code></p>
 
 
 <div class="start">
 <div><h3>เวลาน้อย อ่านตามลำดับนี้</h3>
 <ol>
-<li>กล่อง "สรุปสั้น" ใต้ทุกหัวข้อ อ่านรวดเดียวจบได้</li>
+<li>หัวข้อ <a href="#s0">0 ต้องรู้แน่ๆ</a>: เล่าระบบ 1 นาที, คำถามที่โดนแน่พร้อมคำตอบสั้น, เช็คลิสต์ก่อนเดโม</li>
 <li>หัวข้อ <a href="#s17">17</a> และ <a href="#s18">18</a>: จุดที่ต้องตอบให้ตรงกับเล่ม และข้อจำกัดที่ควรพูดเองก่อน</li>
-<li>หัวข้อ <a href="#s20">20</a>: ลองตอบเองก่อน แล้วค่อยกดเปิดแนวตอบ</li>
+<li>หัวข้อ <a href="#s20">20</a>: ลองตอบเองก่อน แล้วค่อยกดเปิดแนวตอบ (มีช่องค้นคำถาม)</li>
+<li>เหลือเวลา: กล่อง "สรุปสั้น" ใต้ทุกหัวข้อ อ่านรวดเดียวจบได้</li>
 </ol></div>
 <div><h3>ตัวเลขที่ต้องจำ</h3>
 <dl class="facts">
@@ -87,7 +88,7 @@ h2{font-size:20px;margin-top:48px}
 <dt>Baseline (seasonal naive)</dt><dd>accuracy 0.737 · MAE 2.07 ชม.</dd>
 <dt>Production</dt><dd>โมเดลเดี่ยวชนะ 56/56 (LightGBM 47, XGBoost 9)</dd>
 <dt>การทดสอบ</dt><dd>342 เคสผ่านทั้งหมด · แก้บั๊ก 81 รายการ</dd>
-<dt>กฎที่โดนถามบ่อย</dt><dd>จองทุกแบบต้องอนุมัติ (รายครั้งและทั้งเทอม) · เช็คอินได้ 15 นาทีก่อนเริ่ม · จองยาวสุด 21 วัน · ล่วงหน้าไม่เกิน 365 วัน · JWT access 1 วัน, refresh 30 วัน</dd>
+<dt>กฎที่โดนถามบ่อย</dt><dd>จองทุกแบบต้องอนุมัติ (รายครั้งและทั้งเทอม) · เช็คอินได้ตั้งแต่ 15 นาทีก่อนเริ่มถึงเวลาจบ · จองยาวสุด 21 วัน · ล่วงหน้าไม่เกิน 365 วัน · JWT access 1 วัน, refresh 30 วัน</dd>
 </dl></div>
 <div class="w"><h3>สามเรื่องที่ห้ามตอบพลาด</h3>
 <ol>
@@ -98,12 +99,53 @@ h2{font-size:20px;margin-top:48px}
 </div>
 <div class="layout">
 <nav id="toc" aria-label="สารบัญ"><details open id="tocd"><summary>สารบัญ</summary>
+<p class="grp">เริ่มที่นี่</p><ol start="0"><li><a href="#s0">ต้องรู้แน่ๆ ก่อนสอบ</a></li></ol>
 <p class="grp">ตัวระบบ</p><ol start="1"><li><a href="#s1">ภาพรวมโปรเจกต์</a></li><li><a href="#s2">ภาษาและเทคโนโลยี</a></li><li><a href="#s3">สถาปัตยกรรมและเส้นทางของ request</a></li><li><a href="#s4">โครงสร้างไฟล์</a></li><li><a href="#s5">ฐานข้อมูล</a></li><li><a href="#s6">API ทั้งหมด</a></li><li><a href="#s7">การเข้าสู่ระบบและสิทธิ์</a></li><li><a href="#s8">การจองห้อง (ทุกแบบ)</a></li><li><a href="#s9">ค้นหาและแนะนำห้อง</a></li><li><a href="#s10">แจ้งเตือน อีเมล งานเบื้องหลัง</a></li><li><a href="#s11">หน้าเว็บ (Frontend)</a></li></ol>
 <p class="grp">AI</p><ol start="12"><li><a href="#s12">AI ที่ใช้งานจริง (production)</a></li><li><a href="#s13">AI งานวิจัยล่าสุด (direct)</a></li><li><a href="#s14">ผลลัพธ์และ baseline</a></li></ol>
 <p class="grp">Deploy และการทดสอบ</p><ol start="15"><li><a href="#s15">Deploy</a></li><li><a href="#s16">การทดสอบระบบ</a></li></ol>
 <p class="grp">เตรียมตอบกรรมการ</p><ol start="17"><li><a href="#s17">ให้ตรงกับเล่มวิทยานิพนธ์</a></li><li><a href="#s18">ข้อจำกัดและจุดที่ยังไม่สมบูรณ์</a></li><li><a href="#s19">Future work</a></li><li><a href="#s20">คำถามที่น่าจะโดน</a></li><li><a href="#s21">ศัพท์</a></li></ol>
 </details></nav>
 <main>
+
+<!-- ============================================================ -->
+<h2 id="s0">0. ต้องรู้แน่ๆ ก่อนสอบ</h2>
+<p class="tl"><span class="lab">สรุปสั้น</span>หน้านี้อ่านจบในไม่กี่นาที: เล่าระบบใน 1 นาที, คำถามที่โดนแน่พร้อมคำตอบสั้น, และเช็คลิสต์ก่อนเดโม รายละเอียดเชิงลึกของแต่ละข้ออยู่หัวข้อที่อ้างไว้ท้ายคำตอบ</p>
+
+<h3>เล่าระบบใน 1 นาที</h3>
+<p class="k">"ระบบจองห้องเรียนและห้องประชุมของสำนักคอมพิวเตอร์ฯ ที่กันการจองซ้อนตั้งแต่ระดับฐานข้อมูล ทุกการจองต้องผ่านการอนุมัติ และมีเช็คอินแก้ปัญหาจองแล้วไม่มา
+จุดเด่นคือ AI พยากรณ์ว่าห้องไหน ช่วงไหน คนจะใช้เยอะ แสดงเป็น 4 ระดับให้ผู้ใช้ตัดสินใจ และให้แอดมินเลือกช่วงปิดซ่อมตอนคนใช้น้อย
+โมเดลใช้ LightGBM กับ XGBoost บนข้อมูลการใช้ห้องจริงประมาณ 3 ปี 8 ห้อง ได้ความแม่นยำ 81.3% สูงกว่าวิธีพื้นฐาน 73.7%"</p>
+
+<h3>คำถามที่โดนแน่ + ตอบสั้น</h3>
+<div class="tw"><table><tr><th>คำถาม</th><th>ตอบสั้น</th><th>ลึก</th></tr>
+<tr><td>ระบบแก้ปัญหาอะไร</td><td>ไม่รู้ว่าห้องไหนว่าง, จองซ้อน, ไม่รู้ว่าห้องไหนใกล้เต็ม, จองแล้วไม่มา → ระบบจองกลาง + อนุมัติ + เช็คอิน + AI บอกระดับความต้องการ</td><td><a href="#s1">1</a></td></tr>
+<tr><td>ใช้ AI อะไร ทำไมไม่ใช้ Deep Learning</td><td>LightGBM + XGBoost (gradient boosting) เหมาะกับข้อมูลตารางที่มีไม่มาก · ลอง LSTM แล้วได้น้ำหนัก 0% แทบทุกห้อง</td><td><a href="#s12">12</a></td></tr>
+<tr><td>ผลดีแค่ไหน</td><td>ชุด C: accuracy <b>81.3%</b>, balanced 62.0%, MAE 1.44 ชม. · seasonal naive 73.7%, MAE 2.07 · <b>ยังไม่ได้ทดสอบทางสถิติ</b></td><td><a href="#s14">14</a></td></tr>
+<tr><td>ตัวไหนใช้จริงบนเว็บ</td><td><code>forecast.py</code> แบบ recursive · ตัว direct ที่ได้ 81.3% เป็นงานวิจัย ยังไม่ได้ใช้จริง</td><td><a href="#s12">12</a>, <a href="#s13">13</a></td></tr>
+<tr><td>Weighted Averaging ได้ผลไหม</td><td>คำนวณจริง แต่โมเดลเดี่ยวชนะทุกกรณี (56/56) ระบบจึงเลือกโมเดลเดี่ยวรายห้อง</td><td><a href="#s12">12</a></td></tr>
+<tr><td>รู้ได้ยังไงว่าไม่ overfit</td><td>ชุด D train 0.939 แต่ test ตกเหลือ 0.802 · ชุด C train 0.887 test 0.813 ดีสุด จึงหยุดที่ C</td><td><a href="#s14">14</a></td></tr>
+<tr><td>กันข้อมูลรั่วยังไง</td><td>แบ่งข้อมูลตามเวลา ไม่สุ่ม · feature ใช้เฉพาะข้อมูล ณ วันที่ทาย · เคยเจอ leak (<code>diff_1</code>, R²≈1) และแก้แล้ว</td><td><a href="#s12">12</a></td></tr>
+<tr><td>ทำไม calibration (72.6%) ต่ำกว่า test</td><td>ช่วง calibration ตรงปิดเทอมต่อเปิดเทอมซึ่งยากกว่า วิธีพื้นฐานก็ต่ำกว่า 5–6 จุดเหมือนกัน ไม่ใช่ข้อมูลรั่ว</td><td><a href="#s20">20</a></td></tr>
+<tr><td>ทำไมต้องดู balanced accuracy</td><td>ห้องว่างเยอะ ทาย "ต่ำ" ตลอดก็ได้ accuracy สูง (1C-MEETING 98.7%) balanced accuracy เฉลี่ย recall ทุกระดับ</td><td><a href="#s14">14</a></td></tr>
+<tr><td>กันจองซ้อนยังไง</td><td>ตรวจ 3 แหล่ง (จองรายครั้ง, คาบทั้งเทอม, ช่วงซ่อม) 2 ชั้น · จองพร้อมกันใช้ <code>select_for_update</code> ล็อกแถวห้อง</td><td><a href="#s8">8</a></td></tr>
+<tr><td>ER: ทำไม 11 ตาราง, เส้นแบบไหน</td><td>Normalization · ส่วนใหญ่ 1:N · M:N คู่เดียว Room–Facility ผ่าน <code>roomfacility</code> · 1 คู่ตาราง = 1 เส้น = 1 การกระทำ คนอนุมัติดูจาก <code>bookinglog</code></td><td><a href="#s5">5</a></td></tr>
+<tr><td>AI ไปอยู่ในเว็บยังไง</td><td>รัน <code>forecast.py</code> ล่วงหน้าแล้วเขียนตาราง <code>DemandForecast</code> เว็บแค่อ่าน ค้นหาจึงเร็ว (เว็บจริงไม่ได้รันโมเดลเอง)</td><td><a href="#s15">15</a></td></tr>
+<tr><td>(ตอนเดโม) ทำไมทุกห้องขึ้น "ยังว่าง"</td><td>ข้อมูลจริงจบ เม.ย. 2569 หลังจากนั้นยังไม่มีการใช้งานจริง โมเดลจึงทายต่ำ ถ้าเปิดใช้จริงระดับจะปรับตามข้อมูล</td><td><a href="#s20">20</a></td></tr>
+<tr><td>ทดสอบยังไง</td><td>test อัตโนมัติ 342 เคส + ทดสอบผ่านหน้าเว็บจริงด้วยเบราว์เซอร์อัตโนมัติ เจอและแก้บั๊ก 81 รายการ</td><td><a href="#s16">16</a></td></tr>
+<tr><td>ความปลอดภัย</td><td>LDAP ไม่เก็บรหัส · token ตายทันทีเมื่อเปลี่ยนรหัส · ล็อกอินผิดได้ 10 ครั้ง/5 นาทีต่อบัญชี · รหัส ≥8 ตัว · escape กัน XSS</td><td><a href="#s7">7</a></td></tr>
+<tr><td>ข้อจำกัด (พูดเองก่อน)</td><td>8 ห้อง ~3 ปี · ไม่มีตารางเรียนจริง · ยังไม่มีทดสอบทางสถิติ · เว็บจริงยังใช้ recursive · ต้องรันพยากรณ์เอง</td><td><a href="#s18">18</a></td></tr>
+</table></div>
+
+<h3>เช็คลิสต์ก่อนเดโม</h3>
+<ol>
+<li><b>ข้อมูลพยากรณ์:</b> มีถึง 6 ก.พ. 2570 แล้ว (รัน <code>--days 120</code> ทั้งในเครื่องและ Neon) ไม่ต้องรันใหม่ก่อนสอบ</li>
+<li><b>ปลุกเว็บก่อน 1–2 นาที:</b> Render แผนฟรีหลับเมื่อไม่มีคนใช้ request แรกอาจรอ 30–50 วินาที</li>
+<li><b>บัญชีเดโม:</b> เตรียมทั้งบัญชีนักศึกษาและแอดมิน ล็อกอินไว้คนละเบราว์เซอร์/หน้าต่าง</li>
+<li><b>ลำดับเดโม:</b> ค้นหาห้อง (ดูป้ายระดับ AI) → จอง → แอดมินอนุมัติ → กระดิ่งแจ้งเตือน → โปรไฟล์ (เช็คอิน/ยกเลิก) → จองทั้งเทอม → หน้าแอดมิน (สถิติ, ช่วงซ่อม AI)</li>
+<li><b>ห้องครบ 8 ห้อง</b> (1C-MEETING เปิดแล้ว) · ค้นหาด้วย 8 คนจะเห็นครบทุกห้อง (1C-MEETING จุ 11 คน)</li>
+<li><b>ถ้ามีการจองหัวข้อ <code>&lt;script&gt;</code></b> ค้างในหน้าแอดมิน ยกเลิกก่อนเดโม หรือเตรียมตอบว่าเป็นการทดสอบ XSS ระบบแสดงเป็นข้อความธรรมดา</li>
+</ol>
+<div class="w"><b>ตัวเลขที่ห้ามใช้ผิด:</b> accuracy 84–99% ที่ขึ้นตอนรัน <code>forecast.py</code> เป็นค่าวัดรายห้องตอนเทรน ไม่ใช่ผลในเล่ม · ตัวเลขในเล่มคือ <b>81.3%</b></div>
 
 <!-- ============================================================ -->
 <h2 id="s1">1. ภาพรวมโปรเจกต์</h2>
@@ -132,8 +174,8 @@ h2{font-size:20px;margin-top:48px}
 <h3>ภาษาที่ใช้ แต่ละภาษาใช้ทำอะไร</h3>
 <div class="tw"><table>
 <tr><th>ภาษา</th><th>ใช้ตรงไหน</th><th>ปริมาณโดยประมาณ</th></tr>
-<tr><td><b>Python</b></td><td>Backend ทั้งหมด (Django), ส่วน AI/ML ทั้งหมด (เทรน พยากรณ์ ประเมินผล), สคริปต์จัดการข้อมูล</td><td class="n">backend ~6,700 บรรทัด (<code>views.py</code> 2,341 · <code>signals.py</code> 1,112 · <code>serializers.py</code> 891) · <code>forecast.py</code> ~4,800 บรรทัด</td></tr>
-<tr><td><b>JavaScript (JSX)</b></td><td>Frontend ด้วย React: หน้าเว็บทุกหน้า, การเรียก API, จัดการ token</td><td class="n">~8,000 บรรทัด (<code>AdminPage.jsx</code> 2,159 · <code>SearchPage.jsx</code> 1,676 · <code>AppShell.jsx</code> 1,322)</td></tr>
+<tr><td><b>Python</b></td><td>Backend ทั้งหมด (Django), ส่วน AI/ML ทั้งหมด (เทรน พยากรณ์ ประเมินผล), สคริปต์จัดการข้อมูล</td><td class="n">backend ~6,500 บรรทัด (<code>views.py</code> 2,495 · <code>signals.py</code> 1,129 · <code>serializers.py</code> 967) · <code>forecast.py</code> ~4,850 บรรทัด</td></tr>
+<tr><td><b>JavaScript (JSX)</b></td><td>Frontend ด้วย React: หน้าเว็บทุกหน้า, การเรียก API, จัดการ token</td><td class="n">~8,300 บรรทัด (<code>AdminPage.jsx</code> 2,211 · <code>SearchPage.jsx</code> 1,692 · <code>AppShell.jsx</code> 1,333)</td></tr>
 <tr><td><b>HTML/CSS</b></td><td>หน้าเว็บ (ผ่าน JSX) จัดสไตล์ด้วย Tailwind CSS · อีเมล HTML และหน้าเช็คอิน/ยกเลิกจากลิงก์อีเมล (สร้างจาก Python)</td><td>—</td></tr>
 <tr><td><b>SQL</b></td><td>ไม่ได้เขียนตรง ใช้ผ่าน Django ORM (เขียนเป็น Python แล้ว ORM แปลงเป็น SQL ให้)</td><td>—</td></tr>
 <tr><td><b>Bash / YAML</b></td><td>สคริปต์รันการเทรนหลายชุด (<code>run_direct_sets.sh</code> ฯลฯ), ตั้งค่า deploy (<code>render.yaml</code>)</td><td>—</td></tr>
@@ -142,10 +184,10 @@ h2{font-size:20px;margin-top:48px}
 <h3>เฟรมเวิร์กและไลบรารี</h3>
 <div class="tw"><table><tr><th>ชั้น</th><th>เทคโนโลยี</th><th>ทำหน้าที่อะไร</th></tr>
 <tr><td>Backend</td><td>Django</td><td>เว็บเฟรมเวิร์กหลัก: model/ORM, migration, admin, auth</td></tr>
-<tr><td></td><td>Django REST Framework (DRF)</td><td>สร้าง REST API: ViewSet, Serializer (ตรวจข้อมูลเข้า), Permission, Pagination (20 รายการต่อหน้า)</td></tr>
+<tr><td></td><td>Django REST Framework (DRF)</td><td>สร้าง REST API: ViewSet, Serializer (ตรวจข้อมูลเข้า), Permission, Pagination (20 รายการต่อหน้า ขอเพิ่มได้ด้วย <code>?page_size=</code> สูงสุด 200)</td></tr>
 <tr><td></td><td>djangorestframework-simplejwt</td><td>ออก/ตรวจ JWT (access + refresh)</td></tr>
 <tr><td></td><td>Django Channels + daphne</td><td>WebSocket (ต้องรันแบบ ASGI) ใช้กับการแจ้งเตือนสด</td></tr>
-<tr><td></td><td>APScheduler (django-apscheduler)</td><td>งานเบื้องหลังตามเวลา (เตือนเช็คอิน)</td></tr>
+<tr><td></td><td>APScheduler (django-apscheduler)</td><td>งานเบื้องหลังตามเวลา (เตือนเช็คอิน, อัปเดตสถานะช่วงซ่อม)</td></tr>
 <tr><td></td><td>ldap3</td><td>ล็อกอินด้วยบัญชีมหาวิทยาลัย</td></tr>
 <tr><td></td><td>django-cors-headers, whitenoise, dj-database-url, python-dotenv, psycopg2</td><td>ให้ frontend ต่าง origin เรียกได้, เสิร์ฟไฟล์ static, อ่าน DB จาก env, อ่าน .env, ต่อ PostgreSQL</td></tr>
 <tr><td></td><td>django-import-export, pandas, openpyxl</td><td>นำเข้า/ส่งออก Excel</td></tr>
@@ -179,7 +221,7 @@ Django + DRF ─────────────── Django Channels (ASGI
    ├─ Serializer: ตรวจข้อมูล          ├─ channel layer: InMemory (ในโปรเซสเดียว)
    ├─ View: ตรวจสิทธิ์ + ล็อก DB
    ├─ Signals: ส่งอีเมล / push WebSocket หลังบันทึก
-   ├─ APScheduler: เตือนเช็คอิน ทุก 1 นาที
+   ├─ APScheduler: เตือนเช็คอิน + อัปเดตสถานะช่วงซ่อม ทุก 1 นาที
    └─ ml/saved/: โมดูล AI (รันแยกด้วยคำสั่ง แล้วเขียนผลลงตาราง DemandForecast)
    ▼
 PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLite ถ้าไม่ได้ตั้ง DATABASE_URL
@@ -210,9 +252,12 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td><code>booking/permissions.py</code></td><td>เช็คสิทธิ์ admin/staff ที่เดียว: <code>is_admin_or_staff()</code> และ permission class <code>IsAdminOrStaff</code></td></tr>
 <tr><td><code>booking/urls.py</code></td><td>ผูก URL เข้ากับ view (หัวข้อ 6)</td></tr>
 <tr><td><code>booking/ldap_auth.py</code></td><td>ล็อกอินกับ LDAP มหาวิทยาลัย</td></tr>
-<tr><td><code>booking/signals.py</code></td><td>ทำงานอัตโนมัติหลังบันทึกข้อมูล: อีเมล 10 แบบ + push WebSocket</td></tr>
+<tr><td><code>booking/signals.py</code></td><td>ทำงานอัตโนมัติหลังบันทึกข้อมูล: อีเมล 11 แบบ + push WebSocket</td></tr>
+<tr><td><code>booking/config.py</code></td><td>ค่าที่ปรับได้ของระบบจองรวมไว้ที่เดียว (ห้องที่เปิดจอง, นาทีเช็คอิน, เกณฑ์ระดับ AI ฯลฯ) — ดู <code>README.md</code> ว่าค่าไหนอยู่บรรทัดไหน</td></tr>
+<tr><td><code>booking/maintenance.py</code></td><td>ปิดช่วงซ่อมที่หมดเวลา และตั้งสถานะห้องตามช่วงซ่อมที่ครอบเวลาปัจจุบัน (งานเบื้องหลังเรียกทุกนาที)</td></tr>
+<tr><td><code>booking/throttles.py</code></td><td>จำกัดการยิงล็อกอิน/ลืมรหัสผ่านซ้ำ นับต่อบัญชี</td></tr>
 <tr><td><code>booking/consumers.py</code>, <code>routing.py</code></td><td>WebSocket 3 ช่อง: สถานะห้อง, แจ้งเตือน, ความคืบหน้าการเทรน</td></tr>
-<tr><td><code>booking/scheduler.py</code></td><td>งานตามเวลา: เตือนเช็คอินก่อน 15 นาที</td></tr>
+<tr><td><code>booking/scheduler.py</code></td><td>งานตามเวลา: เตือนเช็คอินก่อน 15 นาที และปิดช่วงซ่อมที่หมดเวลา</td></tr>
 <tr><td><code>booking/admin.py</code></td><td>หน้า Django admin</td></tr>
 <tr><td><code>booking/management/commands/</code></td><td>คำสั่งพิเศษ: <code>set_approver</code> (ตั้ง role admin ให้ผู้อนุมัติ), <code>create_nkadmin</code>, <code>audit_term_dow</code></td></tr>
 <tr><td><code>booking/tests_*.py</code></td><td>ชุดทดสอบอัตโนมัติ (หัวข้อ 16)</td></tr>
@@ -238,10 +283,17 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td>TermBooking (ทั้งเทอม)</td><td>subject_name/code, attendees, day_of_week (0=จันทร์), start/end_time (TimeField), term_start/end (DateField), status, reject_reason</td><td>status: pending → active · หรือ rejected / cancelled / ended · สร้างแล้วเป็น pending ต้องให้ admin/staff อนุมัติ · <code>get_weekly_slots()</code> คืนทุกวันที่เกิดคาบจริง</td></tr>
 <tr><td>MaintenanceBlock</td><td>room, start/end_time (DateTime ข้ามวันได้), reason, status, predicted_demand_avg</td><td>status: scheduled / active / completed / cancelled · เก็บ demand เฉลี่ยจาก AI ช่วงนั้นให้แอดมินเลือกปิดตอนคนใช้น้อย</td></tr>
 <tr><td>DemandForecast</td><td>room, forecast_date, hour, predicted_demand (0–1), demand_level, availability, confidence, term_demand, dynamic_demand</td><td>unique (room, date, hour) · AI เขียน, หน้าเว็บอ่าน</td></tr>
-<tr><td>Notification</td><td>user, booking/term_booking, type (10 แบบ), title, message, is_read</td><td>บันทึกแล้ว signal push ผ่าน WebSocket ทันที</td></tr>
+<tr><td>Notification</td><td>user, booking/term_booking, type (11 แบบ), title, message, is_read</td><td>บันทึกแล้ว signal push ผ่าน WebSocket ทันที</td></tr>
 <tr><td>BookingLog</td><td>booking/term_booking, changed_by, old/new_status, remark</td><td>ประวัติการเปลี่ยนสถานะ (audit trail) เก็บเหตุผลที่ปฏิเสธด้วย · <b>ใครอนุมัติ/ปฏิเสธดูจาก changed_by ของแถวนี้</b> — Booking/TermBooking ไม่มีคอลัมน์ approved_by แล้ว เพื่อให้ User กับตารางการจองมีความสัมพันธ์เดียว ("จอง") 1 คู่ตาราง = 1 เส้น = 1 การกระทำ</td></tr>
 <tr><td>RoomUsageStat</td><td>room, date, total/term/dynamic bookings, utilization_rate</td><td>สถิติรายวัน</td></tr></table></div>
 <p class="m">ความสัมพันธ์หลัก: Building 1–N Room · Room 1–N Booking / TermBooking / MaintenanceBlock / DemandForecast · User 1–N Booking / TermBooking / Notification</p>
+<ul>
+<li><b>11 ตาราง แยกตามหลัก Normalization</b>: ข้อมูลคนละเรื่องอยู่คนละตาราง เชื่อมด้วย foreign key ข้อมูลไม่ซ้ำ แก้ที่เดียว</li>
+<li>เกือบทุกเส้นเป็น <b>1:N</b> (ตารางที่มี FK คือฝั่ง "หลาย") มี <b>M:N คู่เดียว</b>คือ Room ↔ Facility ผ่านตารางกลาง <code>roomfacility</code> ที่เก็บ <code>quantity</code></li>
+<li><b>1 คู่ตาราง = 1 เส้น = 1 การกระทำ</b>: ไม่มีคอลัมน์ <code>approved_by</code> ในการจองแล้ว ใครอนุมัติ/ปฏิเสธดูจาก <code>bookinglog.changed_by</code> (User–Booking จึงมีแค่ "จอง")</li>
+<li>สัญลักษณ์ปลายเส้น: <code>||</code> หนึ่งเสมอ (FK ห้ามว่าง) · <code>o|</code> ศูนย์หรือหนึ่ง (FK เป็น NULL ได้ เช่น log ของการจองทั้งเทอมไม่มี booking_id) · <code>&gt;o</code> ศูนย์หรือหลาย</li>
+<li><code>BigInt NULL</code> = เก็บเลข id ของอีกตาราง แต่ปล่อยว่างได้ · <code>BigAuto</code> = id ที่ฐานข้อมูลนับเพิ่มให้เอง</li>
+</ul>
 <p><b>ER diagram:</b> ไฟล์ <code>erd_crowsfoot.png</code> (สัญลักษณ์ crow's foot) สร้างด้วย <code>scripts/erd_crowsfoot.py</code> ซึ่งอ่านคอลัมน์จาก model จริง ถ้าแก้ model แล้วรันสคริปต์ใหม่รูปจะตรงกับฐานข้อมูลเสมอ</p>
 
 <!-- ============================================================ -->
@@ -389,7 +441,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <h3>8.6 ยกเลิก</h3>
 <ul>
 <li>เจ้าของหรือ admin/staff · ยกเลิกซ้ำได้ "ยกเลิกไปแล้ว" · ผู้ใช้อื่นยกเลิกไม่ได้ "ไม่มีสิทธิ์" · ยกเลิกแล้วช่วงเวลากลับมาว่างทันที</li>
-<li>ยกเลิกทางอีเมล: เปิดลิงก์ได้หน้ายืนยันก่อน (GET) กดปุ่มจึงยกเลิกจริง (POST) กันโปรแกรมสแกนลิงก์ในอีเมลกดยกเลิกเอง · เช็คอินแล้วยกเลิกทางอีเมลไม่ได้</li>
+<li>ยกเลิกทางอีเมล: เปิดลิงก์ได้หน้ายืนยันก่อน (GET) กดปุ่มจึงยกเลิกจริง (POST) กันโปรแกรมสแกนลิงก์ในอีเมลกดยกเลิกเอง · เช็คอินแล้ว หรือเวลาจองจบไปแล้ว ยกเลิกไม่ได้ทั้งในเว็บและทางอีเมล</li>
 <li><code>DELETE</code> ถูกปิด การจองไม่ถูกลบจริง เก็บไว้เป็นประวัติ</li>
 </ul>
 
@@ -411,7 +463,8 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <li>ปฏิเสธถ้าทับการจองที่ยังใช้งาน, คาบทั้งเทอม (ไล่ทุกวันในช่วง), หรือช่วงปิดซ่อมอื่น</li>
 <li>แก้ไขช่วงปิดซ่อม (PATCH/PUT) ผ่านการตรวจชุดเดียวกับตอนสร้าง (เวลาสิ้นสุดต้องหลังเวลาเริ่ม, ไม่ทับ) · ช่วงที่ปิดงานหรือยกเลิกแล้วแก้ไม่ได้ ("แก้ไขไม่ได้ สถานะปัจจุบัน: …")</li>
 <li>หน้า <code>maintenance/slots/</code> ใช้ผล AI แนะนำช่วงที่ demand ต่ำให้เลือกปิด แล้วเก็บ <code>predicted_demand_avg</code> ไว้</li>
-<li>กด <code>complete</code>/<code>cancel</code> แล้วถ้าไม่เหลือช่วงปิดซ่อมค้าง ห้องกลับเป็น available</li>
+<li>สถานะห้องตั้งตามช่วงซ่อมที่ครอบ "ตอนนี้": งานเบื้องหลังทุกนาทีปิดช่วงที่หมดเวลาและเปลี่ยนสถานะห้องเมื่อช่วงซ่อมเริ่ม/จบ ห้องที่แอดมินตั้ง disabled ไม่ถูกเปิดคืนเอง</li>
+<li>ปิดห้องหรือปิดอาคาร: ระบบยกเลิกการจองที่ยังไม่จบของห้องนั้น (รายครั้งและทั้งเทอม) แล้วแจ้งเจ้าของทั้งในเว็บและอีเมล</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -420,7 +473,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <ul>
 <li><b>ค้นหารายครั้ง</b> (<code>rooms/search/</code>): กรองห้องที่จุพอ, ตัดห้องที่ติดการจอง/ปิดซ่อม/คาบเรียนในช่วงนั้นออก, แนบผล AI ของชั่วโมงนั้น แล้วเรียงห้องที่ "ว่างชัวร์" ขึ้นก่อน · ตัดสินจากช่วงเวลาที่ค้นหา ไม่ใช่สถานะห้องตอนนี้: ห้องที่กำลังซ่อมอยู่วันนี้ยังขึ้นในผลค้นหาของวันอื่น ตัดออกถาวรเฉพาะห้องสถานะ disabled</li>
 <li><b>ค้นหาทั้งเทอม:</b> ต้องระบุวันในสัปดาห์ ตรวจทุกสัปดาห์ของเทอมด้วยตัวตรวจเดียวกับตอนจอง (<code>find_term_conflict</code>) จึงตัดห้องที่มีการจองรายครั้งในวันนั้นของสัปดาห์ออกด้วย และไม่ตัดห้องที่ปิดซ่อมในวันอื่นของสัปดาห์</li>
-<li><b>ตารางห้องรายวัน</b> (<code>availability</code>): แสดงรายการ pending และ checked_in ด้วย เพราะทั้งสองสถานะกันช่วงเวลาอยู่</li>
+<li><b>ตารางห้องรายวัน</b> (<code>availability</code>): แสดงรายการ pending และ checked_in ด้วย เพราะทั้งสองสถานะกันช่วงเวลาอยู่ · หัวข้อการจองของคนอื่นแสดงเป็น "ไม่ว่าง" (เห็นเต็มเฉพาะเจ้าของและแอดมิน)</li>
 <li><b>ค้นหาด่วน</b> (<code>suggestions</code>): พิมพ์ตัวเลขล้วน เช่น "40" = จำนวนคน แนะนำห้องที่จุพอเรียงจากพอดีที่สุด ถ้าไม่มีห้องไหนจุพอแนะนำห้องใหญ่สุด · พิมพ์ข้อความ = ค้นชื่อห้อง/อาคาร</li>
 <li><b>ห้องใกล้เคียง</b> (<code>dynamic-recommend</code>): เมื่อค้นหาปกติไม่เจอ แนะนำห้องอื่นที่ว่าง ตามลำดับ: เวลาเดิม → เวลาใกล้เคียง ±30/60 นาที (ส่ง <code>suggested_start_time</code> ให้หน้าเว็บเลื่อนเวลาตาม และไม่แนะนำเวลาที่ผ่านไปแล้ว) → ห้องเดิมแต่วันถัดไป 1–3 วัน (<code>suggested_date</code>)</li>
 <li><b>แผนสลับห้อง</b> (<code>split-recommend</code>): ตรวจห้องแต่ละครึ่งเทอมด้วย <code>find_term_conflict</code> ตัวเดียวกับตอนจองจริง แผนที่แนะนำจึงกดจองได้ทุกครั้ง</li>
@@ -432,14 +485,15 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 
 <!-- ============================================================ -->
 <h2 id="s10">10. แจ้งเตือน อีเมล และงานเบื้องหลัง</h2>
-<p class="tl"><span class="lab">สรุปสั้น</span>แจ้งเตือนในเว็บเด้งทันทีผ่าน WebSocket อีเมล 10 แบบส่งผ่าน Brevo หลัง commit เท่านั้น งานเบื้องหลังมีงานเดียวคือเตือนเช็คอินก่อน 15 นาที</p>
+<p class="tl"><span class="lab">สรุปสั้น</span>แจ้งเตือนในเว็บเด้งทันทีผ่าน WebSocket อีเมล 11 แบบส่งผ่าน Brevo หลัง commit เท่านั้น งานเบื้องหลัง 2 งาน: เตือนเช็คอินก่อน 15 นาที และอัปเดตสถานะช่วงซ่อม</p>
 <h3>แจ้งเตือนในเว็บ</h3>
 <ul>
 <li>บันทึก <code>Notification</code> → signal <code>post_save</code> push เข้า group <code>user_{id}_notifications</code> → กระดิ่งในเว็บเด้งทันที ไม่ต้อง refresh</li>
-<li>ประเภท 10 แบบ: รออนุมัติ, อนุมัติ, ปฏิเสธ, เตือนก่อนใช้, ยกเลิก, จองทั้งเทอมรออนุมัติ, จองทั้งเทอมได้รับอนุมัติ, จองทั้งเทอมถูกปฏิเสธ, แจ้งเตือน demand สูง, ระบบ</li>
+<li>ประเภท 11 แบบ: รออนุมัติ, อนุมัติ, ปฏิเสธ, เตือนก่อนใช้, ยกเลิก, จองทั้งเทอมรออนุมัติ, จองทั้งเทอมได้รับอนุมัติ, จองทั้งเทอมถูกปฏิเสธ, จองทั้งเทอมถูกยกเลิก, แจ้งเตือน demand สูง, ระบบ</li>
+<li>กระดิ่งเรียงอันใหม่สุดก่อน และตัวเลขยังไม่อ่านนับจากทั้งหมด (<code>notifications/unread-count/</code>) · แอดมินยกเลิกการจองของคนอื่น เจ้าของได้แจ้งเตือนด้วย</li>
 <li>การจองเปลี่ยนสถานะ → push อัปเดตสถานะห้องเข้า <code>ws/rooms/</code></li>
 </ul>
-<h3>อีเมล 10 แบบ (<code>signals.py</code>)</h3>
+<h3>อีเมล 11 แบบ (<code>signals.py</code>)</h3>
 <ol>
 <li>ต้อนรับหลังสมัคร</li>
 <li>ลิงก์รีเซ็ตรหัสผ่าน</li>
@@ -451,6 +505,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <li>แจ้งปฏิเสธจองทั้งเทอม พร้อมเหตุผล</li>
 <li>แจ้งยกเลิก</li>
 <li>แจ้งปฏิเสธ พร้อมเหตุผล</li>
+<li>แจ้งยกเลิกจองทั้งเทอม (เช่น แอดมินยกเลิก หรือห้องถูกปิด)</li>
 </ol>
 <ul>
 <li>ส่งหลัง transaction commit แล้วเท่านั้น (<code>send_email_after_commit</code>) กันส่งอีเมลของรายการที่ rollback ไป</li>
@@ -460,8 +515,9 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 </ul>
 <h3>งานเบื้องหลัง (<code>scheduler.py</code>)</h3>
 <ul>
-<li>มีงานเดียว: ทุก 1 นาที หาการจอง approved ที่จะเริ่มในอีก 14–16 นาที ยังไม่เช็คอินและยังไม่เคยเตือน → ส่งอีเมลเตือนพร้อมลิงก์ยกเลิก แล้วตั้ง <code>reminded=True</code> กันส่งซ้ำ</li>
-<li>การเทรน AI <b>ไม่ได้</b>อยู่ใน scheduler ต้องรันคำสั่งเอง (หัวข้อ 12)</li>
+<li>งานที่ 1 เตือนเช็คอิน: ทุก 1 นาที หาการจอง approved ที่จะเริ่มในอีก 14–16 นาที ยังไม่เช็คอินและยังไม่เคยเตือน → ส่งอีเมลเตือนพร้อมลิงก์ยกเลิก แล้วตั้ง <code>reminded=True</code> กันส่งซ้ำ</li>
+<li>งานที่ 2 ช่วงซ่อม: ทุก 1 นาที ปิดช่วงซ่อมที่หมดเวลา และตั้งสถานะห้องตามช่วงซ่อมที่ครอบตอนนี้ (<code>booking/maintenance.py</code>)</li>
+<li>การเทรนและการพยากรณ์ AI <b>ไม่ได้</b>อยู่ใน scheduler ต้องรันคำสั่งเอง (หัวข้อ 12)</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -479,6 +535,8 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <ul>
 <li><code>AppShell.jsx</code>: โครงหน้าที่ใช้ร่วมกัน (เมนู, กระดิ่งแจ้งเตือน, เชื่อม WebSocket)</li>
 <li><code>PrivateRoute</code> / <code>AdminRoute</code> ใน <code>App.jsx</code> กันหน้าที่ต้องล็อกอินหรือเป็นแอดมิน (ฝั่ง backend ตรวจสิทธิ์ซ้ำอีกชั้นเสมอ)</li>
+<li><code>frontend/src/config.js</code>: ค่าที่ปรับได้ของหน้าเว็บรวมไว้ที่เดียว (ปุ่มเวลา, ระยะเวลาจอง, นาทีเช็คอิน, timeout)</li>
+<li>ปุ่มเช็คอินในหน้าเว็บแสดงตั้งแต่ 15 นาทีก่อนเริ่มจนถึงเวลาจบ ตรงกับกฎของ backend · ชื่อภาคเรียนของการจองทั้งเทอมคำนวณจากวันเริ่มเทอมที่เลือก</li>
 <li><code>SlowRequestBanner</code>: Render แผนฟรีหลับเมื่อไม่มีคนใช้ request แรกตื่นช้า axios จึงตั้ง timeout 60 วินาทีและขึ้นแถบแจ้งว่ากำลังรอ</li>
 <li>ที่อยู่ API อ่านจาก env <code>VITE_API_URL</code></li>
 </ul>
@@ -514,7 +572,8 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
  <li>8 ห้องที่ใช้ AI ตอนนี้น่าจะอยู่ tier full ทั้งหมด (ยังไม่ได้รันเช็ก) เส้นทาง cold start มีไว้สำหรับห้องใหม่</li>
  <li><b>ตอบกรรมการ:</b> "ห้องใหม่ยังไม่มีประวัติ จึงยืมรูปแบบของห้องประเภทเดียวกันมาทายก่อน พอข้อมูลสะสมถึงเกณฑ์ก็เปลี่ยนไปใช้โมเดลเต็ม"</li>
  </ul></li>
-<li><b>รันจริง:</b> รันด้วยคำสั่ง <code>python ml/saved/forecast.py --retrain --param-set D</code> (ค่าเริ่มต้นของ <code>--param-set</code> คือ D) แล้วเขียนตาราง <code>DemandForecast</code> ให้หน้าเว็บอ่าน · <b>ไม่ได้</b>ตั้งเวลาให้รันเองใน <code>scheduler.py</code> · คำสั่งอื่น: <code>--import-excel</code> (นำเข้าข้อมูลจริง), <code>--show-metrics</code></li>
+<li><b>พยากรณ์อย่างเดียว (ใช้โมเดลเดิม ไม่เทรน):</b> <code>python ml/saved/forecast.py --days 120</code> เขียนผลล่วงหน้า 120 วันลง <code>DemandForecast</code> · ตอนนี้มีถึง 6 ก.พ. 2570 ทั้งในเครื่องและบนเว็บจริง</li>
+<li><b>เทรนใหม่:</b> รันด้วยคำสั่ง <code>python ml/saved/forecast.py --retrain --param-set D</code> (ค่าเริ่มต้นของ <code>--param-set</code> คือ D) แล้วเขียนตาราง <code>DemandForecast</code> ให้หน้าเว็บอ่าน · <b>ไม่ได้</b>ตั้งเวลาให้รันเองใน <code>scheduler.py</code> · คำสั่งอื่น: <code>--import-excel</code> (นำเข้าข้อมูลจริง), <code>--show-metrics</code></li>
 </ul>
 <h3>ผลโมเดล production เทียบ baseline รายห้อง</h3>
 <p class="m">ชุดที่ดีที่สุดของแต่ละห้องจาก <code>consolidated_results.csv</code> เทียบกับ seasonal naive (ทายเท่ากับวันเดียวกันสัปดาห์ก่อน) จาก <code>baseline_results.csv</code> · test 229 วันต่อห้อง</p>
@@ -603,7 +662,8 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <li>DB: Neon Postgres ผ่าน env <code>DATABASE_URL</code> (ตั้งเองใน dashboard ของ Render) · ในเครื่องตั้งผ่าน <code>.env</code> ให้ใช้ PostgreSQL ที่ localhost ถ้าไม่ตั้งจะใช้ <code>db.sqlite3</code></li>
 <li>env สำคัญ: <code>DATABASE_URL</code>, <code>BREVO_API_KEY</code>, <code>SECRET_KEY</code> (Render สุ่มให้), <code>DEBUG=False</code>, <code>APPROVER_EMAIL</code>, <code>SITE_URL</code> (ใช้สร้างลิงก์ในอีเมล), <code>FRONTEND_URL</code></li>
 <li>CORS อนุญาตเฉพาะ origin ของ frontend ที่กำหนด</li>
-<li>โมเดลและ meta (<code>saved_models*</code>, <code>saved_meta*</code>) อยู่ใน .gitignore ไม่ถูก commit</li>
+<li>โมเดลและ meta (<code>saved_models*</code>, <code>saved_meta*</code>) อยู่ใน .gitignore ไม่ถูก commit · Render ไม่มี lightgbm/xgboost จึง<b>ไม่ได้รันโมเดลเอง</b></li>
+<li><b>ผลพยากรณ์บนเว็บจริง:</b> รัน <code>ml/saved/forecast.py --days 120</code> จากเครื่อง โดยชี้ <code>DATABASE_URL</code> ไปที่ Neon สคริปต์ใช้โมเดลที่เทรนไว้แล้ว (ไม่เทรนใหม่) เขียนผลลงตาราง <code>DemandForecast</code> ล่วงหน้า 120 วัน</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -705,7 +765,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <p class="tl"><span class="lab">สรุปสั้น</span>จุดที่เล่มอาจไม่ตรงกับระบบจริง: ชนิดฐานข้อมูล, ผลของ Weighted Averaging, คำว่า "อย่างมีนัยสำคัญ" และ LSTM</p>
 <div class="w"><b>จุดที่เล่มกับระบบจริงอาจไม่ตรงกัน ต้องตอบให้สอดคล้อง</b>
 <ul>
-<li><b>ฐานข้อมูล:</b> บทคัดย่อเขียน SQLite · ระบบรองรับทั้งสองแบบ ค่าเริ่มต้นเป็น SQLite และสลับเป็น PostgreSQL เมื่อตั้ง env <code>DATABASE_URL</code> ซึ่ง production (Neon) และเครื่องที่พัฒนาอยู่ตอนนี้ใช้ PostgreSQL ถ้าเล่มจะคง SQLite ไว้ ควรเพิ่มว่า production ใช้ PostgreSQL</li>
+<li><b>ฐานข้อมูล:</b> บทคัดย่อแก้เป็น PostgreSQL แล้ว (ตรงกับระบบจริง: ในเครื่องและ production ใช้ PostgreSQL ส่วน SQLite เป็นแค่ค่าสำรองเมื่อไม่ได้ตั้ง <code>DATABASE_URL</code>) · ตัวเลขในบทคัดย่อใช้ 81.3% เทียบ seasonal naive 73.7%</li>
 <li><b>Weighted Averaging:</b> ระบบคำนวณการถ่วงน้ำหนักจริง แต่ผลคือโมเดลเดี่ยวชนะ blend ทุกกรณี (น้ำหนัก 100/0 ครบ 56 แถว) อย่าเขียนหรือพูดว่า "Weighted Averaging ลดความคลาดเคลื่อนได้อย่างมีนัยสำคัญเมื่อเทียบกับแบบจำลองเดี่ยว" ให้พูดว่า "เปรียบเทียบการถ่วงน้ำหนักกับโมเดลเดี่ยว แล้วระบบเลือกแบบที่ดีที่สุดรายห้อง ผลคือโมเดลเดี่ยวดีกว่าในข้อมูลชุดนี้"</li>
 <li><b>"อย่างมีนัยสำคัญ":</b> ยังไม่มีการทดสอบนัยสำคัญทางสถิติ อย่าใช้คำนี้กับผลของงานเราเอง</li>
 <li><b>บทที่ 1:</b> ปิดย่อหน้าเป็นคำถามวิจัย "Weighted Averaging ให้ผลดีกว่าโมเดลเดี่ยวหรือไม่" ผลที่ออกมาจึงเป็นคำตอบ ไม่ขัดกับบทนำ</li>
@@ -732,6 +792,8 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <li><b>WebSocket ใช้ InMemoryChannelLayer:</b> ใช้ได้ในโปรเซสเดียว ถ้าขยายหลายโปรเซสต้องเปลี่ยนเป็น Redis · ช่อง <code>ws/retrain/</code> ยังไม่มีโค้ดส่วนไหนส่งความคืบหน้าเข้าไป</li>
 <li>เวลาปิดอาคาร 21:00 ใช้แค่แสดงผล ไม่ได้บังคับตอนจอง (เพดานความยาวมีแล้ว 21 วัน)</li>
 <li>JWT เก็บใน localStorage/sessionStorage และ access token อายุ 1 วัน ถ้าเกิด XSS token จะหลุดได้นานกว่าแบบอายุสั้น</li>
+<li><b>ผลพยากรณ์ต้องรันเอง:</b> ยังไม่มีงานตั้งเวลาให้พยากรณ์ใหม่ทุกวัน ตอนนี้รันล่วงหน้า 120 วันครั้งเดียว ยิ่งไกลยิ่งแม่นน้อยลง (recursive สะสม error)</li>
+<li><b>ข้อมูลจริงจบเดือน เม.ย. 2569:</b> หลังจากนั้นแทบไม่มีการจองในระบบ ผลพยากรณ์ช่วงข้างหน้าจึงเกือบทั้งหมดเป็น "ต่ำ" (ยังว่าง)</li>
 </ul></div>
 
 <!-- ============================================================ -->
@@ -802,6 +864,27 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 </ul></details>
 <details><summary>ทำไมรหัสผ่านผิดได้ 400 ไม่ใช่ 401?</summary>
 <p>view ล็อกอิน (<code>LDAPTokenObtainPairView</code>) ตอบ 400 เมื่อข้อมูลล็อกอินไม่ผ่าน ผลตรงตามที่ต้องการคือเข้าระบบไม่ได้ ไม่ได้ token และไม่เปิดเผยข้อมูลบัญชี</p></details>
+<details><summary>ER: ทำไมมี 11 ตาราง?</summary>
+<ul><li>ฐานข้อมูลตัวเดียว (PostgreSQL) แบ่ง 11 ตารางตามหลัก Normalization: ข้อมูลคนละเรื่องอยู่คนละตาราง เชื่อมด้วย foreign key</li>
+<li>ถ้ารวมตารางเดียว ชื่อ/อีเมลผู้จองจะซ้ำทุกแถว แก้อีเมลต้องไล่แก้ทุกแถว และเพิ่มห้องที่ยังไม่มีใครจองไม่ได้</li></ul></details>
+<details><summary>ER: ทำไมแต่ละคู่ตารางมีเส้นเดียว ใครอนุมัติเก็บที่ไหน?</summary>
+<ul><li>ออกแบบให้ 1 คู่ตาราง = 1 เส้น = 1 การกระทำ: User–Booking มีแค่ "จอง"</li>
+<li>คนอนุมัติ/ปฏิเสธดูจาก <code>bookinglog.changed_by</code> ซึ่งเก็บทั้งเวลา สถานะก่อน/หลัง และเหตุผล ครบกว่าคอลัมน์ approved_by เดิม</li></ul></details>
+<details><summary>ER: many-to-many มีที่ไหน ทำไมต้องมีตารางกลาง?</summary>
+<ul><li>Room ↔ Facility: ห้องหนึ่งมีหลายอุปกรณ์ อุปกรณ์หนึ่งอยู่ได้หลายห้อง ฐานข้อมูลเก็บ M:N ตรง ๆ ไม่ได้ จึงแตกเป็น 1:N สองเส้นผ่าน <code>roomfacility</code></li>
+<li>ตารางกลางเก็บข้อมูลของความสัมพันธ์ได้ด้วย คือจำนวนอุปกรณ์ (<code>quantity</code>) และกันซ้ำด้วย unique (room, facility)</li></ul></details>
+<details><summary>ER: NULL / ปลายเส้นวงกลมหมายความว่าอะไร?</summary>
+<ul><li><code>BigInt NULL</code> = foreign key ที่ปล่อยว่างได้ ปลายเส้นฝั่งที่ถูกชี้จึงเป็น <code>o|</code> (ศูนย์หรือหนึ่ง)</li>
+<li>เช่น log ของการจองทั้งเทอมไม่มี booking_id · ผู้ใช้ถูกลบแล้ว changed_by เป็น NULL แต่ประวัติยังอยู่ (SET_NULL)</li></ul></details>
+<details><summary>เดโม: ทำไมทุกห้องขึ้น "ยังว่าง" ไม่มี "รีบจอง" เลย?</summary>
+<p>ข้อมูลจริงที่ได้รับมาจบเดือนเมษายน หลังจากนั้นยังไม่มีการใช้งานจริงในระบบ โมเดลพยากรณ์จากประวัติล่าสุดจึงทายว่าความต้องการต่ำ ถ้าเปิดใช้จริงและมีการจองเข้ามา ระดับจะปรับตามข้อมูลเอง</p></details>
+<details><summary>ตัวเลข accuracy 84–99% ที่ขึ้นตอนรัน forecast.py คืออะไร ทำไมไม่ตรงกับ 81.3%?</summary>
+<p>เป็นค่าวัดรายห้องที่บันทึกไว้ตอนเทรนโมเดล production วัดคนละวิธีกับผลในเล่ม ตัวเลขที่รายงานคือ 81.3% (direct ชุด C บน test เฉลี่ย 8 ห้อง) ห้ามเอาตัวเลขตอนรันไปอ้าง</p></details>
+<details><summary>ผลพยากรณ์ขึ้นบนเว็บได้ยังไง ทำไมไม่พยากรณ์ตอนผู้ใช้กดค้นหา?</summary>
+<ul><li>รัน <code>forecast.py</code> ล่วงหน้าแล้วเขียนลงตาราง <code>DemandForecast</code> เว็บแค่อ่านตารางนี้ ค้นหาจึงเร็ว ไม่ต้องโหลดโมเดลทุก request</li>
+<li>เว็บจริงบน Render ไม่ได้ติดตั้ง lightgbm/xgboost จึงรันจากเครื่องแล้วชี้ไปที่ฐานข้อมูล Neon · งานต่อไปคือตั้งเวลาให้รันอัตโนมัติทุกวัน</li></ul></details>
+<details><summary>ทำไมจำกัดการล็อกอินต่อบัญชี ไม่ใช่ต่อ IP?</summary>
+<p>ในมหาวิทยาลัยนักศึกษาทั้งตึกออกเน็ตด้วย IP เดียวกัน (NAT) ถ้านับต่อ IP คนเดียวพิมพ์ผิดรัว ๆ จะล็อกทั้งตึก จึงนับต่อบัญชีที่กรอก: ล็อกอิน 10 ครั้ง/5 นาที ขอลิงก์รีเซ็ตรหัส 3 ครั้ง/ชม.</p></details>
 <h3>AI</h3>
 <details><summary>Weighted Averaging ใช้จริงไหม ทำไมผลเป็นโมเดลเดี่ยว?</summary>
 <ul>
