@@ -10,6 +10,7 @@ from django.contrib.auth import login
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
 from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -33,6 +34,7 @@ from .models import (
     TermBooking, Booking, BookingLog,
     DemandForecast, Notification, RoomUsageStat, MaintenanceBlock,
 )
+from .maintenance import sync_room_status
 from .overlap import (
     ACTIVE_BOOKING_STATUSES, TERM_BLOCKING_STATUSES, find_booking_conflict, find_term_conflict,
 )
@@ -1218,6 +1220,15 @@ class RoomViewSet(viewsets.ModelViewSet):
 # ============================================================
 # TERM BOOKING ViewSet
 # ============================================================
+def _status_param(request, model):
+    """?status=pending — กรองตามสถานะ ให้หน้าแอดมินดึงรายการรออนุมัติได้ครบ
+    (เดิมดึงแค่หน้าแรกของทุกรายการ คำขอที่รออนุมัติอาจหลุดไปหน้าอื่น)"""
+    status = request.query_params.get('status')
+    if status and status not in dict(model.STATUS_CHOICES):
+        raise ValidationError({'status': 'สถานะไม่ถูกต้อง'})
+    return status
+
+
 def _live_bookings(qs):
     """ตัดคำขอจองรายครั้งที่เลยเวลาไปแล้วโดยยังไม่ได้อนุมัติออก — ถือว่าหมดอายุ
     ไม่ต้องให้แอดมินไล่กดปฏิเสธเอง (แถวยังอยู่ในฐานข้อมูลและใน export)"""
@@ -1249,6 +1260,9 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.filter(status='active')
 
+        status = _status_param(self.request, TermBooking)
+        if status:
+            qs = qs.filter(status=status)
         room   = _query_param(self.request, 'room', int)
         dow    = _query_param(self.request, 'day_of_week', int)
         term   = self.request.query_params.get('term_name')
@@ -1701,9 +1715,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         # AnonymousUser — กด checkin/cancel จาก email
         if not user.is_authenticated:
             return Booking.objects.all().select_related('user', 'room__building')
-        if is_admin_or_staff(user):
-            return _live_bookings(Booking.objects.all()).select_related('user', 'room__building')
-        return _live_bookings(Booking.objects.filter(user=user)).select_related('user', 'room__building')
+        qs = Booking.objects.all() if is_admin_or_staff(user) else Booking.objects.filter(user=user)
+        status = _status_param(self.request, Booking)
+        if status:
+            qs = qs.filter(status=status)
+        return _live_bookings(qs).select_related('user', 'room__building')
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):
@@ -2099,7 +2115,14 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user)
+        # ใหม่สุดก่อน — เดิมไม่เรียง ฐานข้อมูลคืนลำดับสุ่ม หน้าเว็บโหลดแค่หน้าแรก
+        # (20 รายการ) คนที่มีแจ้งเตือนเยอะจึงไม่เห็นอันล่าสุดในกระดิ่ง
+        return Notification.objects.filter(user=self.request.user).order_by('-created_at', '-id')
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        """จำนวนที่ยังไม่อ่านทั้งหมด — หน้าเว็บเคยนับจากแค่ 20 รายการที่โหลดมา"""
+        return Response({'count': self.get_queryset().filter(is_read=False).count()})
 
     @action(detail=True, methods=['post'])
     def read(self, request, pk=None):
@@ -2297,7 +2320,7 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
             old_room = block.room
             block = serializer.save()
             for r in {old_room, block.room}:
-                self._sync_room_status(r)
+                sync_room_status(r)
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
@@ -2309,22 +2332,6 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         self._close(self.get_object(), 'cancelled')
         return Response({'message': 'ยกเลิกช่วงซ่อมบำรุงแล้ว'})
 
-    @staticmethod
-    def _sync_room_status(room):
-        """ตั้งสถานะห้องตามช่วงซ่อมที่ครอบ "ตอนนี้" — ห้องที่แอดมินปิดใช้งาน
-        (disabled) ต้องคงไว้ตามเดิม ไม่ถูกเปิดกลับเพราะปิดงานซ่อม"""
-        now = timezone.now()
-        in_window = MaintenanceBlock.objects.filter(
-            room=room, status__in=['scheduled', 'active'],
-            start_time__lte=now, end_time__gt=now,
-        ).exists()
-        if in_window and room.status not in ('maintenance', 'disabled'):
-            room.status = 'maintenance'
-            room.save(update_fields=['status'])
-        elif not in_window and room.status == 'maintenance':
-            room.status = 'available'
-            room.save(update_fields=['status'])
-
     @classmethod
     def _close(cls, block, status):
         """ปิดช่วงซ่อม แล้วคืนสถานะห้องตามช่วงซ่อมที่ยังครอบตอนนี้ — เดิมดูว่ายังมี
@@ -2332,7 +2339,7 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         ถัดไป และห้องที่ disabled ถูกเปิดกลับเป็น available เอง"""
         block.status = status
         block.save(update_fields=['status'])
-        cls._sync_room_status(block.room)
+        sync_room_status(block.room)
 
 
 # ============================================================
@@ -2361,6 +2368,20 @@ class DashboardView(generics.GenericAPIView):
             Booking.objects.filter(status__in=USED_BOOKING_STATUSES)
             .values('room__name').annotate(count=Count('id')).order_by('-count')[:5]
         )
+        # กราฟ 7 วันล่าสุดในหน้าแอดมิน — นับจากฐานข้อมูลทั้งหมด (เดิมหน้าเว็บนับเอง
+        # จากแค่ 20 รายการที่โหลดมา ตัวเลขจึงต่ำกว่าจริงมาก)
+        week_start = today - timedelta(days=6)
+        per_day = dict(
+            Booking.objects.filter(
+                start_time__date__gte=week_start, start_time__date__lte=today,
+                status__in=['pending'] + USED_BOOKING_STATUSES,
+            ).annotate(day=TruncDate('start_time')).values('day').annotate(n=Count('id')).values_list('day', 'n')
+        )
+        last_7_days = [
+            {'date': (week_start + timedelta(days=i)).isoformat(),
+             'count': per_day.get(week_start + timedelta(days=i), 0)}
+            for i in range(7)
+        ]
         demand_alerts = list(
             DemandForecast.objects.filter(forecast_date=today, demand_level__in=['urgent', 'high'])
             .values('room__name', 'hour', 'predicted_demand', 'term_demand', 'dynamic_demand', 'demand_level')
@@ -2375,6 +2396,7 @@ class DashboardView(generics.GenericAPIView):
             'utilization_rate': round((today_dynamic + today_term) / max(total_rooms, 1) * 100, 1),
             'popular_rooms':    list(popular),
             'demand_alerts':    demand_alerts,
+            'last_7_days':      last_7_days,
         })
 
 

@@ -636,10 +636,13 @@ function NotificationBell() {
   const pingTimerRef = useRef(null)
 
   const refetch = () => {
+    // รายการเรียงใหม่สุดก่อน (หน้าแรก 20 รายการ) ส่วนจำนวนที่ยังไม่อ่านขอจาก
+    // backend แยก — เดิมนับจากแค่ 20 รายการที่โหลดมา ตัวเลขในกระดิ่งจึงต่ำกว่าจริง
     api.get('/notifications/').then(res => {
-      const list = res.data.results || res.data || []
-      setNotifications(list)
-      setUnreadCount(list.filter(n => !n.is_read).length)
+      setNotifications(res.data.results || res.data || [])
+    }).catch(() => {})
+    api.get('/notifications/unread-count/').then(res => {
+      setUnreadCount(res.data.count ?? 0)
     }).catch(() => {})
   }
 

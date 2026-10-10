@@ -2072,38 +2072,38 @@ export default function AdminPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [dashRes, bookingRes, termRes, roomsRes, buildingsRes] = await Promise.all([
+        const [dashRes, bookingRes, termRes, roomsRes, buildingsRes, pendingRes, pendingTermRes] = await Promise.all([
           api.get('dashboard/'),
           api.get('bookings/'),
           api.get('term-bookings/'),
           api.get('rooms/admin-status/').catch(() => ({ data: [] })),
           api.get('buildings/').catch(() => ({ data: [] })),
+          // ดึงรายการรออนุมัติแยกต่างหาก — หน้าแรกของรายการทั้งหมดมีแค่ 20 รายการ
+          // คำขอที่รออนุมัติอาจไม่อยู่ในนั้น แล้วไม่ขึ้นให้กดอนุมัติ
+          api.get('bookings/', { params: { status: 'pending' } }).catch(() => ({ data: [] })),
+          api.get('term-bookings/', { params: { status: 'pending' } }).catch(() => ({ data: [] })),
         ])
         setDashboard(dashRes.data)
         setAdminRooms(Array.isArray(roomsRes.data) ? roomsRes.data : [])
         setBuildingsList(Array.isArray(buildingsRes.data) ? buildingsRes.data : (buildingsRes.data.results || []))
-        const all = bookingRes.data.results || []
+        const withPending = (list, pendingData) => {
+          const pending = pendingData.results ?? pendingData ?? []
+          const ids = new Set(list.map(x => x.id))
+          return [...(Array.isArray(pending) ? pending : []).filter(x => !ids.has(x.id)), ...list]
+        }
+        const all = withPending(bookingRes.data.results || [], pendingRes.data)
         setBookings(all)
         setBookingsNextUrl(bookingRes.data.next || null)
 
         // term bookings — รองรับ paginated หรือ array โดยตรง
         const termAll = termRes.data.results ?? termRes.data ?? []
-        setTermBookings(Array.isArray(termAll) ? termAll : [])
+        setTermBookings(withPending(Array.isArray(termAll) ? termAll : [], pendingTermRes.data))
 
+        // กราฟ 7 วันล่าสุด: backend นับจากการจองทั้งหมด (เดิมนับจาก 20 รายการที่โหลดมา)
         const days = ['อา','จ','อ','พ','พฤ','ศ','ส']
-        const stats = []
-        for (let i=6;i>=0;i--) {
-          const d = new Date(); d.setDate(d.getDate()-i)
-          const ds = localDateStr(d)
-          stats.push({
-            day: days[d.getDay()], date: ds,
-            count: all.filter(b =>
-              localDateStr(new Date(b.start_time)) === ds &&
-              (b.status === 'approved' || b.status === 'pending')
-            ).length
-          })
-        }
-        setWeekStats(stats)
+        setWeekStats((dashRes.data.last_7_days || []).map(({ date, count }) => ({
+          day: days[new Date(`${date}T00:00:00`).getDay()], date, count,
+        })))
       } catch { navigate('/login') }
       finally  { setLoading(false) }
     }

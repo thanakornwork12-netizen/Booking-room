@@ -142,5 +142,10 @@ def start():
 
     from booking.config import REMINDER_CHECK_EVERY_MINUTES
     scheduler.add_job(send_checkin_reminders, 'interval', minutes=REMINDER_CHECK_EVERY_MINUTES)
+    # ปิดช่วงซ่อมที่หมดเวลา และเปลี่ยนสถานะห้องเมื่อช่วงซ่อมเริ่ม/จบ
+    from booking.config import MAINTENANCE_SYNC_EVERY_MINUTES
+    from booking.maintenance import refresh_maintenance
+    scheduler.add_job(refresh_maintenance, 'interval', minutes=MAINTENANCE_SYNC_EVERY_MINUTES,
+                      next_run_time=timezone.now())
 
     scheduler.start()

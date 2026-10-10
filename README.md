@@ -17,8 +17,9 @@
 | [booking/serializers.py](booking/serializers.py) | ตรวจข้อมูลที่ส่งเข้ามา (กฎการจอง, รหัสผ่าน, ล็อกอิน LDAP) |
 | [booking/overlap.py](booking/overlap.py) | ตรวจการจองชนกัน (รายครั้ง / ทั้งเทอม / ช่วงซ่อม) |
 | [booking/signals.py](booking/signals.py) | ส่งอีเมลเมื่อสถานะการจองเปลี่ยน |
-| [booking/scheduler.py](booking/scheduler.py) | งานเบื้องหลัง: อีเมลเตือนก่อนเช็คอิน |
+| [booking/scheduler.py](booking/scheduler.py) | งานเบื้องหลัง: อีเมลเตือนก่อนเช็คอิน และอัปเดตสถานะช่วงซ่อม |
 | [booking/throttles.py](booking/throttles.py) | จำกัดการยิงล็อกอิน/ลืมรหัสผ่านซ้ำ |
+| [booking/maintenance.py](booking/maintenance.py) | ปิดช่วงซ่อมที่หมดเวลา และตั้งสถานะห้องตามช่วงซ่อม |
 | [frontend/src/config.js](frontend/src/config.js) | **ค่าที่ปรับได้ของหน้าเว็บ** รวมไว้ที่เดียว |
 | [frontend/src/pages/](frontend/src/pages/) | หน้าเว็บแต่ละหน้า (React) |
 | [ml/saved/forecast.py](ml/saved/forecast.py) | AI ที่ใช้งานจริง: เทรน + เขียนผลพยากรณ์ลงฐานข้อมูล |
@@ -42,7 +43,7 @@ python manage.py test booking --noinput
 
 ## แก้พารามิเตอร์
 
-> เลขบรรทัดตรงกับโค้ด ณ วันที่ 06/10/2026 (commit `ab30ef3` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
+> เลขบรรทัดตรงกับโค้ด ณ วันที่ 10/10/2026 (commit `e3a2486` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
 > ให้ค้นด้วยชื่อพารามิเตอร์ (`Ctrl+F` / `grep -n ชื่อ ไฟล์`) แล้วรัน
 > `python scripts/check_readme_params.py` เพื่อเช็คว่าเลขบรรทัดใน README ยังตรงไหม
 
@@ -90,6 +91,7 @@ python manage.py test booking --noinput
 | `MAINTENANCE_MAX_DEMAND` | [booking/config.py:44](booking/config.py#L44) | `0.10` | หาช่วงปิดซ่อม: demand ต่ำกว่านี้นับว่าว่าง | ค่าเริ่มต้น แอดมินส่งค่าอื่นทาง URL ได้ |
 | `MAINTENANCE_MIN_HOURS` | [booking/config.py:45](booking/config.py#L45) | `3` | หาช่วงปิดซ่อม: ต้องว่างติดกันอย่างน้อยกี่ชั่วโมง | ค่าเริ่มต้น |
 | `MAINTENANCE_DAYS_AHEAD` | [booking/config.py:46](booking/config.py#L46) | `14` | หาช่วงปิดซ่อม: มองล่วงหน้ากี่วัน | ค่าเริ่มต้น |
+| `MAINTENANCE_SYNC_EVERY_MINUTES` | [booking/config.py:47](booking/config.py#L47) | `1` | งานเบื้องหลังปิดช่วงซ่อมที่หมดเวลาและอัปเดตสถานะห้องทุกกี่นาที | ต้องรีสตาร์ต server |
 
 ### 3. หน้าเว็บ — `frontend/src/config.js`
 

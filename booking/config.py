@@ -44,3 +44,4 @@ SPLIT_SUGGESTIONS_MAX = 8                    # แผนจองสลับห
 MAINTENANCE_MAX_DEMAND = 0.10       # demand ต่ำกว่านี้นับว่า "ว่าง" พอจะปิดซ่อม
 MAINTENANCE_MIN_HOURS = 3           # ต้องว่างติดกันอย่างน้อยกี่ชั่วโมง
 MAINTENANCE_DAYS_AHEAD = 14         # มองล่วงหน้ากี่วัน
+MAINTENANCE_SYNC_EVERY_MINUTES = 1  # ปิดช่วงซ่อมที่หมดเวลา/อัปเดตสถานะห้องทุกกี่นาที
