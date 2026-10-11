@@ -12,7 +12,7 @@
 |---|---|
 | [room_booking/settings.py](room_booking/settings.py) | ตั้งค่า Django: ฐานข้อมูล, อีเมล, JWT, กฎที่ตั้งผ่าน env ได้ |
 | [booking/config.py](booking/config.py) | **ค่าที่ปรับได้ของระบบจอง** รวมไว้ที่เดียว |
-| [booking/models.py](booking/models.py) | ตารางฐานข้อมูล (11 ตาราง) |
+| [booking/models.py](booking/models.py) | ตารางฐานข้อมูล (12 ตาราง) |
 | [booking/views.py](booking/views.py) | API ทั้งหมด (ค้นหา จอง อนุมัติ ยกเลิก แดชบอร์ด export) |
 | [booking/serializers.py](booking/serializers.py) | ตรวจข้อมูลที่ส่งเข้ามา (กฎการจอง, รหัสผ่าน, ล็อกอิน LDAP) |
 | [booking/overlap.py](booking/overlap.py) | ตรวจการจองชนกัน (รายครั้ง / ทั้งเทอม / ช่วงซ่อม) |
@@ -43,7 +43,7 @@ python manage.py test booking --noinput
 
 ## แก้พารามิเตอร์
 
-> เลขบรรทัดตรงกับโค้ด ณ วันที่ 11/10/2026 (commit `5a0badb` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
+> เลขบรรทัดตรงกับโค้ด ณ วันที่ 11/10/2026 (commit `7633d63` + การแก้ในเครื่อง) ถ้าบรรทัดเลื่อน
 > ให้ค้นด้วยชื่อพารามิเตอร์ (`Ctrl+F` / `grep -n ชื่อ ไฟล์`) แล้วรัน
 > `python scripts/check_readme_params.py` เพื่อเช็คว่าเลขบรรทัดใน README ยังตรงไหม
 

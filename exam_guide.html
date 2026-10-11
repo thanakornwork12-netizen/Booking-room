@@ -129,7 +129,7 @@ h2{font-size:20px;margin-top:48px}
 <tr><td>ทำไม calibration (72.6%) ต่ำกว่า test</td><td>ช่วง calibration ตรงปิดเทอมต่อเปิดเทอมซึ่งยากกว่า วิธีพื้นฐานก็ต่ำกว่า 5–6 จุดเหมือนกัน ไม่ใช่ข้อมูลรั่ว</td><td><a href="#s20">20</a></td></tr>
 <tr><td>ทำไมต้องดู balanced accuracy</td><td>ห้องว่างเยอะ ทาย "ต่ำ" ตลอดก็ได้ accuracy สูง (1C-MEETING 98.7%) balanced accuracy เฉลี่ย recall ทุกระดับ</td><td><a href="#s14">14</a></td></tr>
 <tr><td>กันจองซ้อนยังไง</td><td>ตรวจ 3 แหล่ง (จองรายครั้ง, คาบทั้งเทอม, ช่วงซ่อม) 2 ชั้น · จองพร้อมกันใช้ <code>select_for_update</code> ล็อกแถวห้อง</td><td><a href="#s8">8</a></td></tr>
-<tr><td>ER: ทำไม 11 ตาราง, เส้นแบบไหน</td><td>Normalization · ส่วนใหญ่ 1:N · M:N คู่เดียว Room–Facility ผ่าน <code>roomfacility</code> · 1 คู่ตาราง = 1 เส้น = 1 การกระทำ คนอนุมัติดูจาก <code>bookinglog</code></td><td><a href="#s5">5</a></td></tr>
+<tr><td>ER: ทำไม 12 ตาราง, เส้นแบบไหน</td><td>Normalization · ส่วนใหญ่ 1:N · M:N คู่เดียว Room–Facility ผ่าน <code>roomfacility</code> · 1 คู่ตาราง = 1 เส้น = 1 การกระทำ คนอนุมัติดูจาก <code>bookinglog</code></td><td><a href="#s5">5</a></td></tr>
 <tr><td>AI ไปอยู่ในเว็บยังไง</td><td>รัน <code>forecast.py</code> ล่วงหน้าแล้วเขียนตาราง <code>DemandForecast</code> เว็บแค่อ่าน ค้นหาจึงเร็ว (เว็บจริงไม่ได้รันโมเดลเอง)</td><td><a href="#s15">15</a></td></tr>
 <tr><td>(ตอนเดโม) ทำไมทุกห้องขึ้น "ยังว่าง"</td><td>ข้อมูลจริงจบ เม.ย. 2569 หลังจากนั้นยังไม่มีการใช้งานจริง โมเดลจึงทายต่ำ ถ้าเปิดใช้จริงระดับจะปรับตามข้อมูล</td><td><a href="#s20">20</a></td></tr>
 <tr><td>ทดสอบยังไง</td><td>test อัตโนมัติ 342 เคส + ทดสอบผ่านหน้าเว็บจริงด้วยเบราว์เซอร์อัตโนมัติ เจอและแก้บั๊ก 81 รายการ</td><td><a href="#s16">16</a></td></tr>
@@ -291,7 +291,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <tr><td>RoomUsageStat</td><td>room, date, total/term/dynamic bookings, utilization_rate</td><td>สถิติรายวัน</td></tr></table></div>
 <p class="m">ความสัมพันธ์หลัก: Building 1–N Room · Room 1–N Booking / TermBooking / MaintenanceBlock / DemandForecast · User 1–N Booking / TermBooking / Notification</p>
 <ul>
-<li><b>11 ตาราง แยกตามหลัก Normalization</b>: ข้อมูลคนละเรื่องอยู่คนละตาราง เชื่อมด้วย foreign key ข้อมูลไม่ซ้ำ แก้ที่เดียว</li>
+<li><b>12 ตาราง แยกตามหลัก Normalization</b>: ข้อมูลคนละเรื่องอยู่คนละตาราง เชื่อมด้วย foreign key ข้อมูลไม่ซ้ำ แก้ที่เดียว</li>
 <li>เกือบทุกเส้นเป็น <b>1:N</b> (ตารางที่มี FK คือฝั่ง "หลาย") มี <b>M:N คู่เดียว</b>คือ Room ↔ Facility ผ่านตารางกลาง <code>roomfacility</code> ที่เก็บ <code>quantity</code></li>
 <li><b>1 คู่ตาราง = 1 เส้น = 1 การกระทำ</b>: ไม่มีคอลัมน์ <code>approved_by</code> ในการจองแล้ว ใครอนุมัติ/ปฏิเสธดูจาก <code>bookinglog.changed_by</code> (User–Booking จึงมีแค่ "จอง")</li>
 <li>สัญลักษณ์ปลายเส้น: <code>||</code> หนึ่งเสมอ (FK ห้ามว่าง) · <code>o|</code> ศูนย์หรือหนึ่ง (FK เป็น NULL ได้ เช่น log ของการจองทั้งเทอมไม่มี booking_id) · <code>&gt;o</code> ศูนย์หรือหลาย</li>
@@ -917,8 +917,8 @@ Neon Postgres (DATABASE_URL)   Brevo (ส่งอีเมล)          LDAP �
 </ul></details>
 <details><summary>ทำไมรหัสผ่านผิดได้ 400 ไม่ใช่ 401?</summary>
 <p>view ล็อกอิน (<code>LDAPTokenObtainPairView</code>) ตอบ 400 เมื่อข้อมูลล็อกอินไม่ผ่าน ผลตรงตามที่ต้องการคือเข้าระบบไม่ได้ ไม่ได้ token และไม่เปิดเผยข้อมูลบัญชี</p></details>
-<details><summary>ER: ทำไมมี 11 ตาราง?</summary>
-<ul><li>ฐานข้อมูลตัวเดียว (PostgreSQL) แบ่ง 11 ตารางตามหลัก Normalization: ข้อมูลคนละเรื่องอยู่คนละตาราง เชื่อมด้วย foreign key</li>
+<details><summary>ER: ทำไมมี 12 ตาราง?</summary>
+<ul><li>ฐานข้อมูลตัวเดียว (PostgreSQL) แบ่ง 12 ตารางตามหลัก Normalization: ข้อมูลคนละเรื่องอยู่คนละตาราง เชื่อมด้วย foreign key</li>
 <li>ถ้ารวมตารางเดียว ชื่อ/อีเมลผู้จองจะซ้ำทุกแถว แก้อีเมลต้องไล่แก้ทุกแถว และเพิ่มห้องที่ยังไม่มีใครจองไม่ได้</li></ul></details>
 <details><summary>ER: ทำไมแต่ละคู่ตารางมีเส้นเดียว ใครอนุมัติเก็บที่ไหน?</summary>
 <ul><li>ออกแบบให้ 1 คู่ตาราง = 1 เส้น = 1 การกระทำ: User–Booking มีแค่ "จอง"</li>
