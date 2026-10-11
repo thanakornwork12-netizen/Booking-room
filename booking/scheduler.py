@@ -7,8 +7,8 @@ from django.utils import timezone
 from django.utils.html import escape
 
 
-def send_checkin_reminders():
-    """แจ้งเตือนให้ Check-in ก่อนเวลาเริ่ม (config.REMINDER_MINUTES_BEFORE นาที)"""
+def send_booking_reminders():
+    """อีเมลเตือนว่าใกล้ถึงเวลาจอง (ก่อนเริ่ม config.REMINDER_MINUTES_BEFORE นาที) พร้อมลิงก์ยกเลิก"""
     from booking.config import REMINDER_CHECK_EVERY_MINUTES, REMINDER_MINUTES_BEFORE
     from booking.models import Booking
     from django.core.mail import send_mail
@@ -22,7 +22,6 @@ def send_checkin_reminders():
 
     bookings = Booking.objects.filter(
         status='approved',
-        checked_in=False,
         reminded=False,
         start_time__gte=window_start,
         start_time__lte=window_end,
@@ -44,7 +43,7 @@ def send_checkin_reminders():
         if not user_email:
             continue
 
-        cancel_url = f'{SITE_URL}/api/bookings/{booking.id}/cancel-email/{booking.checkin_token}/'
+        cancel_url = f'{SITE_URL}/api/bookings/{booking.id}/cancel-email/{booking.cancel_token}/'
 
         try:
             send_mail(
@@ -116,7 +115,7 @@ def send_checkin_reminders():
 
             booking.reminded = True
             booking.save(update_fields=['reminded'])
-            print(f'✅ ส่งแจ้งเตือน Check-in: {booking.user.username} → {booking.room.name}')
+            print(f'✅ ส่งอีเมลเตือนการจอง: {booking.user.username} → {booking.room.name}')
 
         except Exception as e:
             print(f'❌ ส่งแจ้งเตือนไม่สำเร็จ: {e}')
@@ -130,7 +129,7 @@ def start():
 
     argv = ' '.join(sys.argv).lower()
     # daphne คือเซิร์ฟเวอร์ที่ใช้จริงบน Render (render.yaml) — เดิมไม่อยู่ในรายการนี้
-    # งานเตือนเช็คอินจึงไม่เคยเริ่มทำงานบน production
+    # งานเตือนก่อนถึงเวลาจองจึงไม่เคยเริ่มทำงานบน production
     server_mode = (
         any(name in argv for name in ('runserver', 'gunicorn', 'uvicorn', 'daphne'))
         or os.environ.get('RUN_MAIN') == 'true'
@@ -141,7 +140,7 @@ def start():
     scheduler = BackgroundScheduler()
 
     from booking.config import REMINDER_CHECK_EVERY_MINUTES
-    scheduler.add_job(send_checkin_reminders, 'interval', minutes=REMINDER_CHECK_EVERY_MINUTES)
+    scheduler.add_job(send_booking_reminders, 'interval', minutes=REMINDER_CHECK_EVERY_MINUTES)
     # ปิดช่วงซ่อมที่หมดเวลา และเปลี่ยนสถานะห้องเมื่อช่วงซ่อมเริ่ม/จบ
     from booking.config import MAINTENANCE_SYNC_EVERY_MINUTES
     from booking.maintenance import refresh_maintenance

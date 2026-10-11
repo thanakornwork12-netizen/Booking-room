@@ -46,39 +46,31 @@ class EmailPageEscapingTests(TestCase):
         self.assertNotIn(PAYLOAD, html, 'สคริปต์ดิบหลุดลงหน้า HTML')
         self.assertIn('&lt;script&gt;', html, 'ข้อความควรถูก escape แล้วยังแสดงอยู่')
 
-    def test_checkin_page_escapes_booking_title(self):
-        b = self.make_booking()
-        r = self.client.get(f'/api/bookings/{b.id}/checkin/{b.checkin_token}/')
-        self.assertEqual(r.status_code, 200)
-        self.assert_not_executable(r)
-
     def test_cancel_confirm_page_escapes_booking_title(self):
         b = self.make_booking()
-        r = self.client.get(f'/api/bookings/{b.id}/cancel-email/{b.checkin_token}/')
+        r = self.client.get(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         self.assertEqual(r.status_code, 200)
         self.assert_not_executable(r)
 
     def test_cancel_success_page_escapes_booking_title(self):
         b = self.make_booking()
-        r = self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.checkin_token}/')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         self.assertEqual(r.status_code, 200)
         self.assert_not_executable(r)
 
-    def test_checkin_page_escapes_room_name(self):
+    def test_cancel_page_escapes_room_name(self):
         self.room.name = PAYLOAD
         self.room.save(update_fields=['name'])
         b = self.make_booking(title='ประชุมปกติ')
-        r = self.client.get(f'/api/bookings/{b.id}/checkin/{b.checkin_token}/')
+        r = self.client.get(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         self.assertEqual(r.status_code, 200)
         self.assert_not_executable(r)
 
-    def test_already_checked_in_page_escapes_room_name(self):
+    def test_already_cancelled_page_escapes_room_name(self):
         self.room.name = PAYLOAD
         self.room.save(update_fields=['name'])
-        b = self.make_booking(title='ประชุมปกติ')
-        b.checked_in = True
-        b.save(update_fields=['checked_in'])
-        r = self.client.get(f'/api/bookings/{b.id}/checkin/{b.checkin_token}/')
+        b = self.make_booking(title='ประชุมปกติ', status='cancelled')
+        r = self.client.get(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         self.assertEqual(r.status_code, 200)
         self.assert_not_executable(r)
 

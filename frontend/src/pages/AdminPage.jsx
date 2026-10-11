@@ -787,7 +787,6 @@ const buildMaintenanceInsights = ({
       approvedCount: stat.approved_count || 0,
       completedCount: stat.completed_count || 0,
       pendingCount: stat.pending_count || 0,
-      checkedInCount: stat.checked_in_count || 0,
       termCount: stat.term_count || 0,
       termTodayCount: stat.term_today_count || 0,
       termActiveCount: stat.term_active_count || 0,
@@ -1467,7 +1466,6 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
                             <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${eff.bg} ${eff.text}`}>
                               {eff.label}
                             </span>
-                            {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">✓ Check-in</span>}
                           </div>
                           <p className="text-sm text-blue-600 font-medium mb-1 truncate">{b.room_name||`ห้อง #${b.room}`}</p>
                           <div className="flex gap-3 text-xs text-slate-400 flex-wrap">
@@ -1713,7 +1711,6 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <p className="font-bold text-slate-900 text-sm truncate">{b.title}</p>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${eff.bg} ${eff.text}`}>{eff.label}</span>
-                          {b.checked_in && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">✓ Check-in</span>}
                         </div>
                         <p className="text-xs text-blue-600 mb-1">{b.room_name}</p>
                         <div className="flex gap-3 text-xs text-slate-400">

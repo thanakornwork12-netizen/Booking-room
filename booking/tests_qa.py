@@ -247,7 +247,7 @@ class SearchQATests(QABase):
         self.assertEqual(self.ids(self.search(attendees=50)), {446})
 
     def test_search_excludes_booked_room(self):
-        for status in ('pending', 'approved', 'checked_in'):
+        for status in ('pending', 'approved'):
             with self.subTest(status=status):
                 b = Booking.objects.create(user=self.user_b, room=self.room, title='x', attendees=5,
                                            start_time=aware(self.tue, 14), end_time=aware(self.tue, 16),

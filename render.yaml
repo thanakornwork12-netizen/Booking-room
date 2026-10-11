@@ -19,7 +19,7 @@ services:
         value: "False"
       - key: SECRET_KEY
         generateValue: true
-      # ใช้สร้างลิงก์ในอีเมล — ไม่ตั้งแล้วลิงก์เช็คอิน/ยกเลิก/รีเซ็ตรหัสผ่านจะชี้
+      # ใช้สร้างลิงก์ในอีเมล — ไม่ตั้งแล้วลิงก์ยกเลิก/รีเซ็ตรหัสผ่านจะชี้
       # ไป localhost (ค่าเริ่มต้นใน settings.py) ตั้งเองใน dashboard:
       # SITE_URL = URL ของ backend นี้, FRONTEND_URL = URL ของหน้าเว็บ React
       - key: SITE_URL

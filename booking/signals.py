@@ -465,7 +465,7 @@ def send_booking_pending_email(instance):
 
     start_thai = instance.start_time.astimezone(THAI_TZ)
     end_thai   = instance.end_time.astimezone(THAI_TZ)
-    cancel_url = f'{SITE_URL}/api/bookings/{instance.id}/cancel-email/{instance.checkin_token}/'
+    cancel_url = f'{SITE_URL}/api/bookings/{instance.id}/cancel-email/{instance.cancel_token}/'
 
     plain_text = f'''
 สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
@@ -592,7 +592,7 @@ def send_booking_pending_email(instance):
 
 
 def send_booking_confirmation_email(instance):
-    """ส่งอีเมลยืนยันเมื่อแอดมินอนุมัติการจอง พร้อมปุ่ม Check-in และ ยกเลิก"""
+    """ส่งอีเมลยืนยันเมื่อแอดมินอนุมัติการจอง พร้อมปุ่มยกเลิก/คืนห้องก่อนเวลา"""
     user_email = get_recipient_email(instance.user)
     if not user_email:
         logger.warning('ไม่ส่งอีเมลยืนยัน เพราะ user %s ไม่มี email', instance.user_id)
@@ -601,8 +601,7 @@ def send_booking_confirmation_email(instance):
     start_thai = instance.start_time.astimezone(THAI_TZ)
     end_thai   = instance.end_time.astimezone(THAI_TZ)
 
-    checkin_url = f'{SITE_URL}/api/bookings/{instance.id}/checkin/{instance.checkin_token}/'
-    cancel_url  = f'{SITE_URL}/api/bookings/{instance.id}/cancel-email/{instance.checkin_token}/'
+    cancel_url  = f'{SITE_URL}/api/bookings/{instance.id}/cancel-email/{instance.cancel_token}/'
 
     plain_text = f'''
 สวัสดีคุณ {instance.user.get_full_name() or instance.user.username}
@@ -620,8 +619,7 @@ def send_booking_confirmation_email(instance):
 ผู้เข้าร่วม: {instance.attendees} คน
 ─────────────────────────
 
-✅ กด Check-in (ได้ก่อนเวลา 15 นาที): {checkin_url}
-❌ ยกเลิกการจอง: {cancel_url}
+ไม่ได้ใช้ห้องแล้ว หรือใช้เสร็จก่อนเวลา? ยกเลิก/คืนห้องได้ทุกเมื่อ: {cancel_url}
 
 ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
     '''
@@ -678,33 +676,21 @@ def send_booking_confirmation_email(instance):
         </tr>
       </table>
 
-      <!-- Check-in Button -->
-      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:20px;margin:24px 0;text-align:center;">
-        <p style="margin:0 0 6px;font-size:15px;color:#15803d;font-weight:bold;">⚠️ กรุณา Check-in ก่อนเข้าใช้ห้อง</p>
-        <p style="margin:0 0 16px;font-size:13px;color:#6b7280;">สามารถกด Check-in ได้ก่อนเวลา <b>15 นาที</b> จนถึงเวลาสิ้นสุด</p>
-        <a href="{checkin_url}"
-           style="display:inline-block;background:#16a34a;color:white;
-                  padding:14px 36px;text-decoration:none;border-radius:8px;
-                  font-size:16px;font-weight:bold;">
-          ✅ กด Check-in ที่นี่
-        </a>
-      </div>
-
       <!-- Cancel Button -->
-      <div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:16px;margin:0 0 24px;text-align:center;">
-        <p style="margin:0 0 12px;font-size:14px;color:#6b7280;">ไม่สามารถมาใช้งานได้?</p>
+      <div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:16px;margin:24px 0;text-align:center;">
+        <p style="margin:0 0 12px;font-size:14px;color:#6b7280;">ไม่ได้ใช้ห้องแล้ว หรือใช้เสร็จก่อนเวลา?</p>
         <a href="{cancel_url}"
            style="display:inline-block;background:#dc2626;color:white;
                   padding:10px 28px;text-decoration:none;border-radius:8px;
                   font-size:14px;font-weight:bold;">
-          ❌ ยกเลิกการจอง
+          ❌ ยกเลิก / คืนห้อง
         </a>
       </div>
 
       <!-- Warning Box -->
       <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:16px;">
         <p style="margin:0;font-size:14px;color:#92400e;">
-          ⚠️ กรุณายกเลิกหากไม่สามารถมาใช้งานได้ เพื่อให้ผู้อื่นสามารถใช้ห้องได้ครับ
+          ⚠️ ยกเลิกได้ทุกเมื่อจนถึงเวลาสิ้นสุด — ถ้ากำลังใช้ห้องอยู่ ระบบจะปิดการจองที่เวลาที่กด ช่วงที่เหลือให้ผู้อื่นจองได้ทันทีครับ
         </p>
       </div>
     </div>
@@ -712,7 +698,7 @@ def send_booking_confirmation_email(instance):
     <!-- Footer -->
     <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
       <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-        ลิงก์ใช้ได้ครั้งเดียว • ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
+        ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี
       </p>
     </div>
 

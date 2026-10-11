@@ -18,7 +18,7 @@ booking/  (Django + Django REST Framework)
     ├── serializers.py    Validation + DRF serializers + LDAP login serializer
     ├── ldap_auth.py       เชื่อมต่อ LDAP มหาวิทยาลัยเพื่อยืนยันตัวตน
     ├── signals.py         ส่งอีเมลยืนยัน/ยกเลิกการจอง + broadcast ผ่าน WebSocket (Channels)
-    └── management/commands/  คำสั่งเสริม (สร้างแอดมิน, auto no-show ฯลฯ)
+    └── management/commands/  คำสั่งเสริม (สร้างแอดมิน, ตั้งผู้อนุมัติ, ตรวจวันของการจองเทอม)
 
 ml/saved/  (การพยากรณ์ความต้องการใช้ห้อง)
     └── forecast.py + param_sets.py   เทรน LSTM + LightGBM + XGBoost แบบ Ensemble
@@ -47,7 +47,7 @@ ml/saved/  (การพยากรณ์ความต้องการใ�
 ### ป้องกันการจองซ้อน (Overlap Prevention)
 - ใช้ `transaction.atomic()` + `Room.objects.select_for_update()` ล็อกแถวห้องก่อนตรวจสอบ กันปัญหา race condition เวลามีคนจองพร้อมกัน
 - ตรวจสอบซ้อนกันครบทั้ง 3 ทาง: Booking ↔ Booking, Booking ↔ TermBooking, Booking ↔ MaintenanceBlock (ทั้งสองทิศทาง)
-- นับสถานะ `pending` / `approved` / `checked_in` เป็น "ห้องไม่ว่าง" ทั้งหมด (จองทั้งเทอม: `pending` / `active`)
+- นับสถานะ `pending` / `approved` เป็น "ห้องไม่ว่าง" ทั้งหมด (จองทั้งเทอม: `pending` / `active`)
 - Serializer มีการตรวจเบื้องต้นอีกชั้น (ก่อนแตะฐานข้อมูลจริง) เพื่อ UX ที่ดี ส่วนชั้นที่ป้องกัน race condition ได้จริงอยู่ที่ views.py
 
 ---

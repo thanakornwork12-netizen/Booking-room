@@ -210,15 +210,14 @@ class QARound3Tests(QABase):
         self.client.post(f'/api/bookings/{b.id}/cancel/')
         self.assertFalse(Notification.objects.filter(user=self.bot, booking=b, type='booking_cancelled').exists())
 
-    # ── ยกเลิกหลังเช็คอิน: เว็บกับอีเมลต้องตรงกัน ────────────────
-    def test_checked_in_booking_cannot_be_cancelled_anywhere(self):
+    # ── แอดมินปิดการจองที่กำลังใช้อยู่ → เจ้าของได้แจ้งเตือน ────────────
+    def test_admin_returning_room_notifies_owner(self):
         now = timezone.now()
-        b = self.booking(now - timedelta(minutes=10), now + timedelta(hours=1), status='checked_in')
-        self.assertEqual(self.client.post(f'/api/bookings/{b.id}/cancel/').status_code, 400)
-        self.client.force_authenticate(user=None)
-        self.assertEqual(self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.checkin_token}/').status_code, 400)
-        b.refresh_from_db()
-        self.assertEqual(b.status, 'checked_in')
+        b = self.booking(now - timedelta(minutes=10), now + timedelta(hours=1), status='approved')
+        self.as_user(self.admin)
+        self.assertEqual(self.client.post(f'/api/bookings/{b.id}/cancel/').status_code, 200)
+        n = Notification.objects.get(user=self.bot, booking=b)
+        self.assertEqual(n.title, 'การจองถูกปิดก่อนเวลา')
 
     # ── ช่วงซ่อม ───────────────────────────────────────────────
     def test_cannot_schedule_finished_maintenance(self):

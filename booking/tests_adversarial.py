@@ -204,7 +204,7 @@ class TokenAttackTests(AdvBase):
         self.assertEqual(r.status_code, 400)
 
 
-# ── การยกเลิก/เช็คอินในสถานะที่ไม่ควรทำได้ ─────────────────────────
+# ── การยกเลิกในสถานะที่ไม่ควรทำได้ ─────────────────────────────────
 class StateAbuseTests(AdvBase):
     def test_cannot_cancel_finished_or_rejected(self):
         for status in ('completed', 'rejected'):
@@ -217,21 +217,21 @@ class StateAbuseTests(AdvBase):
                 self.assertEqual(r.status_code, 400, f'ยกเลิกรายการ {status} ได้')
                 self.assertEqual(b.status, status)
 
-    def test_email_checkin_link_needs_a_click(self):
-        """โปรแกรมสแกนลิงก์ในอีเมล (เปิด GET ให้อัตโนมัติ) ต้องไม่ทำให้เช็คอินเอง"""
+    def test_email_cancel_link_needs_a_click(self):
+        """โปรแกรมสแกนลิงก์ในอีเมล (เปิด GET ให้อัตโนมัติ) ต้องไม่ทำให้ยกเลิกเอง"""
         start = timezone.now() + timedelta(minutes=10)
         b = Booking.objects.create(user=self.bot, room=self.room, title='x', attendees=5,
                                    start_time=start, end_time=start + timedelta(hours=1),
                                    status='approved')
         anon = APIClient()
-        r = anon.get(f'/api/bookings/{b.id}/checkin/{b.checkin_token}/')
+        r = anon.get(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         b.refresh_from_db()
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(b.status, 'approved', 'แค่เปิดลิงก์ (GET) ก็เช็คอินแล้ว')
-        r = anon.post(f'/api/bookings/{b.id}/checkin/{b.checkin_token}/')
+        self.assertEqual(b.status, 'approved', 'แค่เปิดลิงก์ (GET) ก็ยกเลิกแล้ว')
+        r = anon.post(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         b.refresh_from_db()
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(b.status, 'checked_in')
+        self.assertEqual(b.status, 'cancelled')
 
 
 # ── export Excel ────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ class ExportLeakTests(AdvBase):
         wb = self.export()
         headers = {c.value for ws in wb.worksheets for c in ws[1]}
         self.assertNotIn('password', headers, 'export มี hash รหัสผ่านของผู้ใช้ทุกคน')
-        self.assertNotIn('checkin_token', headers, 'export มี token ลิงก์เช็คอิน/ยกเลิกของทุกการจอง')
+        self.assertNotIn('cancel_token', headers, 'export มี token ลิงก์ยกเลิกของทุกการจอง')
 
     def test_export_does_not_turn_titles_into_formulas(self):
         self.book(title='=HYPERLINK("http://evil.example","คลิก")')

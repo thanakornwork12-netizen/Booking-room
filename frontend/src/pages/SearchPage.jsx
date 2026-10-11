@@ -323,7 +323,7 @@ const ANIM = `
 .au1{animation:fadeUp .2s .05s ease both}
 .au2{animation:fadeUp .2s .1s ease both}
 .si{animation:scaleIn .2s ease both}
-.checkin-pulse{animation:pulse 2.5s ease-in-out infinite}
+.reminder-pulse{animation:pulse 2.5s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 `
 
@@ -440,14 +440,14 @@ function RoomStatusBadge({ status }) {
   )
 }
 
-function CheckInReminder({ startTime }) {
+function CancelReminder({ startTime }) {
   if (!startTime) return null
   return (
-    <div className="checkin-pulse relative overflow-hidden border border-amber-300 bg-amber-50 rounded-xl p-3 shadow-sm">
+    <div className="reminder-pulse relative overflow-hidden border border-amber-300 bg-amber-50 rounded-xl p-3 shadow-sm">
       <div className="flex items-start gap-2">
         <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
         <p className="text-amber-800 text-xs font-medium leading-snug">
-          ⚠️ หากไม่สามารถเข้าใช้งานได้ตามเวลาที่จอง กรุณายกเลิกล่วงหน้า เพื่อให้ผู้อื่นใช้บริการต่อได้
+          ⚠️ ยกเลิกได้ทุกเมื่อจนถึงเวลาสิ้นสุด — ถ้าไม่ได้ใช้หรือใช้เสร็จก่อนเวลา กรุณายกเลิก/คืนห้อง เพื่อให้ผู้อื่นใช้ต่อได้
         </p>
       </div>
     </div>
@@ -1284,7 +1284,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                     </div>
 
                       <div className="space-y-4">
-                      <CheckInReminder startTime={startTime} />
+                      <CancelReminder startTime={startTime} />
                       <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-5 sm:p-6">
                         <SectionLabel>{isTermMode ? 'ชื่อวิชา / กิจกรรม' : 'หัวข้อการประชุม'}</SectionLabel>
                         <input

@@ -6,7 +6,7 @@ import {
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
 import api, { getUser } from '../api/axios'
-import { addHours, canCheckIn, isPast, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
+import { addHours, isInUse, isPast, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
 import { extractErrorMessage } from '../utils/errors'
 import { MY_BOOKINGS_PAGE_SIZE } from '../config'
 
@@ -66,7 +66,7 @@ const timeUntil = (startTime) => {
   const diff = Math.round((new Date(startTime) - new Date()) / 60000)
   if (diff > 60) return `${Math.floor(diff/60)} ชม. ${diff%60} นาที`
   if (diff > 0)  return `${diff} นาที`
-  return 'เปิด check-in แล้ว'  // ผู้เรียกแสดงเฉพาะรายการที่ยังไม่จบ
+  return null  // เริ่มแล้ว — ผู้เรียกแสดงเฉพาะรายการที่ยังไม่จบ
 }
 
 // เวลาสิ้นสุด (วัน + เวลา) จากวันเริ่ม เวลาเริ่ม และจำนวนชั่วโมง — เดิมคืนแค่เวลา
@@ -157,7 +157,7 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
   const isPending = b.status === 'pending'
   const isRejected = b.status === 'rejected'
   const isCancelled = b.status === 'cancelled'
-  const showCI = isActive && !isFinished && canCheckIn(b.start_time) && !b.checked_in
+  const inUse = isActive && isInUse(b.start_time, b.end_time)
 
   const dotColor = isFinished ? '#94a3b8' : (isActive ? '#10b981' : (isPending ? '#f59e0b' : '#cbd5e1'))
   const opacityClass = isCancelled || isRejected || isFinished ? 'opacity-60' : ''
@@ -168,7 +168,7 @@ function BookingRow({ b, onClick, fmtDate, fmtTime }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <p className="text-sm font-bold text-slate-800 truncate max-w-full">{b.room_name || `ห้อง #${b.room}`}</p>
-          {showCI && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold pulse shrink-0 whitespace-nowrap">Check-in</span>}
+          {inUse && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold pulse shrink-0 whitespace-nowrap">กำลังใช้งาน</span>}
           {isPending && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold border border-amber-200 shrink-0 whitespace-nowrap">รออนุมัติ</span>}
           {isRejected && <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-200 shrink-0 whitespace-nowrap">ถูกปฏิเสธ</span>}
           {isFinished && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold border border-slate-200 shrink-0 whitespace-nowrap">เสร็จสิ้น</span>}
@@ -254,15 +254,15 @@ function TermBookingModal({ booking, onClose, onCancel }) {
   )
 }
 
-function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime, fmtDateFull }) {
+function BookingModal({ booking, onClose, onCancel, onRebook, fmtTime, fmtDateFull }) {
   if (!booking) return null
   const isActive = booking.status === 'approved'
   const isFinished = isActive && isPast(booking.end_time)
   const isPending = booking.status === 'pending'
   const isRejected = booking.status === 'rejected'
   const isCancelled = booking.status === 'cancelled'
-  const showCheckIn = isActive && !isFinished && canCheckIn(booking.start_time) && !booking.checked_in
-  const until = isActive && !isFinished && !booking.checked_in ? timeUntil(booking.start_time) : null
+  const inUse = isActive && isInUse(booking.start_time, booking.end_time)
+  const until = isActive && !isFinished ? timeUntil(booking.start_time) : null
   const statusColor = isFinished ? '#64748b' : (isActive ? '#10b981' : (isPending ? '#f59e0b' : (isRejected ? '#e11d48' : '#cbd5e1')))
   const statusLabel = isFinished ? 'ใช้งานเสร็จสิ้น' : (isActive ? 'ยืนยันแล้ว' : (isPending ? 'รออนุมัติ' : (isRejected ? 'ถูกปฏิเสธ' : 'ยกเลิกแล้ว')))
 
@@ -285,16 +285,16 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
               <p className="font-bold text-slate-900 text-base truncate">{booking.room_name || `ห้อง #${booking.room}`}</p>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/80 border whitespace-nowrap" style={{color: statusColor, borderColor: statusColor}}>● {statusLabel}</span>
-                {booking.checked_in && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200 whitespace-nowrap">✓ Check-in แล้ว</span>}
+                {inUse && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200 whitespace-nowrap">กำลังใช้งาน</span>}
               </div>
             </div>
           </div>
 
-          {isActive && !isFinished && !booking.checked_in && until && (
+          {isActive && !isFinished && (until || inUse) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 flex items-start gap-3">
               <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-800 leading-relaxed break-words">
-                {showCheckIn ? 'ถึงเวลาใช้งานแล้ว มาที่ห้องได้เลย หากมาไม่ได้กดยกเลิกได้ทันทีผ่านลิงก์ในอีเมลยืนยัน' : `อีก ${until} จะเริ่มใช้งาน หากไม่สะดวกกรุณายกเลิกล่วงหน้าเพื่อให้ผู้อื่นใช้บริการต่อ`}
+                {inUse ? 'กำลังใช้ห้องอยู่ — ใช้เสร็จก่อนเวลากด "คืนห้องก่อนเวลา" ด้านล่าง ช่วงที่เหลือจะว่างให้คนอื่นจองได้ทันที' : `อีก ${until} จะเริ่มใช้งาน หากไม่สะดวกกรุณายกเลิกล่วงหน้าเพื่อให้ผู้อื่นใช้บริการต่อ`}
               </p>
             </div>
           )}
@@ -316,11 +316,6 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
           </div>
 
           <div className="space-y-2.5">
-            {showCheckIn && (
-              <button onClick={() => onCheckIn(booking.id)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 active:scale-95 transition-all pulse">
-                <CheckCircle2 size={16} /> ยืนยันการมาใช้งาน (Check-in)
-              </button>
-            )}
             {isRejected && booking.reject_reason && (
               <div className="rounded-xl px-4 py-3 bg-rose-50 border border-rose-200">
                 <p className="text-xs font-bold text-rose-700 mb-1">เหตุผลที่ปฏิเสธ</p>
@@ -328,8 +323,8 @@ function BookingModal({ booking, onClose, onCancel, onCheckIn, onRebook, fmtTime
               </div>
             )}
             {((isActive && !isFinished) || isPending) && (
-              <button onClick={() => onCancel(booking.id)} className="w-full border-2 border-red-100 text-red-600 hover:bg-red-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
-                <XCircle size={16} /> {isPending ? 'ยกเลิกคำขอจอง' : 'ยกเลิกการจองนี้'}
+              <button onClick={() => onCancel(booking.id, inUse)} className="w-full border-2 border-red-100 text-red-600 hover:bg-red-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                <XCircle size={16} /> {isPending ? 'ยกเลิกคำขอจอง' : (inUse ? 'คืนห้องก่อนเวลา' : 'ยกเลิกการจองนี้')}
               </button>
             )}
             {(isCancelled || isFinished || isRejected) && (
@@ -557,13 +552,20 @@ export default function HomePage() {
 
   useEffect(() => { load() }, [])
 
-  const handleCancel = async (id) => {
-    if (!confirm('ยืนยันการยกเลิกการจองนี้?')) return
+  const handleCancel = async (id, inUse = false) => {
+    if (!confirm(inUse ? 'ใช้ห้องเสร็จแล้ว คืนห้องตอนนี้เลย?' : 'ยืนยันการยกเลิกการจองนี้?')) return
     try {
-      await api.post(`/bookings/${id}/cancel/`)
-      setBookings(prev => prev.map(b => b.id === id ? {...b, status:'cancelled'} : b))
+      const { data } = await api.post(`/bookings/${id}/cancel/`)
+      if (data.result === 'released') {
+        // คืนห้องก่อนเวลา: สถานะยังเป็น approved แต่เวลาจบเลื่อนมาเป็นตอนนี้
+        const end = new Date().toISOString()
+        setBookings(prev => prev.map(b => b.id === id ? {...b, end_time: end} : b))
+        alert(`✅ ${data.message}`)
+      } else {
+        setBookings(prev => prev.map(b => b.id === id ? {...b, status:'cancelled'} : b))
+      }
       if (selectedBooking?.id === id) setSelectedBooking(null)
-    } catch { alert('เกิดข้อผิดพลาด') }
+    } catch (err) { alert(err.response?.data?.error || 'เกิดข้อผิดพลาด') }
   }
 
   const handleTermCancel = async (id) => {
@@ -574,15 +576,6 @@ export default function HomePage() {
       setSelectedTermBooking(null)
       alert('ยกเลิกการจองรายเทอมสำเร็จ')
     } catch { alert('เกิดข้อผิดพลาด') }
-  }
-
-  const handleCheckIn = async (id) => {
-    try {
-      await api.post(`/bookings/${id}/check_in/`)
-      setBookings(prev => prev.map(b => b.id === id ? {...b, checked_in: true, status: 'checked_in'} : b))
-      if (selectedBooking?.id === id) setSelectedBooking(prev => ({...prev, checked_in: true, status: 'checked_in'}))
-      alert('✅ Check-in สำเร็จ!')
-    } catch (err) { alert(err.response?.data?.error || 'ไม่สามารถ Check-in ได้ในขณะนี้') }
   }
 
   const handleRebookSuccess = async () => {
@@ -877,7 +870,6 @@ export default function HomePage() {
         booking={selectedBooking}
         onClose={() => setSelectedBooking(null)}
         onCancel={handleCancel}
-        onCheckIn={handleCheckIn}
         onRebook={(b) => { setRebookBooking(b); setSelectedBooking(null) }}
         fmtTime={fmtTime}
         fmtDateFull={fmtDateFull}

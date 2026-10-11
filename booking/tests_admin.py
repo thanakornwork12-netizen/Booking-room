@@ -217,16 +217,18 @@ class StatusFeedTests(TestCase):
         self.assertEqual(self.state_of(busy_room)['state'], 'active')
 
 
-class StatusFeedCheckedInTests(StatusFeedTests):
-    def test_checked_in_room_shows_active(self):
+class StatusFeedReleasedTests(StatusFeedTests):
+    def test_room_returned_early_shows_free(self):
         from datetime import timedelta
         from django.utils import timezone
         from booking.models import Booking
-        room = self.make_room('R-CHECKIN')
+        room = self.make_room('R-RELEASE')
         now = timezone.now()
-        Booking.objects.create(user=self.user, room=room, title='x', attendees=5,
-                               start_time=now - timedelta(minutes=10),
-                               end_time=now + timedelta(minutes=50), status='checked_in',
-                               checked_in=True)
-        self.assertEqual(self.state_of(room)['state'], 'active',
-                         'ห้องที่เช็คอินแล้วขึ้นว่า "ว่าง"')
+        b = Booking.objects.create(user=self.user, room=room, title='x', attendees=5,
+                                   start_time=now - timedelta(minutes=10),
+                                   end_time=now + timedelta(minutes=50), status='approved')
+        self.assertEqual(self.state_of(room)['state'], 'active')
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        self.assertEqual(client.post(f'/api/bookings/{b.id}/cancel/').status_code, 200)
+        self.assertEqual(self.state_of(room)['state'], 'free', 'คืนห้องแล้วยังขึ้นว่ากำลังใช้งาน')

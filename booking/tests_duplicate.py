@@ -66,7 +66,7 @@ class SequentialDuplicateTests(DuplicateBase, TestCase):
     def test_duplicate_rejected_at_every_active_status(self):
         first = self.client.post('/api/bookings/', self.booking_payload(), format='json')
         b = Booking.objects.get(pk=first.data['id']) if 'id' in first.data else Booking.objects.get()
-        for status in ('pending', 'approved', 'checked_in'):
+        for status in ('pending', 'approved'):
             with self.subTest(status=status):
                 Booking.objects.filter(pk=b.pk).update(status=status)
                 r = self.client.post('/api/bookings/', self.booking_payload(), format='json')

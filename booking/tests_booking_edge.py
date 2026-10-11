@@ -178,11 +178,6 @@ class OverlapTests(BookingEdgeBase):
         r = self.book(aware(self.day, 15), aware(self.day, 17))
         self.assertEqual(r.status_code, 400)
 
-    def test_checked_in_blocks_slot(self):
-        self.seed(aware(self.day, 14), aware(self.day, 16), status='checked_in')
-        r = self.book(aware(self.day, 15), aware(self.day, 17))
-        self.assertEqual(r.status_code, 400)
-
     def test_cancelled_does_not_block(self):
         self.seed(aware(self.day, 14), aware(self.day, 16), status='cancelled')
         r = self.book(aware(self.day, 14), aware(self.day, 16))
@@ -372,7 +367,7 @@ class PrivacyTests(BookingEdgeBase):
 
 
 # ══════════════════════════════════════════════════════════════
-# 6. อนุมัติ / เช็คอิน ตามเวลา
+# 6. อนุมัติ / ยกเลิก / คืนห้อง ตามเวลา
 # ══════════════════════════════════════════════════════════════
 class TimingTests(BookingEdgeBase):
     def test_cannot_approve_finished_booking(self):
@@ -382,29 +377,44 @@ class TimingTests(BookingEdgeBase):
         r = self.client.post(f'/api/bookings/{b.id}/approve/')
         self.assertEqual(r.status_code, 400)
 
-    def test_cannot_checkin_after_end(self):
+    def test_cannot_cancel_after_end(self):
         past = timezone.now() - timedelta(hours=3)
         b = Booking.objects.create(user=self.bot, room=self.room, title='x', attendees=5,
                                    start_time=past, end_time=past + timedelta(hours=1),
                                    status='approved')
-        r = self.client.post(f'/api/bookings/{b.id}/check_in/')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel/')
         self.assertEqual(r.status_code, 400)
 
-    def test_checkin_during_booking_ok(self):
+    def test_return_room_during_booking(self):
         start = timezone.now() - timedelta(minutes=10)
         b = Booking.objects.create(user=self.bot, room=self.room, title='x', attendees=5,
                                    start_time=start, end_time=start + timedelta(hours=1),
                                    status='approved')
-        r = self.client.post(f'/api/bookings/{b.id}/check_in/')
-        self.assertEqual(r.status_code, 200)
+        r = self.client.post(f'/api/bookings/{b.id}/cancel/')
+        b.refresh_from_db()
+        self.assertEqual((r.status_code, r.data['result'], b.status), (200, 'released', 'approved'))
+        self.assertLessEqual(b.end_time, timezone.now())
+        log = b.logs.get()
+        self.assertIn('คืนห้องก่อนเวลา', log.remark)
 
-    def test_cannot_cancel_after_checkin_via_email(self):
+    def test_return_room_via_email_link(self):
         start = timezone.now() - timedelta(minutes=10)
         b = Booking.objects.create(user=self.bot, room=self.room, title='x', attendees=5,
                                    start_time=start, end_time=start + timedelta(hours=1),
-                                   status='checked_in', checked_in=True)
+                                   status='approved')
         self.client.force_authenticate(user=None)
-        r = self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.checkin_token}/')
+        page = self.client.get(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
+        self.assertContains(page, 'คืนห้องก่อนเวลา')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         b.refresh_from_db()
-        self.assertEqual(r.status_code, 400)
-        self.assertEqual(b.status, 'checked_in')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b.status, 'approved')
+        self.assertLessEqual(b.end_time, timezone.now())
+
+    def test_pending_in_progress_is_cancelled(self):
+        start = timezone.now() - timedelta(minutes=10)
+        b = Booking.objects.create(user=self.bot, room=self.room, title='x', attendees=5,
+                                   start_time=start, end_time=start + timedelta(hours=1))
+        r = self.client.post(f'/api/bookings/{b.id}/cancel/')
+        b.refresh_from_db()
+        self.assertEqual((r.status_code, b.status), (200, 'cancelled'))

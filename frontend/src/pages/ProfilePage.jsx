@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Mail, Phone, GraduationCap, IdCard, ShieldCheck, Loader2, Save, ArrowLeft,
-  History, CalendarDays, Clock, Users, CheckCircle2, XCircle, KeyRound, UserRound,
+  History, CalendarDays, Clock, Users, XCircle, KeyRound, UserRound,
 } from 'lucide-react'
 import api, { getUser, updateStoredUser, changePassword } from '../api/axios'
-import { canCheckIn, isPast } from '../utils/booking'
+import { isInUse, isPast } from '../utils/booking'
 import { MY_BOOKINGS_PAGE_SIZE } from '../config'
 
 const roleLabels = {
@@ -63,9 +63,9 @@ function SectionCard({ icon: Icon, title, right, children, className = '' }) {
 }
 
 function statusBadge(b) {
-  const finished = (b.status === 'approved' || b.status === 'checked_in') && isPast(b.end_time)
+  const finished = b.status === 'approved' && isPast(b.end_time)
   if (finished) return { label: 'เสร็จสิ้น', cls: 'bg-slate-100 text-slate-500 border-slate-200' }
-  if (b.checked_in || b.status === 'checked_in') return { label: 'Check-in แล้ว', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+  if (b.status === 'approved' && isInUse(b.start_time, b.end_time)) return { label: 'กำลังใช้งาน', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
   switch (b.status) {
     case 'approved':  return { label: 'ยืนยันแล้ว', cls: 'bg-blue-50 text-blue-700 border-blue-200' }
     case 'pending':   return { label: 'รออนุมัติ', cls: 'bg-amber-100 text-amber-700 border-amber-200' }
@@ -90,26 +90,21 @@ function BookingHistory() {
     return () => { active = false }
   }, [])
 
-  const handleCancel = async (id) => {
-    if (busyId || !confirm('ยืนยันการยกเลิกการจองนี้?')) return
+  const handleCancel = async (id, inUse = false) => {
+    if (busyId || !confirm(inUse ? 'ใช้ห้องเสร็จแล้ว คืนห้องตอนนี้เลย?' : 'ยืนยันการยกเลิกการจองนี้?')) return
     setBusyId(id)
     try {
-      await api.post(`bookings/${id}/cancel/`)
-      setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b))
+      const { data } = await api.post(`bookings/${id}/cancel/`)
+      if (data.result === 'released') {
+        // คืนห้องก่อนเวลา: สถานะยังเป็น approved แต่เวลาจบเลื่อนมาเป็นตอนนี้
+        const end = new Date().toISOString()
+        setBookings(prev => prev.map(b => b.id === id ? { ...b, end_time: end } : b))
+        alert(`✅ ${data.message}`)
+      } else {
+        setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b))
+      }
     } catch (err) {
       alert(firstError(err, 'ยกเลิกการจองไม่สำเร็จ'))
-    } finally { setBusyId(null) }
-  }
-
-  const handleCheckIn = async (id) => {
-    if (busyId) return
-    setBusyId(id)
-    try {
-      await api.post(`bookings/${id}/check_in/`)
-      setBookings(prev => prev.map(b => b.id === id ? { ...b, checked_in: true, status: 'checked_in' } : b))
-      alert('✅ Check-in สำเร็จ!')
-    } catch (err) {
-      alert(firstError(err, 'ไม่สามารถ Check-in ได้ในขณะนี้'))
     } finally { setBusyId(null) }
   }
 
@@ -133,9 +128,9 @@ function BookingHistory() {
             {bookings.map(b => {
               const badge = statusBadge(b)
               const approved = b.status === 'approved'
-              const finished = approved && isPast(b.end_time)
-              const showCheckIn = approved && !finished && !b.checked_in && canCheckIn(b.start_time)
-              const showCancel = (approved && !finished && !b.checked_in) || b.status === 'pending'
+              const inUse = approved && isInUse(b.start_time, b.end_time)
+              // ยกเลิกได้ทุกเมื่อจนถึงเวลาจบ — ถ้ากำลังใช้อยู่คือคืนห้องก่อนเวลา
+              const showCancel = (approved || b.status === 'pending') && !isPast(b.end_time)
               const busy = busyId === b.id
               return (
                 <div key={b.id} className="flex items-center gap-3 px-4 py-2.5">
@@ -151,26 +146,16 @@ function BookingHistory() {
                       <span className="flex items-center gap-1 whitespace-nowrap"><Users size={11} />{b.attendees} คน</span>
                     </div>
                   </div>
-                  {(showCheckIn || showCancel) && (
+                  {showCancel && (
                     <div className="flex shrink-0 flex-col gap-1.5">
-                      {showCheckIn && (
+                      {(
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => handleCheckIn(b.id)}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:bg-slate-300"
-                        >
-                          <CheckCircle2 size={13} /> Check-in
-                        </button>
-                      )}
-                      {showCancel && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleCancel(b.id)}
+                          onClick={() => handleCancel(b.id, inUse)}
                           className="inline-flex items-center gap-1.5 rounded-full border border-red-200 px-3.5 py-1.5 text-xs font-bold text-red-600 transition-colors hover:bg-red-50 disabled:text-slate-300"
                         >
-                          <XCircle size={13} /> {b.status === 'pending' ? 'ยกเลิกคำขอ' : 'ยกเลิกการจอง'}
+                          <XCircle size={13} /> {b.status === 'pending' ? 'ยกเลิกคำขอ' : (inUse ? 'คืนห้องก่อนเวลา' : 'ยกเลิกการจอง')}
                         </button>
                       )}
                     </div>

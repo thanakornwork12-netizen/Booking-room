@@ -316,24 +316,24 @@ from datetime import timezone as dt_timezone  # noqa: E402
 
 @override_settings(EMAIL_BACKEND=LOCMEM, DEFAULT_FROM_EMAIL='noreply@example.com')
 class EmailProbe(BookingEdgeBase):
-    def test_checkin_reminder_shows_thai_time(self):
-        from booking.scheduler import send_checkin_reminders
+    def test_booking_reminder_shows_thai_time(self):
+        from booking.scheduler import send_booking_reminders
         start = timezone.now() + timedelta(minutes=15)
         Booking.objects.create(user=self.bot, room=self.room, title='ประชุม', attendees=5,
                                start_time=start, end_time=start + timedelta(hours=1),
                                status='approved')
-        send_checkin_reminders()
+        send_booking_reminders()
         self.assertEqual(len(mail.outbox), 1)
         html = mail.outbox[0].alternatives[0][0]
         self.assertIn(timezone.localtime(start).strftime('%H:%M'), html)
 
     def test_reminder_escapes_title(self):
-        from booking.scheduler import send_checkin_reminders
+        from booking.scheduler import send_booking_reminders
         start = timezone.now() + timedelta(minutes=15)
         Booking.objects.create(user=self.bot, room=self.room, title='<a href="http://evil">x</a>',
                                attendees=5, start_time=start, end_time=start + timedelta(hours=1),
                                status='approved')
-        send_checkin_reminders()
+        send_booking_reminders()
         html = mail.outbox[0].alternatives[0][0]
         self.assertNotIn('<a href="http://evil">', html)
 

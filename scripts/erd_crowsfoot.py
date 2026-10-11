@@ -59,7 +59,7 @@ EDGES = [
     ('booking', 'room_id', 'R', [('x', 1450)], 'room', 'T', None),
     ('termbooking', 'user_id', 'L', [('x', 770)], 'user', 'R', 13),
     ('termbooking', 'room_id', 'R', [('x', 1400)], 'room', 'B', None),
-    ('bookinglog', 'booking_id', 'R', [('x', 1070)], 'booking', 'R', 16),
+    ('bookinglog', 'booking_id', 'R', [('x', 1070)], 'booking', 'R', 14),
     ('bookinglog', 'term_booking_id', 'R', [('x', 1090)], 'termbooking', 'R', 1),
     ('bookinglog', 'changed_by_id', 'L', [], 'user', 'R', None),
     ('notification', 'user_id', 'R', [], 'user', 'L', None),

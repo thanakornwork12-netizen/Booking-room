@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from booking.models import Booking, Building, Room
-from booking.scheduler import send_checkin_reminders
+from booking.scheduler import send_booking_reminders
 
 User = get_user_model()
 
@@ -34,27 +34,40 @@ class EmailTests(TestCase):
             username='qa_test_bot', password='QaTest1234', role='student',
             email='qa_test_bot@example.com')
 
-    def test_checkin_reminder_sent_once(self):
+    def test_booking_reminder_sent_once(self):
         start = timezone.now() + timedelta(minutes=15)
         b = Booking.objects.create(user=self.user, room=self.room, title='ประชุม', attendees=5,
                                    start_time=start, end_time=start + timedelta(hours=1),
                                    status='approved')
-        send_checkin_reminders()
-        send_checkin_reminders()  # รอบที่สองต้องไม่ส่งซ้ำ
+        send_booking_reminders()
+        send_booking_reminders()  # รอบที่สองต้องไม่ส่งซ้ำ
 
         b.refresh_from_db()
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['qa_test_bot@example.com'])
         self.assertEqual(mail.outbox[0].from_email, settings.DEFAULT_FROM_EMAIL)
-        self.assertIn(str(b.checkin_token), mail.outbox[0].body)
+        self.assertIn(str(b.cancel_token), mail.outbox[0].body)
         self.assertTrue(b.reminded)
+
+    def test_confirmation_email_has_no_checkin(self):
+        from booking.signals import send_booking_confirmation_email
+        start = timezone.now() + timedelta(days=1)
+        b = Booking.objects.create(user=self.user, room=self.room, title='ประชุม', attendees=5,
+                                   start_time=start, end_time=start + timedelta(hours=1),
+                                   status='approved')
+        mail.outbox.clear()
+        send_booking_confirmation_email(b)
+        body = mail.outbox[0].body + mail.outbox[0].alternatives[0][0]
+        self.assertNotIn('Check-in', body)
+        self.assertNotIn('/checkin/', body)
+        self.assertIn(f'/cancel-email/{b.cancel_token}/', body)
 
     def test_no_reminder_outside_window(self):
         start = timezone.now() + timedelta(hours=2)
         Booking.objects.create(user=self.user, room=self.room, title='ประชุม', attendees=5,
                                start_time=start, end_time=start + timedelta(hours=1),
                                status='approved')
-        send_checkin_reminders()
+        send_booking_reminders()
         self.assertEqual(len(mail.outbox), 0)
 
     def test_booking_request_sends_email_from_default_sender(self):

@@ -43,7 +43,7 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = ['room-booking-1-7u7e.onrender.com', 'localhost', '127.0.0.1', '*']
 
 # Django 4+ ต้องมี origin ที่เชื่อถือได้ชัดเจนถึงจะ accept POST แบบ
-# form-based (เช่น Django admin login, ปุ่มยกเลิก/check-in ในอีเมล) เวลา
+# form-based (เช่น Django admin login, ปุ่มยกเลิกในอีเมล) เวลา
 # request มาจาก HTTPS — ไม่งั้นได้ 403 "Origin checking failed" ทุกครั้ง
 CSRF_TRUSTED_ORIGINS = [
     'https://booking-room-1rvd.onrender.com',
@@ -224,7 +224,7 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 # (ว่างไว้ = ปิดการแจ้งเตือนผู้อนุมัติ ระบบยังส่งอีเมลหาผู้จองตามปกติ)
 APPROVER_EMAIL = os.environ.get('APPROVER_EMAIL', 'thanakorn.tho.66@ubu.ac.th')
 
-# ใช้ประกอบลิงก์ในอีเมล (check-in/ยกเลิกเป็น endpoint ฝั่ง backend เอง
+# ใช้ประกอบลิงก์ในอีเมล (ลิงก์ยกเลิกเป็น endpoint ฝั่ง backend เอง
 # ส่วน login ต้องพาไปหน้าเว็บฝั่ง frontend)
 # เพดานความยาวการจอง — กันจองยาวเป็นปีแล้วห้องถูกกันไว้ตลอด (แค่รออนุมัติก็กันแล้ว)
 # 21 วันครอบทุกการจองในข้อมูลจริง 7,260 รายการ (ยาวสุด ~17 วัน)

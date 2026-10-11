@@ -26,7 +26,7 @@ def export_combined_data(modeladmin, request, queryset):
         # เราดึงข้อมูลจาก queryset ที่ผู้ใช้ติ๊กเลือก
         bookings_data = list(queryset.values(
             'id', 'title', 'user__username', 'room__name',
-            'start_time', 'end_time', 'status', 'checked_in'
+            'start_time', 'end_time', 'status'
         ))
         safe_frame(pd.DataFrame(bookings_data)).to_excel(writer, sheet_name='Bookings', index=False)
 
@@ -79,8 +79,8 @@ class FacilityAdmin(ImportExportModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(ImportExportModelAdmin):
-    list_display  = ['user', 'room', 'title', 'start_time', 'end_time', 'status', 'checked_in']
-    list_filter   = ['status', 'checked_in', 'start_time']
+    list_display  = ['user', 'room', 'title', 'start_time', 'end_time', 'status']
+    list_filter   = ['status', 'start_time']
     search_fields = ['user__username', 'room__name', 'title']
     # เพิ่ม Action สำหรับ Export แบบรวมไฟล์
     actions = [export_combined_data]

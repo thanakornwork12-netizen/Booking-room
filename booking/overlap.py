@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from .models import Booking, MaintenanceBlock, TermBooking
 
-ACTIVE_BOOKING_STATUSES = ['pending', 'approved', 'checked_in']
+ACTIVE_BOOKING_STATUSES = ['pending', 'approved']
 # คาบทั้งเทอมที่รออนุมัติกันช่วงเวลาไว้ด้วย เหมือน pending ของการจองรายครั้ง —
 # ไม่นับ สองคำขอที่ทับกันจะเข้าไปรออนุมัติพร้อมกันได้
 TERM_BLOCKING_STATUSES = ['pending', 'active']

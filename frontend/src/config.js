@@ -19,9 +19,7 @@ export const DURATIONS = [
   { label: '3 ชม.', hours: 3 },
 ]
 
-// ── เช็คอิน / สถานะ ───────────────────────────────────────────
-// ต้องตรงกับ CHECKIN_OPENS_MINUTES_BEFORE ใน booking/config.py
-export const CHECKIN_OPENS_MINUTES_BEFORE = 15
+// ── สถานะห้อง ────────────────────────────────────────────────
 // หน้าแอดมิน: การจองที่จะเริ่มภายในกี่นาทีนับเป็น "จะเริ่มเร็วๆ"
 // ต้องตรงกับ STARTING_SOON_MINUTES ใน booking/config.py
 export const STARTING_SOON_MINUTES = 30

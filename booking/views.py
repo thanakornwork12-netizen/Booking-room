@@ -262,12 +262,47 @@ class BuildingViewSet(viewsets.ModelViewSet):
 # ============================================================
 # ROOM
 # ============================================================
-# ยกเลิกได้เฉพาะก่อนเช็คอิน — ใช้ทั้งปุ่มในเว็บและลิงก์ในอีเมล (เดิมปุ่มในเว็บ/API
-# ยกเลิกรายการที่เช็คอินแล้วได้ แต่ลิงก์อีเมลกับหน้าเว็บไม่ให้ ผลไม่ตรงกัน)
+# ยกเลิกได้ทุกเมื่อจนถึงเวลาจบ (ไม่มีระบบเช็คอิน) — ใช้ทั้งปุ่มในเว็บและลิงก์ในอีเมล
 CANCELLABLE_BOOKING_STATUSES = ['pending', 'approved']
 
-# การจองที่ "เกิดขึ้นจริง" สำหรับนับสถิติ — รวม checked_in ด้วย
-USED_BOOKING_STATUSES = ['approved', 'checked_in', 'completed']
+# การจองที่ "เกิดขึ้นจริง" สำหรับนับสถิติ
+USED_BOOKING_STATUSES = ['approved', 'completed']
+
+
+def _cancel_or_release(booking, by_user):
+    """ยกเลิกการจอง หรือ "คืนห้องก่อนเวลา" ถ้ากำลังใช้ห้องอยู่
+
+    - ยังไม่ถึงเวลาเริ่ม (หรือยังรออนุมัติ) → สถานะเป็น cancelled
+    - อนุมัติแล้วและเลยเวลาเริ่มมาแล้ว (ใช้ห้องอยู่) → เลื่อนเวลาจบมาเป็นตอนนี้
+      สถานะยังเป็น approved (นับว่าใช้ห้องจริงในสถิติ/ข้อมูล AI) ช่วงที่เหลือว่าง
+      ให้คนอื่นจองได้ทันที
+
+    คืนค่า (kind, error) — kind เป็น 'cancelled' หรือ 'released'; ถ้าทำไม่ได้ kind เป็น None
+    """
+    if booking.status == 'cancelled':
+        return None, 'ยกเลิกไปแล้ว'
+    # รายการที่ถูกปฏิเสธ/เสร็จสิ้นแล้วยกเลิกไม่ได้ — ประวัติจะเพี้ยน
+    if booking.status not in CANCELLABLE_BOOKING_STATUSES:
+        return None, f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {booking.get_status_display()}'
+    now = timezone.now().replace(second=0, microsecond=0)
+    if booking.end_time <= now:
+        return None, 'ยกเลิกไม่ได้ เวลาที่จองสิ้นสุดไปแล้ว'
+
+    old = booking.status
+    if booking.status == 'approved' and booking.start_time < now:
+        old_end = booking.end_time.astimezone(THAI_TZ)
+        booking.end_time = now
+        booking.save(update_fields=['end_time', 'updated_at'])
+        BookingLog.objects.create(
+            booking=booking, changed_by=by_user, old_status=old, new_status=old,
+            remark=f'คืนห้องก่อนเวลา (เดิมจบ {old_end:%H:%M} น. → {now.astimezone(THAI_TZ):%H:%M} น.)',
+        )
+        return 'released', None
+
+    booking.status = 'cancelled'
+    booking.save()
+    BookingLog.objects.create(booking=booking, changed_by=by_user, old_status=old, new_status='cancelled')
+    return 'cancelled', None
 
 
 def _query_param(request, name, cast, default=None):
@@ -580,7 +615,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         target_dow = target_date.weekday()
 
         booked_dynamic = set(Booking.objects.filter(
-            status__in=['pending', 'approved', 'checked_in'],
+            status__in=ACTIVE_BOOKING_STATUSES,
             start_time__lt=end_dt, end_time__gt=start_dt,
         ).values_list('room_id', flat=True))
 
@@ -789,7 +824,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         # ทับซ้อนกับ "วันนี้ทั้งวัน" ไม่ใช่แค่เริ่มวันนี้ — ครอบทั้งเหตุการณ์ที่
         # เริ่มเมื่อวานแต่ยังไม่จบ และที่เริ่มวันนี้แต่จบวันถัดไป
         booking_rows = Booking.objects.filter(
-            room_id__in=room_ids, status__in=['pending', 'approved', 'checked_in'],
+            room_id__in=room_ids, status__in=ACTIVE_BOOKING_STATUSES,
             start_time__lt=next_day_start_dt, end_time__gt=day_start_dt,
         ).values_list('room_id', 'start_time', 'end_time')
         for room_id, s, e in booking_rows:
@@ -957,7 +992,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         elif room.status == 'disabled':
             state, label = 'disabled', 'ปิดใช้งาน'
         else:
-            confirmed = ('approved', 'checked_in')
+            confirmed = ('approved',)
             active = next((b for b in room_bookings
                            if b['status'] in confirmed and b['start_time'] <= now <= b['end_time']), None)
             term_now = next((t for t in room_terms
@@ -1008,11 +1043,10 @@ class RoomViewSet(viewsets.ModelViewSet):
         สะท้อนยอดใช้งานจริงของห้องที่ไม่ได้ถูกจองบ่อยในช่วงหลังๆ เลย (เจอบั๊ก
         จริง: ห้องที่มีประวัติจองหลักร้อย-พันครั้ง โชว์ "ใช้งาน 0 ครั้ง" ในแดชบอร์ด)"""
         booking_rows = Booking.objects.values('room_id').annotate(
-            total=Count('id', filter=Q(status__in=['approved', 'completed', 'checked_in', 'pending'])),
+            total=Count('id', filter=Q(status__in=['approved', 'completed', 'pending'])),
             approved=Count('id', filter=Q(status='approved')),
             completed=Count('id', filter=Q(status='completed')),
             pending=Count('id', filter=Q(status='pending', end_time__gt=timezone.now())),
-            checked_in=Count('id', filter=Q(status='checked_in')),
         )
         booking_stats = {row['room_id']: row for row in booking_rows}
 
@@ -1050,7 +1084,6 @@ class RoomViewSet(viewsets.ModelViewSet):
                 'approved_count':   b.get('approved', 0),
                 'completed_count':  b.get('completed', 0),
                 'pending_count':    b.get('pending', 0),
-                'checked_in_count': b.get('checked_in', 0),
                 'term_count':       term_stats.get(room_id, 0),
                 'term_today_count': term_today_stats.get(room_id, 0),
                 'term_active_count': term_active_stats.get(room_id, 0),
@@ -1102,7 +1135,7 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         return Response({
             'room': room.name, 'date': target_date,
-            # รวมรายการที่รออนุมัติ/เช็คอินแล้วด้วย — ทั้งหมดนี้กันช่วงเวลาไว้แล้ว
+            # รวมรายการที่รออนุมัติด้วย — ทั้งหมดนี้กันช่วงเวลาไว้แล้ว
             # (ACTIVE_BOOKING_STATUSES) เดิมโชว์แค่ approved ช่องจึงดูว่างทั้งที่จองไม่ได้
             'dynamic_bookings': dynamic_bookings,
             'term_bookings': list(TermBooking.objects.filter(
@@ -1712,7 +1745,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # AnonymousUser — กด checkin/cancel จาก email
+        # AnonymousUser — กดลิงก์ยกเลิกจาก email
         if not user.is_authenticated:
             return Booking.objects.all().select_related('user', 'room__building')
         qs = Booking.objects.all() if is_admin_or_staff(user) else Booking.objects.filter(user=user)
@@ -1880,144 +1913,31 @@ class BookingViewSet(viewsets.ModelViewSet):
         booking = get_object_or_404(Booking, pk=pk)
         if booking.user != request.user and not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
-        if booking.status == 'cancelled':
-            return Response({'error': 'ยกเลิกไปแล้ว'}, status=400)
-        # เดิมยกเลิกรายการที่ถูกปฏิเสธ/เสร็จสิ้นไปแล้วได้ ประวัติเพี้ยนและส่งอีเมล
-        # "ยกเลิกแล้ว" ไปหาผู้จองโดยไม่มีเหตุผล
-        if booking.status not in CANCELLABLE_BOOKING_STATUSES:
-            return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {booking.get_status_display()}'},
-                            status=400)
-        # ใช้ห้องเสร็จไปแล้วยกเลิกย้อนหลังไม่ได้ — เดิมยกเลิกได้ ประวัติเพี้ยนและส่ง
-        # อีเมล "ยกเลิกแล้ว" ทั้งที่การจองจบไปแล้ว
-        if booking.end_time <= timezone.now():
-            return Response({'error': 'ยกเลิกไม่ได้ เวลาที่จองสิ้นสุดไปแล้ว'}, status=400)
-        old = booking.status
-        booking.status = 'cancelled'
-        booking.save()
-        BookingLog.objects.create(
-            booking=booking, changed_by=request.user,
-            old_status=old, new_status='cancelled'
-        )
-        # แอดมินยกเลิกให้ — เดิมเจ้าของได้แค่อีเมล ไม่มีแจ้งเตือนในระบบ
+        kind, error = _cancel_or_release(booking, request.user)
+        if error:
+            return Response({'error': error}, status=400)
+        # แอดมินยกเลิก/คืนห้องให้ — แจ้งเจ้าของในระบบด้วย
         if booking.user_id != request.user.id:
+            when = booking.start_time.astimezone(THAI_TZ).strftime('%d/%m/%Y %H:%M')
             Notification.objects.create(
-                user=booking.user, booking=booking, type='booking_cancelled', title='การจองถูกยกเลิก',
-                message=(f'การจองห้อง {booking.room.name} วันที่ '
-                         f'{booking.start_time.astimezone(THAI_TZ).strftime("%d/%m/%Y %H:%M")} '
-                         f'ถูกยกเลิกโดยผู้ดูแลระบบ'),
+                user=booking.user, booking=booking, type='booking_cancelled',
+                title='การจองถูกยกเลิก' if kind == 'cancelled' else 'การจองถูกปิดก่อนเวลา',
+                message=(f'การจองห้อง {booking.room.name} วันที่ {when} '
+                         + ('ถูกยกเลิกโดยผู้ดูแลระบบ' if kind == 'cancelled'
+                            else 'ถูกปิดก่อนเวลาโดยผู้ดูแลระบบ')),
             )
-        return Response({'message': 'ยกเลิกการจองเรียบร้อยแล้ว'})
+        if kind == 'released':
+            end = booking.end_time.astimezone(THAI_TZ).strftime('%H:%M')
+            return Response({'message': f'คืนห้องเรียบร้อยแล้ว (สิ้นสุด {end} น.)', 'result': 'released'})
+        return Response({'message': 'ยกเลิกการจองเรียบร้อยแล้ว', 'result': 'cancelled'})
 
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         return Response(BookingLogSerializer(self.get_object().logs.all(), many=True).data)
 
-    @action(detail=True, methods=['post'], url_path='check_in')
-    def check_in(self, request, pk=None):
-        booking = self.get_object()
-        if booking.user != request.user and not is_admin_or_staff(request.user):
-            return Response({'error': 'ไม่มีสิทธิ์ Check-in การจองนี้'}, status=403)
-        if booking.checked_in:
-            return Response({'message': 'Check-in ไปแล้ว', 'checked_in': True})
-        if booking.status != 'approved':
-            return Response({
-                'error': 'ไม่สามารถ Check-in ได้',
-                'status': booking.status,
-            }, status=400)
-
-        now = timezone.now()
-        window_start = booking.start_time - timedelta(minutes=config.CHECKIN_OPENS_MINUTES_BEFORE)
-
-        if now < window_start:
-            return Response({
-                'error': 'ยังไม่ถึงเวลา Check-in',
-                'check_in_available_at': window_start,
-            }, status=400)
-
-        if now > booking.end_time:
-            return Response({'error': 'เลยเวลาการจองแล้ว'}, status=400)
-
-        old = booking.status
-        booking.checked_in = True
-        booking.checked_in_at = now
-        booking.status = 'checked_in'
-        booking.save()
-        BookingLog.objects.create(
-            booking=booking,
-            changed_by=request.user,
-            old_status=old,
-            new_status='checked_in',
-        )
-
-        return Response({
-            'message': 'Check-in สำเร็จ',
-            'checked_in': True,
-            'status': booking.status,
-        })
-
-    # ─── ลิงก์ในอีเมล: GET = หน้ายืนยัน, POST = ทำจริง ─────────────
+    # ─── ลิงก์ยกเลิกในอีเมล: GET = หน้ายืนยัน, POST = ทำจริง ─────────────
     # โปรแกรมสแกนลิงก์ในอีเมล (Outlook Safe Links ฯลฯ) เปิด GET ให้อัตโนมัติ
-    # ทันทีที่อีเมลมาถึง — ถ้า GET ทำงานจริงเลย อีเมลเตือนที่ส่งก่อนเริ่ม 15
-    # นาที (ตรงกับช่วงเช็คอินพอดี) จะถูกสแกนแล้วเช็คอินแทนผู้จองเอง ระบบกัน
-    # no-show จึงไม่มีผล (ยืนยันด้วย tests_adversarial ก่อนแก้)
-    @action(
-        detail=True, methods=['get', 'post'],
-        permission_classes=[AllowAny],
-        url_path='checkin/(?P<token>[^/.]+)',
-    )
-    def checkin(self, request, pk=None, token=None):
-        booking = self.get_object()
-
-        if str(booking.checkin_token) != token:
-            return HttpResponse(self._html('❌', '#dc2626', 'Link ไม่ถูกต้อง',
-                                           'ลิงก์นี้ไม่ถูกต้องหรือหมดอายุแล้วครับ'), status=400)
-        if booking.checked_in:
-            return HttpResponse(self._html('✅', '#16a34a', 'Check-in ไปแล้ว',
-                                           f'คุณ Check-in ห้อง {escape(booking.room.name)} ไปแล้วครับ'))
-        if booking.status != 'approved':
-            return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถ Check-in ได้',
-                                           f'สถานะการจองปัจจุบัน: {booking.get_status_display()}'), status=400)
-
-        now          = timezone.now()
-        window_start = booking.start_time - timedelta(minutes=config.CHECKIN_OPENS_MINUTES_BEFORE)
-
-        if now < window_start:
-            window_start_thai = window_start.astimezone(THAI_TZ)
-            start_thai        = booking.start_time.astimezone(THAI_TZ)
-            return HttpResponse(self._html(
-                '⏰', '#d97706', 'ยังไม่ถึงเวลา Check-in',
-                f'สามารถ Check-in ได้ตั้งแต่ <b>{window_start_thai.strftime("%H:%M")} น.</b> ครับ<br>'
-                f'(ก่อนเวลาเริ่ม {start_thai.strftime("%H:%M")} น. 15 นาที)'
-            ), status=400)
-
-        if now > booking.end_time:
-            end_thai = booking.end_time.astimezone(THAI_TZ)
-            return HttpResponse(self._html('❌', '#dc2626', 'เลยเวลาการจองแล้ว',
-                                           f'ไม่สามารถ Check-in ได้หลังเวลาสิ้นสุด ({end_thai.strftime("%H:%M")} น.) ครับ'), status=400)
-
-        if request.method == 'GET':
-            return HttpResponse(self._confirm_html(
-                request, booking, icon='📍', color='#16a34a',
-                heading='ยืนยัน Check-in?', button='✅ Check-in ตอนนี้',
-            ))
-
-        booking.checked_in    = True
-        booking.checked_in_at = now
-        booking.status        = 'checked_in'
-        booking.save()
-        BookingLog.objects.create(
-            booking=booking, changed_by=booking.user,
-            old_status='approved', new_status='checked_in'
-        )
-        start_thai = booking.start_time.astimezone(THAI_TZ)
-        end_thai   = booking.end_time.astimezone(THAI_TZ)
-        return HttpResponse(self._html(
-            '✅', '#16a34a', 'Check-in สำเร็จ!',
-            f'ห้อง <b>{escape(booking.room.name)}</b><br>'
-            f'เวลา <b>{start_thai.strftime("%H:%M")} – {end_thai.strftime("%H:%M")} น.</b><br>'
-            f'หัวข้อ: {escape(booking.title)}<br><br>ขอให้ประชุมได้ดีนะครับ 🎉'
-        ))
-
+    # ทันทีที่อีเมลมาถึง — ถ้า GET ยกเลิกเลย การจองจะหายเองโดยผู้จองไม่ได้กด
     @action(
         detail=True, methods=['get', 'post'],
         permission_classes=[AllowAny],
@@ -2026,7 +1946,7 @@ class BookingViewSet(viewsets.ModelViewSet):
     def cancel_email(self, request, pk=None, token=None):
         booking = self.get_object()
 
-        if str(booking.checkin_token) != token:
+        if str(booking.cancel_token) != token:
             return HttpResponse(self._html('❌', '#dc2626', 'Link ไม่ถูกต้อง',
                                            'ลิงก์นี้ไม่ถูกต้องหรือหมดอายุแล้วครับ'), status=400)
         if booking.status == 'cancelled':
@@ -2040,18 +1960,24 @@ class BookingViewSet(viewsets.ModelViewSet):
                                            'เวลาที่จองสิ้นสุดไปแล้วครับ'), status=400)
 
         if request.method == 'GET':
+            in_use = booking.status == 'approved' and booking.start_time <= timezone.now()
             return HttpResponse(self._confirm_html(
                 request, booking, icon='🗑️', color='#dc2626',
-                heading='ยืนยันการยกเลิกการจอง?', button='✅ ยืนยัน ยกเลิกการจอง',
+                heading='ยืนยันคืนห้องก่อนเวลา?' if in_use else 'ยืนยันการยกเลิกการจอง?',
+                button='✅ ยืนยัน คืนห้องตอนนี้' if in_use else '✅ ยืนยัน ยกเลิกการจอง',
             ))
 
-        old = booking.status
-        booking.status = 'cancelled'
-        booking.save()
-        BookingLog.objects.create(
-            booking=booking, changed_by=booking.user,
-            old_status=old, new_status='cancelled'
-        )
+        kind, error = _cancel_or_release(booking, booking.user)
+        if error:
+            return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้', error), status=400)
+        if kind == 'released':
+            end_thai = booking.end_time.astimezone(THAI_TZ)
+            return HttpResponse(self._html(
+                '✅', '#16a34a', 'คืนห้องเรียบร้อย',
+                f'ห้อง <b>{escape(booking.room.name)}</b><br>'
+                f'สิ้นสุดการใช้ห้องเวลา <b>{end_thai.strftime("%H:%M")} น.</b><br><br>'
+                f'ช่วงเวลาที่เหลือเปิดให้คนอื่นจองได้แล้ว ขอบคุณครับ'
+            ))
         return HttpResponse(self._html(
             '✅', '#16a34a', 'ยกเลิกการจองสำเร็จ',
             f'ห้อง <b>{escape(booking.room.name)}</b><br>'
@@ -2355,8 +2281,6 @@ class DashboardView(generics.GenericAPIView):
         # timezone.now() เป็น UTC — เดิมช่วง 00:00–06:59 เวลาไทยแดชบอร์ดนับเป็นเมื่อวาน
         today       = timezone.localdate()
         total_rooms = Room.objects.count()
-        # เช็คอินแล้วก็ยังเป็นการจองของวันนี้ — เดิมนับแค่ approved ยอดจึงลดลงทุกครั้ง
-        # ที่มีคนเช็คอิน (ไม่มีขั้นไหนเปลี่ยนสถานะเป็น completed)
         today_dynamic = Booking.objects.filter(start_time__date=today, status__in=USED_BOOKING_STATUSES).count()
         today_term    = TermBooking.objects.filter(
             day_of_week=today.weekday(), status='active',
@@ -2419,8 +2343,8 @@ class ExportExcelView(APIView):
         }
         selected_keys = mapping.keys() if sheets_param == 'all' else sheets_param.split(',')
         # คอลัมน์ที่ห้ามหลุดออกไปในไฟล์: hash รหัสผ่าน และ token ของลิงก์
-        # เช็คอิน/ยกเลิกในอีเมล (ใครมี token ก็ยกเลิกการจองนั้นได้)
-        hidden_columns = {'users': {'password'}, 'bookings': {'checkin_token'}}
+        # ยกเลิกในอีเมล (ใครมี token ก็ยกเลิกการจองนั้นได้)
+        hidden_columns = {'users': {'password'}, 'bookings': {'cancel_token'}}
 
         try:
             response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

@@ -373,39 +373,47 @@ class BlockTest(TestCase):
         self.assertEqual(r2.status_code, 201)
 
     # ══════════════════════════════════════════════════════════
-    # เช็คอิน T23–T25
+    # ยกเลิก / คืนห้องก่อนเวลา T23–T25 (ไม่มีระบบเช็คอิน)
     # ══════════════════════════════════════════════════════════
-    def test_T23_checkin_15_min_before(self):
-        start = timezone.now() + timedelta(minutes=15)
+    def test_T23_cancel_before_start(self):
+        start = timezone.now() + timedelta(minutes=10)
         b = self.make_booking(start, start + timedelta(hours=1), status='approved')
         self.auth(self.bot)
-        r = self.client.post(f'/api/bookings/{b.id}/check_in/', {}, format='json')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel/', {}, format='json')
         b.refresh_from_db()
         record('T23', r, f'สถานะ = {b.status}')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(b.status, 'checked_in')
+        self.assertEqual(b.status, 'cancelled')
 
-    def test_T24_checkin_16_min_before(self):
-        start = timezone.now() + timedelta(minutes=16)
-        b = self.make_booking(start, start + timedelta(hours=1), status='approved')
+    def test_T24_return_room_early(self):
+        now = timezone.now()
+        b = self.make_booking(now - timedelta(minutes=30), now + timedelta(minutes=90), status='approved')
         self.auth(self.bot)
-        r = self.client.post(f'/api/bookings/{b.id}/check_in/', {}, format='json')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel/', {}, format='json')
         b.refresh_from_db()
-        record('T24', r, f'สถานะยังเป็น {b.status}')
-        self.assertEqual(r.status_code, 400)
-        self.assertIn('ยังไม่ถึงเวลา Check-in', json.dumps(r.data, ensure_ascii=False, default=str))
-        self.assertEqual(b.status, 'approved')
+        record('T24', r, f'สถานะ = {b.status}, เวลาจบใหม่ = {b.end_time}')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b.status, 'approved')  # ยังนับว่าใช้ห้องจริง
+        self.assertLessEqual(b.end_time, timezone.now())
+        # ช่วงที่เหลือคนอื่นจองต่อได้ทันที
+        self.auth(self.user_b)
+        r2 = self.client.post('/api/bookings/', {
+            'room': b.room_id, 'title': 'ต่อจากคนเดิม', 'attendees': 5,
+            'start_time': (now + timedelta(minutes=30)).isoformat(),
+            'end_time': (now + timedelta(minutes=90)).isoformat(),
+        }, format='json')
+        self.assertEqual(r2.status_code, 201, r2.data)
 
-    def test_T25_checkin_pending_booking(self):
-        start = timezone.now() + timedelta(minutes=10)
-        b = self.make_booking(start, start + timedelta(hours=1), status='pending')
+    def test_T25_cannot_cancel_after_end(self):
+        now = timezone.now()
+        b = self.make_booking(now - timedelta(hours=2), now - timedelta(hours=1), status='approved')
         self.auth(self.bot)
-        r = self.client.post(f'/api/bookings/{b.id}/check_in/', {}, format='json')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel/', {}, format='json')
+        b.refresh_from_db()
         record('T25', r)
         self.assertEqual(r.status_code, 400)
-        body = json.dumps(r.data, ensure_ascii=False, default=str)
-        self.assertIn('ไม่สามารถ Check-in ได้', body)
-        self.assertIn('pending', body)  # แจ้งสถานะปัจจุบันกลับมาด้วย
+        self.assertIn('สิ้นสุดไปแล้ว', json.dumps(r.data, ensure_ascii=False, default=str))
+        self.assertEqual(b.status, 'approved')
 
     # ══════════════════════════════════════════════════════════
     # ยกเลิกการจอง T26–T27

@@ -1,5 +1,5 @@
 import {
-  CHECKIN_OPENS_MINUTES_BEFORE, DURATIONS, PASSWORD_MIN_LENGTH,
+  DURATIONS, PASSWORD_MIN_LENGTH,
 } from '../config'
 
 // วันที่ YYYY-MM-DD ตามเวลาเครื่อง (ไทย) — ห้ามใช้ toISOString() เพราะแปลงเป็น UTC
@@ -12,11 +12,9 @@ export { DURATIONS }
 // เวลาจบผ่านไปแล้วหรือยัง
 export const isPast = (endTime) => new Date() > new Date(endTime)
 
-// เปิดเช็คอินแล้วหรือยัง (ก่อนเวลาเริ่ม CHECKIN_OPENS_MINUTES_BEFORE นาที) — ผู้เรียกเช็ค
-// เพิ่มว่าการจองยังไม่จบ จึงเช็คอินได้ถึงเวลาสิ้นสุดตามกฎของ backend (เดิมปุ่มหายไป
-// หลังเริ่มได้ 15 นาที ทั้งที่ระบบยังรับเช็คอินอยู่ คนมาสายจึงหาปุ่มไม่เจอ)
-export const canCheckIn = (startTime) =>
-  (new Date() - new Date(startTime)) / 60000 >= -CHECKIN_OPENS_MINUTES_BEFORE
+// กำลังใช้ห้องอยู่ (เลยเวลาเริ่มแล้วแต่ยังไม่จบ) — กดยกเลิกตอนนี้ = คืนห้องก่อนเวลา
+export const isInUse = (startTime, endTime) =>
+  new Date() >= new Date(startTime) && !isPast(endTime)
 
 // ตรวจรหัสผ่านเบื้องต้นก่อนส่ง (กฎเต็มตรวจที่ backend) คืนข้อความผิด หรือ '' ถ้าผ่าน
 export const passwordProblem = (password) =>

@@ -87,16 +87,16 @@ class QARound2Tests(QABase):
                               {'end_time': (now + timedelta(hours=1)).isoformat()}, format='json')
         self.assertEqual(r.status_code, 200, r.data)
 
-    # ── แดชบอร์ดนับรายการที่เช็คอินแล้ว ─────────────────────────
-    def test_dashboard_still_counts_after_check_in(self):
+    # ── แดชบอร์ดยังนับรายการที่คืนห้องก่อนเวลา ─────────────────────
+    def test_dashboard_still_counts_after_returning_room(self):
         now = timezone.now()
         b = self.make_booking(now - timedelta(minutes=5), now + timedelta(minutes=30))
         self.as_user(self.admin)
         before = self.client.get('/api/dashboard/').data
         self.as_user(self.bot)
-        self.client.post(f'/api/bookings/{b.id}/check_in/')
+        self.client.post(f'/api/bookings/{b.id}/cancel/')
         b.refresh_from_db()
-        self.assertEqual(b.status, 'checked_in')
+        self.assertEqual(b.status, 'approved')
         self.as_user(self.admin)
         after = self.client.get('/api/dashboard/').data
         self.assertEqual(before['today_dynamic'], after['today_dynamic'])
@@ -142,7 +142,7 @@ class QARound2Tests(QABase):
         now = timezone.now()
         b = self.make_booking(now - timedelta(hours=3), now - timedelta(hours=1))
         self.client.force_authenticate(user=None)
-        r = self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.checkin_token}/')
+        r = self.client.post(f'/api/bookings/{b.id}/cancel-email/{b.cancel_token}/')
         self.assertEqual(r.status_code, 400)
 
     # ── ฟีดสถานะห้อง ────────────────────────────────────────────

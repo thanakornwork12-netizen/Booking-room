@@ -211,7 +211,6 @@ class Booking(models.Model):
         ('rejected',   'ปฏิเสธ'),
         ('cancelled',  'ยกเลิก'),
         ('completed',  'เสร็จสิ้น'),
-        ('checked_in', 'เช็คอินแล้ว'),
     ]
 
     user           = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
@@ -223,9 +222,8 @@ class Booking(models.Model):
     status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     note           = models.TextField(blank=True)
     reject_reason  = models.TextField(blank=True)
-    checked_in     = models.BooleanField(default=False)
-    checked_in_at  = models.DateTimeField(null=True, blank=True)
-    checkin_token  = models.UUIDField(default=uuid.uuid4, editable=False)
+    # token ของลิงก์ "ยกเลิก/คืนห้อง" ในอีเมล — ไม่ต้องล็อกอินก็กดได้ ใครมีลิงก์ก็ยกเลิกได้
+    cancel_token   = models.UUIDField(default=uuid.uuid4, editable=False)
     reminded       = models.BooleanField(default=False)
     created_at     = models.DateTimeField(auto_now_add=True)
     updated_at     = models.DateTimeField(auto_now=True)
