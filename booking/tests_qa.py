@@ -47,8 +47,9 @@ class QABase(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        # อาจารย์: ผู้ใช้ทั่วไปที่จองทั้งเทอมได้ด้วย (นักศึกษาจองได้แค่รายครั้ง ดู test_student_cannot_book_term)
         self.bot = User.objects.create_user(
-            username='qa_test_bot', password='QaTest1234', role='student',
+            username='qa_test_bot', password='QaTest1234', role='lecturer',
             email='qa_test_bot@example.com', student_id='6611111111')
         self.user_b = User.objects.create_user(
             username='qa_user_b', password='QaUserB1234', role='student',
@@ -128,7 +129,7 @@ class AccountQATests(QABase):
     def test_profile_cannot_change_role_or_username(self):
         self.client.patch('/api/auth/profile/', {'role': 'admin', 'username': 'hacker'}, format='json')
         self.bot.refresh_from_db()
-        self.assertEqual((self.bot.role, self.bot.username), ('student', 'qa_test_bot'))
+        self.assertEqual((self.bot.role, self.bot.username), ('lecturer', 'qa_test_bot'))
 
     def test_profile_student_id_must_be_numeric(self):
         """กฎเดียวกับตอนสมัคร — แก้ผ่านโปรไฟล์ต้องไม่เลี่ยงได้"""
@@ -760,22 +761,27 @@ class RoleMatrixTests(QABase):
         self.other = Booking.objects.create(user=self.user_b, room=self.room, title='ของคนอื่น', attendees=1,
                                             status='pending', start_time=aware(self.tue, 9),
                                             end_time=aware(self.tue, 10))
+        self.lect_booking = Booking.objects.create(user=self.lect, room=self.room_b, title='ของอาจารย์',
+                                                   attendees=1, status='pending', start_time=aware(self.tue, 9),
+                                                   end_time=aware(self.tue, 10))
 
     ADMIN_GETS = ['/api/dashboard/', '/api/export/excel/?sheets=rooms', '/api/rooms/usage-stats/',
                   '/api/rooms/admin-status/', '/api/maintenance/slots/', '/api/maintenance-blocks/']
 
     def test_general_users_blocked_from_admin_endpoints(self):
-        for user in (self.bot, self.lect):
+        for user in (self.user_b, self.lect):   # นักศึกษา, อาจารย์
             self.as_user(user)
             for url in self.ADMIN_GETS:
                 self.assertEqual(self.client.get(url).status_code, 403, (user.role, url))
-            self.assertEqual(self.client.post(f'/api/bookings/{self.other.id}/approve/').status_code, 403)
-            self.assertEqual(self.client.get(f'/api/bookings/{self.other.id}/').status_code, 404)
+            theirs = self.other if user != self.user_b else self.lect_booking
+            self.assertEqual(self.client.post(f'/api/bookings/{theirs.id}/approve/').status_code, 403)
+            self.assertEqual(self.client.get(f'/api/bookings/{theirs.id}/').status_code, 404)
             # สิทธิ์เช็คก่อนตรวจข้อมูล: ส่งข้อมูลไม่ครบก็ได้ 403 ไม่ใช่ 400
             self.assertEqual(self.client.post('/api/rooms/', {}, format='json').status_code, 403)
             self.assertEqual(self.client.post('/api/buildings/', {}, format='json').status_code, 403)
             rows = rows_of(self.client.get('/api/bookings/').data)
-            self.assertFalse(any(b['id'] == self.other.id for b in rows))
+            if user != self.user_b:   # self.other เป็นของ user_b เอง
+                self.assertFalse(any(b['id'] == self.other.id for b in rows))
 
     def test_staff_has_admin_rights(self):
         for user in (self.staff, self.admin):
@@ -792,3 +798,42 @@ class RoleMatrixTests(QABase):
         r = self.client.post('/api/auth/login/', {'username': 'QA_LECT', 'password': 'QaLect1234'}, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data['user']['role'], 'lecturer')
+
+    def test_student_cannot_book_term(self):
+        """นักศึกษาจองได้เฉพาะรายครั้ง — ทุกช่องทางของการจองทั้งเทอมได้ 403"""
+        term = {'room': self.room.id, 'subject_name': 'x', 'attendees': 5, 'day_of_week': self.tue.weekday(),
+                'start_time': '08:00', 'end_time': '09:00', 'term_start': str(self.tue),
+                'term_end': str(self.tue + timedelta(days=30)), 'term_name': 'x'}
+        split = {'subject_name': 'x', 'attendees': 5, 'day_of_week': self.tue.weekday(),
+                 'start_time': '08:00', 'end_time': '09:00',
+                 'first_room_id': self.room.id, 'first_term_start': str(self.tue),
+                 'first_term_end': str(self.tue + timedelta(days=14)),
+                 'second_room_id': self.room_b.id, 'second_term_start': str(self.tue + timedelta(days=15)),
+                 'second_term_end': str(self.tue + timedelta(days=30))}
+        legacy = TermBooking.objects.create(
+            user=self.user_b, room=self.room_b, subject_name='เดิม', attendees=1, day_of_week=self.tue.weekday(),
+            start_time=aware(self.tue, 10).time(), end_time=aware(self.tue, 11).time(),
+            term_start=self.tue, term_end=self.tue + timedelta(days=30), status='pending')
+        self.as_user(self.user_b)
+        self.assertEqual(self.client.post('/api/term-bookings/', term, format='json').status_code, 403)
+        self.assertEqual(self.client.post('/api/term-bookings/split-book/', split, format='json').status_code, 403)
+        self.assertEqual(self.client.post('/api/term-bookings/split-recommend/', {
+            'attendees': 5, 'day_of_week': 1, 'start_time': '08:00', 'end_time': '09:00',
+            'term_start': str(self.tue), 'term_end': str(self.tue + timedelta(days=30))}, format='json').status_code, 403)
+        self.assertEqual(self.client.post('/api/rooms/search/', {
+            'attendees': 5, 'booking_type': 'term', 'day_of_week': 1, 'start_time': '08:00', 'end_time': '09:00',
+            'term_start': str(self.tue), 'term_end': str(self.tue + timedelta(days=30))}, format='json').status_code, 403)
+        self.assertEqual(self.client.patch(f'/api/term-bookings/{legacy.id}/', {'subject_name': 'y'},
+                                           format='json').status_code, 403)
+        self.assertFalse(TermBooking.objects.filter(subject_name='x').exists())
+        # รายการเดิมของตัวเองยังดูและยกเลิกได้
+        self.assertEqual(self.client.get(f'/api/term-bookings/{legacy.id}/').status_code, 200)
+        self.assertEqual(self.client.delete(f'/api/term-bookings/{legacy.id}/').status_code, 200)
+        # รายวันยังจองได้ตามปกติ
+        r = self.client.post('/api/bookings/', {'room': self.room.id, 'title': 'ok', 'attendees': 5,
+                             'start_time': aware(self.tue, 13).isoformat(),
+                             'end_time': aware(self.tue, 14).isoformat()}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        # อาจารย์จองทั้งเทอมได้
+        self.as_user(self.lect)
+        self.assertEqual(self.client.post('/api/term-bookings/', term, format='json').status_code, 201)

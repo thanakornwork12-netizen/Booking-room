@@ -38,7 +38,9 @@ from .maintenance import sync_room_status
 from .overlap import (
     ACTIVE_BOOKING_STATUSES, TERM_BLOCKING_STATUSES, find_booking_conflict, find_term_conflict,
 )
-from .permissions import IsAdminOrStaff, is_admin_or_staff
+from .permissions import (
+    TERM_BOOKING_DENIED, CanBookTerm, IsAdminOrStaff, can_book_term, is_admin_or_staff,
+)
 from .throttles import PasswordResetThrottle, ThaiThrottleMixin
 from .serializers import (
     check_password_strength,
@@ -444,8 +446,9 @@ class RoomViewSet(viewsets.ModelViewSet):
         booking_type = d.get('booking_type', 'dynamic')
         if booking_type == 'dynamic':
             return self._search_dynamic(d, request)
-        else:
-            return self._search_term(d, request)
+        if not can_book_term(request.user):
+            raise PermissionDenied(TERM_BOOKING_DENIED)
+        return self._search_term(d, request)
 
     @action(detail=False, methods=['get'], url_path='suggestions')
     def suggestions(self, request):
@@ -1350,6 +1353,15 @@ def _term_summary(tb):
 
 class TermBookingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+
+    # นักศึกษาจองทั้งเทอมไม่ได้ (permissions.TERM_BOOKING_ROLES) — ยังดู/ยกเลิก
+    # รายการเดิมของตัวเองได้ แอดมินอนุมัติ/ปฏิเสธผ่าน approve/reject ตามเดิม
+    TERM_WRITE_ACTIONS = ('create', 'update', 'partial_update', 'split_recommend', 'split_book')
+
+    def get_permissions(self):
+        if self.action in self.TERM_WRITE_ACTIONS:
+            return [CanBookTerm()]
+        return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user

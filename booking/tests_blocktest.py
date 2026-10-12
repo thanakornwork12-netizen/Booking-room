@@ -65,9 +65,10 @@ class BlockTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         # ผู้ใช้ทั่วไปที่ใช้ทดสอบการจอง
+        # อาจารย์: ผู้ใช้ทั่วไปที่จองทั้งเทอมได้ด้วย (นักศึกษาจองได้แค่รายครั้ง ดู test_student_cannot_book_term)
         self.bot = User.objects.create_user(
             username='qa_test_bot', password='QaTest1234',
-            email='qa_test_bot@example.com', role='student',
+            email='qa_test_bot@example.com', role='lecturer',
             student_id='6611111111', first_name='QA', last_name='Bot',
         )
         self.admin = User.objects.create_user(

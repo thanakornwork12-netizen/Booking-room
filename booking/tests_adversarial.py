@@ -38,8 +38,9 @@ class AdvBase(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.client.raise_request_exception = False
+        # อาจารย์: ผู้ใช้ทั่วไปที่จองทั้งเทอมได้ด้วย (นักศึกษาจองได้แค่รายครั้ง ดู test_student_cannot_book_term)
         self.bot = User.objects.create_user(username='qa_test_bot', password='QaTest1234',
-                                            role='student', email='qa_test_bot@example.com')
+                                            role='lecturer', email='qa_test_bot@example.com')
         self.admin = User.objects.create_user(username='qa_admin', password='QaAdmin1234',
                                               role='admin', email='qa_admin@example.com')
         self.client.force_authenticate(user=self.bot)

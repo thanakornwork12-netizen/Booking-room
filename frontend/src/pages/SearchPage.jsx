@@ -6,7 +6,7 @@ import {
   LifeBuoy, LayoutDashboard, MapPin, RefreshCw, Search, Settings2,
   Sparkles, ArrowRight, Users, X, BookOpen, AlertTriangle,
 } from 'lucide-react'
-import api from '../api/axios'
+import api, { getUser } from '../api/axios'
 import { DURATIONS, addHours, pickFittingDuration, localDateStr } from '../utils/booking'
 import { TIME_SLOTS } from '../config'
 import { extractErrorMessage } from '../utils/errors'
@@ -400,10 +400,17 @@ function FacilityTags({ facilities = [], maxShow = 3, highlight = [], equipmentP
   )
 }
 
+// จองทั้งเทอมได้เฉพาะอาจารย์/เจ้าหน้าที่/ผู้ดูแล — ตรงกับ backend
+// (permissions.TERM_BOOKING_ROLES) นักศึกษาเห็นปุ่มแต่กดไม่ได้ พร้อมบอกเหตุผล
+const TERM_BOOKING_ROLES = ['lecturer', 'staff', 'admin']
+const canBookTerm = () => TERM_BOOKING_ROLES.includes(String(getUser()?.role || '').toLowerCase())
+
 function BookingTypeSelector({ value, onChange }) {
+  const termAllowed = canBookTerm()
   const types = [
     { key: 'daily', icon: Coffee, label: 'รายวัน', sub: 'เลือกวันและเวลา' },
-    { key: 'term', icon: BookOpen, label: 'ทั้งเทอม', sub: 'จองประจำทุกสัปดาห์' },
+    { key: 'term', icon: BookOpen, label: 'ทั้งเทอม',
+      sub: termAllowed ? 'จองประจำทุกสัปดาห์' : 'สำหรับอาจารย์และเจ้าหน้าที่', disabled: !termAllowed },
   ]
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -412,9 +419,10 @@ function BookingTypeSelector({ value, onChange }) {
         const active = value === t.key
         const accent = active ? (t.key === 'term' ? 'from-indigo-600 to-violet-600 border-indigo-600' : 'from-blue-600 to-indigo-600 border-blue-600') : 'bg-white border-slate-200'
         return (
-          <button key={t.key} onClick={() => onChange(t.key)}
+          <button key={t.key} onClick={() => !t.disabled && onChange(t.key)} disabled={t.disabled}
+            title={t.disabled ? 'นักศึกษาจองได้เฉพาะรายวัน' : undefined}
             className={`group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2.5 transition-all text-left
-              ${active ? `bg-gradient-to-br ${accent} text-white shadow-md shadow-blue-200/70` : 'bg-white text-slate-700 hover:border-blue-300 hover:shadow-sm'}`}>
+              ${t.disabled ? 'cursor-not-allowed opacity-50 bg-white text-slate-500' : active ? `bg-gradient-to-br ${accent} text-white shadow-md shadow-blue-200/70` : 'bg-white text-slate-700 hover:border-blue-300 hover:shadow-sm'}`}>
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>
               <Icon size={15} className={active ? 'text-white' : 'text-blue-600'} />
             </div>

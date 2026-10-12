@@ -34,11 +34,11 @@ const STEPS = [
 ]
 
 // ตรงกับสิทธิ์ที่ backend บังคับจริง (booking/permissions.py: admin/staff คือฝั่ง
-// ผู้ดูแล ที่เหลือเป็นผู้ใช้ทั่วไปสิทธิ์เท่ากัน) — เดิมตารางบอกว่านักศึกษาจอง
+// ผู้ดูแล, จองทั้งเทอมเฉพาะอาจารย์ขึ้นไป: TERM_BOOKING_ROLES) — เดิมตารางบอกว่านักศึกษาจอง
 // ห้องเรียนหรือจองล่วงหน้าเกิน 7 วันไม่ได้ และเจ้าหน้าที่อนุมัติไม่ได้ ซึ่งไม่จริง
 const PERMISSIONS = [
   { feature: 'ค้นหาและจองห้องรายครั้ง', student: true, lecturer: true, staff: true, admin: true },
-  { feature: 'จองทั้งเทอม (ซ้ำทุกสัปดาห์)', student: true, lecturer: true, staff: true, admin: true },
+  { feature: 'จองทั้งเทอม (ซ้ำทุกสัปดาห์)', student: false, lecturer: true, staff: true, admin: true },
   { feature: 'จองล่วงหน้าได้สูงสุด 365 วัน', student: true, lecturer: true, staff: true, admin: true },
   { feature: 'ยกเลิก / คืนห้องก่อนเวลา (การจองของตัวเอง)', student: true, lecturer: true, staff: true, admin: true },
   { feature: 'อนุมัติหรือปฏิเสธคำขอจอง', student: false, lecturer: false, staff: true, admin: true },

@@ -36,8 +36,9 @@ class BookingEdgeBase(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        # อาจารย์: ผู้ใช้ทั่วไปที่จองทั้งเทอมได้ด้วย (นักศึกษาจองได้แค่รายครั้ง ดู test_student_cannot_book_term)
         self.bot = User.objects.create_user(
-            username='qa_test_bot', password='QaTest1234', role='student',
+            username='qa_test_bot', password='QaTest1234', role='lecturer',
             email='qa_test_bot@example.com', student_id='6611111111')
         self.user_b = User.objects.create_user(
             username='qa_user_b', password='QaUserB1234', role='student',

@@ -22,3 +22,22 @@ class IsAdminOrStaff(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated
                     and is_admin_or_staff(request.user))
+
+
+# จองทั้งเทอม (ซ้ำทุกสัปดาห์ตลอดภาคการศึกษา) — กันห้องไว้นานทั้งเทอม จึงให้เฉพาะ
+# อาจารย์และฝั่งผู้ดูแล นักศึกษาจองได้เฉพาะรายครั้ง
+TERM_BOOKING_ROLES = ('lecturer', 'staff', 'admin')
+TERM_BOOKING_DENIED = 'นักศึกษาจองทั้งเทอมไม่ได้ จองได้เฉพาะรายครั้ง (การจองทั้งเทอมสำหรับอาจารย์และเจ้าหน้าที่)'
+
+
+def can_book_term(user):
+    """True ถ้าผู้ใช้จองทั้งเทอมได้ (อาจารย์/เจ้าหน้าที่/ผู้ดูแล)"""
+    return getattr(user, 'role', None) in TERM_BOOKING_ROLES
+
+
+class CanBookTerm(BasePermission):
+    """ใช้กับ action ที่สร้าง/แก้/ค้นหาการจองทั้งเทอม — เช็คก่อนตรวจข้อมูล ได้ 403 ทันที"""
+    message = TERM_BOOKING_DENIED
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and can_book_term(request.user))

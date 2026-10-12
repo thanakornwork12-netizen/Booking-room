@@ -8,7 +8,7 @@ from django.db import transaction
 from django.test import override_settings
 from django.utils import timezone
 
-from booking.models import BookingLog, Notification, TermBooking
+from booking.models import BookingLog, Notification, TermBooking, User
 from booking.tests_qa import QABase, aware
 
 
@@ -17,6 +17,10 @@ def _send_on_commit_inline(send_func, instance):
 
 
 class TermApprovalTests(QABase):
+    def lecturer_b(self):
+        # ผู้จองคนที่สองต้องเป็นอาจารย์ — นักศึกษาจองทั้งเทอมไม่ได้
+        return User.objects.get_or_create(username='qa_lect_b', defaults={'role': 'lecturer'})[0]
+
     def payload(self, **over):
         p = {
             'room': self.room.id, 'subject_name': 'สถิติวิศวกรรม', 'attendees': 20,
@@ -67,7 +71,7 @@ class TermApprovalTests(QABase):
     # ── คำขอที่รออนุมัติกันช่วงเวลาไว้ ────────────────────────
     def test_pending_blocks_other_requests(self):
         self.request_term()
-        self.as_user(self.user_b)
+        self.as_user(self.lecturer_b())
         term = self.client.post('/api/term-bookings/', self.payload(), format='json')
         self.assertEqual(term.status_code, 400, 'จองทั้งเทอมทับคำขอที่รออนุมัติได้')
         daily = self.client.post('/api/bookings/', {
@@ -123,7 +127,7 @@ class TermApprovalTests(QABase):
         self.assertTrue(Notification.objects.filter(
             user=self.bot, term_booking=tb, type='term_rejected').exists())
 
-        self.as_user(self.user_b)
+        self.as_user(self.lecturer_b())
         again = self.client.post('/api/term-bookings/', self.payload(), format='json')
         self.assertEqual(again.status_code, 201, 'ปฏิเสธแล้วช่วงเวลายังไม่ว่าง')
 

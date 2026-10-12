@@ -40,7 +40,15 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 # (TIME_ZONE / USE_TZ ตั้งครั้งเดียวในหัวข้อ INTERNATIONALIZATION ด้านล่าง)
 # ระบุ Domain ที่อนุญาตให้เข้าถึง
-ALLOWED_HOSTS = ['room-booking-1-7u7e.onrender.com', 'localhost', '127.0.0.1', '*']
+ALLOWED_HOSTS = ['booking-room-1rvd.onrender.com', 'localhost', '127.0.0.1', '*']
+
+# production อยู่หลัง HTTPS proxy ของ Render — cookie ของ Django admin/CSRF ส่ง
+# เฉพาะ HTTPS (manage.py check --deploy เตือน) ในเครื่อง DEBUG=True ไม่กระทบ
+# ระบบหลักใช้ JWT ใน header ไม่ได้ใช้ cookie จึงไม่กระทบการล็อกอินหน้าเว็บ
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # Django 4+ ต้องมี origin ที่เชื่อถือได้ชัดเจนถึงจะ accept POST แบบ
 # form-based (เช่น Django admin login, ปุ่มยกเลิกในอีเมล) เวลา
