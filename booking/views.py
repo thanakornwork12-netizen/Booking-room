@@ -1594,6 +1594,9 @@ class TermBookingViewSet(viewsets.ModelViewSet):
             return Response({'error': 'วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม'}, status=400)
         if t_end < timezone.localdate():
             return Response({'error': 'ช่วงเทอมที่เลือกสิ้นสุดไปแล้ว'}, status=400)
+        # แบ่งครึ่งจากช่วงที่ยังเหลือ — จองกลางเทอมเดิมแบ่งจากวันเปิดเทอม ครึ่งแรก
+        # อาจผ่านไปหมดแล้ว จองต่อก็โดนปฏิเสธ (ไม่เหลือคาบในอนาคต)
+        t_start = max(t_start, timezone.localdate())
 
         mid = t_start + (t_end - t_start) // 2
         first_end = mid
@@ -1740,9 +1743,12 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         if missing:
             return Response({'error': f'ข้อมูลไม่ครบ: {", ".join(missing)}'}, status=400)
 
-        note_base = data.get('note', '')
         halves = []
         for key, label in (('first', 'เทอมแรก'), ('second', 'เทอมหลัง')):
+            # ป้ายต่อท้ายต้องไม่ดันหมายเหตุของผู้ใช้จนเกินเพดาน (เดิมโดนปฏิเสธ
+            # เพราะข้อความที่ระบบเติมเอง)
+            suffix = f' [{label} — จองสลับห้อง]'
+            note_base = str(data.get('note') or '')[:config.NOTE_MAX_LENGTH - len(suffix)]
             ser = TermBookingCreateSerializer(data={
                 'room':         data[f'{key}_room_id'],
                 'subject_name': data['subject_name'],
@@ -1754,7 +1760,7 @@ class TermBookingViewSet(viewsets.ModelViewSet):
                 'term_start':   data[f'{key}_term_start'],
                 'term_end':     data[f'{key}_term_end'],
                 'term_name':    data.get('term_name', ''),
-                'note':         (note_base + f' [{label} — จองสลับห้อง]').strip(),
+                'note':         (note_base + suffix).strip(),
             }, context={'request': request})
             if not ser.is_valid():
                 return Response({'error': f'ห้อง{label}: {_first_error(ser.errors)}',

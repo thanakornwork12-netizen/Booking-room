@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { Fragment, useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Eye, EyeOff, UserPlus, ChevronRight, Building2, ShieldCheck,
@@ -150,8 +150,8 @@ export default function RegisterPage() {
               ))}
 
               {SCHEDULE_ROOMS.map((room) => (
-                <>
-                  <p key={room.name} className="flex items-center text-[10px] font-semibold text-slate-500">{room.name}</p>
+                <Fragment key={room.name}>
+                  <p className="flex items-center text-[10px] font-semibold text-slate-500">{room.name}</p>
                   {SCHEDULE_TIMES.map((_, ci) => {
                     const isFree = room.free === ci
                     const isBusy = room.busy?.includes(ci)
@@ -170,7 +170,7 @@ export default function RegisterPage() {
                       </div>
                     )
                   })}
-                </>
+                </Fragment>
               ))}
             </div>
 

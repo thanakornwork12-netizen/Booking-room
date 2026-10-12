@@ -82,6 +82,11 @@ class RoomStatusConsumer(AsyncWebsocketConsumer):
 
     async def booking_update(self, event):
         """รับ event เมื่อมีการจองใหม่ หรือสถานะการจองเปลี่ยน"""
+        # ผู้ใช้ทั่วไปเห็นเฉพาะห้องที่เปิดให้จอง เหมือน REST API และ get_all_rooms —
+        # เดิมส่งเหตุการณ์ของทุกห้องให้ทุกคน รวมห้องที่ซ่อนไว้
+        from .config import AI_FORECAST_ROOM_IDS
+        if not is_admin_or_staff(self.user) and event['room_id'] not in AI_FORECAST_ROOM_IDS:
+            return
         await self.send(text_data=json.dumps({
             'type':       'booking_update',
             'booking_id': event['booking_id'],

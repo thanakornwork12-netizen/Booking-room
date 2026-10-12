@@ -565,7 +565,7 @@ export default function HomePage() {
         setBookings(prev => prev.map(b => b.id === id ? {...b, status:'cancelled'} : b))
       }
       if (selectedBooking?.id === id) setSelectedBooking(null)
-    } catch (err) { alert(err.response?.data?.error || 'เกิดข้อผิดพลาด') }
+    } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
   const handleTermCancel = async (id) => {

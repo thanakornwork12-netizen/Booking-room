@@ -52,6 +52,10 @@ CSRF_TRUSTED_ORIGINS = [
 
 # ---------------- INSTALLED APPS ----------------
 INSTALLED_APPS = [
+    # ต้องอยู่บนสุด: ให้ runserver ในเครื่องรันแบบ ASGI รองรับ WebSocket เหมือน
+    # daphne บน production — เดิม runserver เสิร์ฟแค่ HTTP ช่อง /ws/ ได้ 404
+    # แจ้งเตือนแบบ real-time จึงไม่ทำงานตอนรันในเครื่อง
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

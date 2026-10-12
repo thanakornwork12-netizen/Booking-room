@@ -467,13 +467,16 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
         # ตกแค่วันที่ผ่านไปแล้ว ได้คำขอที่ไม่มีผลอะไรให้แอดมินอนุมัติ
         slot_changed = dates_changed or 'day_of_week' in data
         first_day = max(term_start, timezone.localdate())
-        if slot_changed and not any(
-            (first_day + timedelta(days=i)).weekday() == day_of_week
-            for i in range((term_end - first_day).days + 1)
-        ):
+        upcoming = [first_day + timedelta(days=i) for i in range((term_end - first_day).days + 1)
+                    if (first_day + timedelta(days=i)).weekday() == day_of_week]
+        if slot_changed and not upcoming:
             raise serializers.ValidationError(
                 'วันที่เลือกในช่วงเทอมนี้ผ่านไปหมดแล้ว ไม่เหลือคาบให้จอง กรุณาเลือกวันหรือช่วงเทอมใหม่'
             )
+        # จองใหม่กลางเทอม: เลื่อนวันเริ่มมาเป็นคาบแรกที่ยังไม่ผ่าน — เดิมเก็บวันเปิด
+        # เทอม (เช่น 1 มิ.ย.) ไว้ รายการจึงดูเหมือนจองห้องไว้ตั้งแต่เดือนที่ผ่านมา
+        if self.instance is None and term_start < upcoming[0]:
+            term_start = data['term_start'] = upcoming[0]
 
         if attendees < 1:
             raise serializers.ValidationError({'attendees': 'จำนวนผู้เข้าร่วมต้องมากกว่า 0'})

@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom'
 import { Eye, EyeOff, Lock, ArrowRight, KeyRound } from 'lucide-react'
 import api from '../api/axios'
 import { passwordProblem } from '../utils/booking'
+import { extractErrorMessage } from '../utils/errors'
 
 const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-11 py-3 text-sm
   text-slate-800 outline-none transition-all placeholder:text-slate-400
@@ -37,7 +38,7 @@ export default function ResetPasswordPage() {
       setSuccess(true)
       setTimeout(() => navigate('/login'), 2500)
     } catch (err) {
-      setError(err?.response?.data?.error || 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว')
+      setError(extractErrorMessage(err, 'ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว'))
     } finally {
       isSubmittingRef.current = false
       setLoading(false)

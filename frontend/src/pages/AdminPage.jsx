@@ -1036,7 +1036,7 @@ function MaintenancePanel({ dashboard, adminRooms }) {
       alert('ล็อกห้องเรียบร้อย — ส่งช่างเข้าบำรุงได้')
       setSlots(prev => prev.filter(s => s.label !== slot.label))
     } catch (e) {
-      alert(e.response?.data?.error || 'ล็อกห้องไม่สำเร็จ')
+      alert(extractErrorMessage(e, 'ล็อกห้องไม่สำเร็จ'))
     } finally {
       setBlocking(null)
     }

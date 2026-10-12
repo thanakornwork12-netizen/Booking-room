@@ -688,3 +688,55 @@ class QAOverlookedTests(QABase):
         self.assertTrue(b.reminded)
         self.assertTrue(any('late' in (m.body + str(m.alternatives)) or m.to == [self.bot.email]
                             for m in mail.outbox))
+
+
+# ══════════════════════════════════════════════════════════════
+# QA ไล่กดหน้าเว็บจริง (12 ต.ค.)
+# ══════════════════════════════════════════════════════════════
+class QAEndToEndFindingsTests(QABase):
+    def test_mid_term_booking_starts_at_next_class(self):
+        today = timezone.localdate()
+        term_start = today - timedelta(days=60)
+        dow = today.weekday()
+        r = self.client.post('/api/term-bookings/', {
+            'room': self.room.id, 'subject_name': 'กลางเทอม', 'attendees': 5, 'day_of_week': dow,
+            'start_time': '23:00', 'end_time': '23:30',
+            'term_start': str(term_start), 'term_end': str(today + timedelta(days=30)), 'term_name': 'x'},
+            format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        tb = TermBooking.objects.get(subject_name='กลางเทอม')
+        self.assertGreaterEqual(tb.term_start, today)
+        self.assertEqual(tb.term_start.weekday(), dow)
+
+    def test_split_recommend_halves_start_from_today(self):
+        today = timezone.localdate()
+        r = self.client.post('/api/term-bookings/split-recommend/', {
+            'attendees': 5, 'day_of_week': self.tue.weekday(), 'start_time': '13:00', 'end_time': '14:00',
+            'term_start': str(today - timedelta(days=120)), 'term_end': str(today + timedelta(days=60)),
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        text = str(r.data)
+        # ไม่มีช่วงไหนในแผนที่เริ่มก่อนวันนี้
+        self.assertNotIn(str(today - timedelta(days=120)), text)
+
+    def test_room_status_socket_hides_unbookable_rooms(self):
+        import asyncio
+        from booking.consumers import RoomStatusConsumer
+        sent = []
+
+        async def fake_send(text_data=None, **kw):
+            sent.append(text_data)
+
+        def event(room_id):
+            return {'booking_id': 1, 'room_id': room_id, 'room_name': 'x', 'status': 'approved',
+                    'start_time': '', 'end_time': ''}
+
+        c = RoomStatusConsumer()
+        c.send = fake_send
+        c.user = self.bot
+        asyncio.run(c.booking_update(event(99999)))   # ห้องนอกชุดที่เปิดจอง
+        asyncio.run(c.booking_update(event(self.room.id)))
+        self.assertEqual(len(sent), 1)
+        c.user = self.admin
+        asyncio.run(c.booking_update(event(99999)))
+        self.assertEqual(len(sent), 2)
