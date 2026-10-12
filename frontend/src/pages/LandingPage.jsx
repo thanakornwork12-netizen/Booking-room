@@ -54,7 +54,7 @@ const STEPS = [
 ]
 
 const TOTAL_BOOKINGS = '7,252'
-const AI_ACCURACY_PCT = 90
+const AI_ACCURACY_PCT = 81
 
 // เอฟเฟกต์เบามาก — floating dot 2 จุดในฉากหลัง Hero เท่านั้น ไม่ใช้ที่อื่น
 const FLOAT_ANIM = `
@@ -132,7 +132,7 @@ function AccuracyMeter({ pct }) {
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-extrabold text-slate-900">&gt;{pct}%</span>
+        <span className="text-2xl font-extrabold text-slate-900">{pct}%</span>
       </div>
     </div>
   )

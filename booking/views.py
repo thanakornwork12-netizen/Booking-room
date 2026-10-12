@@ -1,4 +1,5 @@
 import re
+from collections import defaultdict
 from datetime import date as date_type, datetime, time as time_type, timedelta
 from difflib import SequenceMatcher
 from functools import partial
@@ -6,13 +7,12 @@ from functools import partial
 import pandas as pd
 import pytz
 from django.conf import settings
-from django.contrib.auth import login
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.html import escape
@@ -26,7 +26,6 @@ from rest_framework.views import APIView
 
 from .authentication import issue_tokens
 from .excel import excel_safe
-from .ldap_auth import authenticate_ldap
 from . import config
 from .config import AI_FORECAST_ROOM_IDS
 from .models import (
@@ -175,7 +174,37 @@ class DeleteAccountView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = request.user
-        user.delete()
+        # ปิดบัญชีแทนการลบแถว — เดิม user.delete() ลบการจองทั้งหมดตามไปด้วย
+        # (on_delete=CASCADE) ประวัติที่ใช้ฝึก AI และสถิติห้องหาย และการจองที่
+        # อนุมัติไว้ในอนาคตหายเงียบโดยแอดมินไม่รู้ ตอนนี้: ยกเลิกเฉพาะรายการที่ยัง
+        # ไม่จบ (แจ้งผ่าน BookingLog/อีเมลตามปกติ) เก็บประวัติไว้ และล้างข้อมูลส่วนตัว
+        with transaction.atomic():
+            now = timezone.now()
+            for b in Booking.objects.select_for_update().filter(
+                    user=user, status__in=CANCELLABLE_BOOKING_STATUSES, end_time__gt=now):
+                _cancel_or_release(b, user)
+            for tb in TermBooking.objects.select_for_update().filter(
+                    user=user, status__in=TERM_BLOCKING_STATUSES, term_end__gte=timezone.localdate()):
+                old = tb.status
+                tb.status = 'cancelled'
+                tb.save()
+                BookingLog.objects.create(term_booking=tb, changed_by=user, old_status=old,
+                                          new_status='cancelled', remark='ผู้จองลบบัญชี')
+
+            # ปล่อย username/อีเมล/รหัสนักศึกษาให้สมัครหรือล็อกอิน LDAP ใหม่ได้
+            # ตั้งรหัสผ่านใช้ไม่ได้ → token เดิมทุกใบตายทันที (authentication.py)
+            user.username   = f'deleted_{user.pk}'
+            user.email      = ''
+            user.first_name = ''
+            user.last_name  = ''
+            user.phone      = ''
+            user.faculty    = ''
+            user.student_id = None
+            user.avatar     = None
+            user.is_active  = False
+            user.set_unusable_password()
+            user.save()
+            user.notifications.all().delete()
 
         return Response({'detail': 'ลบบัญชีผู้ใช้สำเร็จ'})
 
@@ -350,7 +379,8 @@ class RoomViewSet(viewsets.ModelViewSet):
             qs = qs.filter(room_type=room_type)
         if capacity is not None:
             qs = qs.filter(capacity__gte=capacity)
-        return qs
+        # เรียงตายตัว — เดิมไม่เรียง การแบ่งหน้าจึงอาจได้ห้องซ้ำ/หายระหว่างหน้า
+        return qs.order_by('id')
 
     def get_serializer_class(self):
         return RoomListSerializer if self.action == 'list' else RoomSerializer
@@ -466,7 +496,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         available = Room.objects.filter(
             is_active=True, capacity__gte=d['attendees'], building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').exclude(id__in=blocked).select_related('building')\
-         .prefetch_related('room_facilities__facility', 'forecasts')
+         .prefetch_related('room_facilities__facility')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -498,7 +528,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         available = Room.objects.filter(
             is_active=True, capacity__gte=d['attendees'], building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').exclude(id__in=set(booked_term)).select_related('building')\
-         .prefetch_related('room_facilities__facility', 'forecasts')
+         .prefetch_related('room_facilities__facility')
 
         if d.get('room_type'):
             available = available.filter(room_type=d['room_type'])
@@ -542,12 +572,18 @@ class RoomViewSet(viewsets.ModelViewSet):
         check_end_hour = end_hour if end_hour > start_hour else start_hour + 1
         level_order = {'low': 0, 'medium': 1, 'high': 2, 'urgent': 3}
 
+        # ดึงเฉพาะผลพยากรณ์ของวันและชั่วโมงที่ค้นหา ครั้งเดียวสำหรับทุกห้อง — เดิม
+        # prefetch ผลพยากรณ์ทุกวันของทุกห้อง (รวมวันที่ผ่านไปแล้วที่สะสมไม่ถูกลบ)
+        # แล้วค่อยกรองใน Python การค้นหาจึงช้าลงเรื่อย ๆ ตามจำนวนแถว
+        forecasts_by_room = defaultdict(list)
+        for f in DemandForecast.objects.filter(
+            room_id__in=[r.id for r in rooms], forecast_date=target_date,
+            hour__gte=start_hour, hour__lt=check_end_hour,
+        ):
+            forecasts_by_room[f.room_id].append(f)
+
         for room in rooms:
-            all_forecasts = list(room.forecasts.all())
-            forecasts = [
-                f for f in all_forecasts
-                if f.forecast_date == target_date and start_hour <= f.hour < check_end_hour
-            ]
+            forecasts = forecasts_by_room[room.id]
             room_data = RoomSerializer(room, context={'request': request}).data
             room_data['building_name'] = room.building.name if room.building else "ไม่ระบุอาคาร"
             room_data['historical_demand_count'] = getattr(room, 'historical_demand_count', 0)
@@ -669,7 +705,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         base_qs = Room.objects.filter(
             is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
         ).exclude(status='disabled').select_related('building').prefetch_related(
-            'room_facilities__facility', 'forecasts',
+            'room_facilities__facility',
         )
 
         def collect_for_slot(st, et, time_label=None):
@@ -911,7 +947,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             # เสร็จช่วงบ่ายก็ควรติดฟีด ช่วงซ่อมจริงถูกนับใน _rooms_next_free_window แล้ว
             r.id: r for r in Room.objects.filter(
                 is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
-            ).exclude(status='disabled').select_related('building').prefetch_related('room_facilities__facility', 'forecasts')
+            ).exclude(status='disabled').select_related('building').prefetch_related('room_facilities__facility')
         }
 
         windows = self._rooms_next_free_window(list(rooms_by_id.keys()), today, now_time)
@@ -1910,10 +1946,13 @@ class BookingViewSet(viewsets.ModelViewSet):
     def cancel(self, request, pk=None):
         # get_object() only sees the caller's own bookings, so a non-owner got 404
         # before the 403 check below could run; look up unfiltered like approve/reject.
-        booking = get_object_or_404(Booking, pk=pk)
-        if booking.user != request.user and not is_admin_or_staff(request.user):
-            return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
-        kind, error = _cancel_or_release(booking, request.user)
+        # ล็อกแถวเหมือน approve/reject — เดิมยกเลิกพร้อมกับที่แอดมินกดอนุมัติ
+        # ได้สถานะ "ยกเลิก" แต่ผู้จองได้อีเมล "อนุมัติแล้ว"
+        with transaction.atomic():
+            booking = get_object_or_404(Booking.objects.select_for_update(), pk=pk)
+            if booking.user != request.user and not is_admin_or_staff(request.user):
+                return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
+            kind, error = _cancel_or_release(booking, request.user)
         if error:
             return Response({'error': error}, status=400)
         # แอดมินยกเลิก/คืนห้องให้ — แจ้งเจ้าของในระบบด้วย
@@ -1967,7 +2006,9 @@ class BookingViewSet(viewsets.ModelViewSet):
                 button='✅ ยืนยัน คืนห้องตอนนี้' if in_use else '✅ ยืนยัน ยกเลิกการจอง',
             ))
 
-        kind, error = _cancel_or_release(booking, booking.user)
+        with transaction.atomic():
+            booking = Booking.objects.select_for_update().get(pk=booking.pk)
+            kind, error = _cancel_or_release(booking, booking.user)
         if error:
             return HttpResponse(self._html('❌', '#dc2626', 'ไม่สามารถยกเลิกได้', error), status=400)
         if kind == 'released':
@@ -2130,6 +2171,9 @@ def _find_maintenance_slots(
 
     if room_id:
         qs = qs.filter(room_id=room_id)
+    # ชั่วโมงที่ผ่านไปแล้วของวันนี้ล็อกปิดซ่อมไม่ได้ (serializer ปฏิเสธช่วงที่จบแล้ว)
+    # — เดิมแนะนำช่วงที่เลยเวลาไปแล้ว แอดมินกดล็อกแล้วเจอ error
+    qs = qs.exclude(forecast_date=today, hour__lt=timezone.localtime().hour)
 
     slots = []
     current = None
@@ -2248,14 +2292,25 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
             for r in {old_room, block.room}:
                 sync_room_status(r)
 
+    # ปิดได้เฉพาะช่วงที่ยังเปิดอยู่ — เดิมไม่เช็คสถานะ ช่วงที่ยกเลิกไปแล้วกด
+    # "เสร็จสิ้น" ได้ และช่วงที่เสร็จแล้วกด "ยกเลิก" ได้ ประวัติสลับไปมา
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
-        self._close(self.get_object(), 'completed')
+        block = self.get_object()
+        if block.status not in ('scheduled', 'active'):
+            return Response({'error': f'ปิดงานไม่ได้ สถานะปัจจุบัน: {block.get_status_display()}'}, status=400)
+        # ช่วงที่ยังไม่ถึงเวลาเริ่มยังไม่ได้ซ่อมจริง ให้ใช้ "ยกเลิก" แทน
+        if block.start_time > timezone.now():
+            return Response({'error': 'ช่วงซ่อมนี้ยังไม่เริ่ม หากไม่ต้องการแล้วให้กดยกเลิกแทน'}, status=400)
+        self._close(block, 'completed')
         return Response({'message': 'บำรุงรักษาเสร็จสิ้น'})
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        self._close(self.get_object(), 'cancelled')
+        block = self.get_object()
+        if block.status not in ('scheduled', 'active'):
+            return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {block.get_status_display()}'}, status=400)
+        self._close(block, 'cancelled')
         return Response({'message': 'ยกเลิกช่วงซ่อมบำรุงแล้ว'})
 
     @classmethod
@@ -2280,12 +2335,24 @@ class DashboardView(generics.GenericAPIView):
 
         # timezone.now() เป็น UTC — เดิมช่วง 00:00–06:59 เวลาไทยแดชบอร์ดนับเป็นเมื่อวาน
         today       = timezone.localdate()
-        total_rooms = Room.objects.count()
-        today_dynamic = Booking.objects.filter(start_time__date=today, status__in=USED_BOOKING_STATUSES).count()
-        today_term    = TermBooking.objects.filter(
+        # นับเฉพาะห้องที่เปิดให้จองจริง — เดิมนับทุกแถวในตาราง (69 ห้อง รวมห้องที่ปิด
+        # และห้องนอกชุด AI) อัตราการใช้จึงหารด้วยห้องที่จองไม่ได้ ออกมา 0% เกือบตลอด
+        bookable_rooms = Room.objects.filter(
+            is_active=True, building__is_active=True, id__in=AI_FORECAST_ROOM_IDS,
+        ).exclude(status='disabled')
+        total_rooms = bookable_rooms.count()
+        today_bookings = Booking.objects.filter(start_time__date=today, status__in=USED_BOOKING_STATUSES)
+        today_terms    = TermBooking.objects.filter(
             day_of_week=today.weekday(), status='active',
             term_start__lte=today, term_end__gte=today,
-        ).count()
+        )
+        today_dynamic = today_bookings.count()
+        today_term    = today_terms.count()
+        # อัตราการใช้ = สัดส่วนห้องที่มีคนใช้วันนี้ (เดิมเอาจำนวนการจองหารจำนวนห้อง
+        # ห้องเดียวจองหลายรอบจึงเกิน 100% ได้)
+        used_room_ids = (set(today_bookings.values_list('room_id', flat=True))
+                         | set(today_terms.values_list('room_id', flat=True)))
+        used_rooms = bookable_rooms.filter(id__in=used_room_ids).count()
         pending = (_live_bookings(Booking.objects.filter(status='pending')).count()
                    + _live_term_bookings(TermBooking.objects.filter(status='pending')).count())
         popular = (
@@ -2317,7 +2384,7 @@ class DashboardView(generics.GenericAPIView):
             'today_term':       today_term,
             'pending':          pending,
             'total_rooms':      total_rooms,
-            'utilization_rate': round((today_dynamic + today_term) / max(total_rooms, 1) * 100, 1),
+            'utilization_rate': round(used_rooms / max(total_rooms, 1) * 100, 1),
             'popular_rooms':    list(popular),
             'demand_alerts':    demand_alerts,
             'last_7_days':      last_7_days,
@@ -2393,27 +2460,3 @@ class ExportExcelView(APIView):
             import traceback
             traceback.print_exc()
             return JsonResponse({'error': str(e)}, status=400)
-
-def login_view(request):
-    if request.method == 'POST':
-        username = request.POST.get('username', '').strip()
-        password = request.POST.get('password', '')
-
-        # ส่ง credential ที่ user กรอกไป verify กับ LDAP
-        ldap_user = authenticate_ldap(username, password)
-
-        if ldap_user:
-            # สร้าง/อัปเดต Django user
-            user, _ = User.objects.get_or_create(username=username)
-            user.first_name = ldap_user['full_name']
-            user.email      = ldap_user['email']
-            user.save()
-
-            login(request, user,
-                  backend='django.contrib.auth.backends.ModelBackend')
-            return redirect('home')
-
-        return render(request, 'login.html',
-                      {'error': 'รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง'})
-
-    return render(request, 'login.html')

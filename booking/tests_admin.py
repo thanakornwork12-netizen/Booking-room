@@ -154,7 +154,11 @@ class MaintenanceLifecycleTests(TestCase):
         ids = sorted(row['id'] for row in rows)
         self.assertEqual(len(ids), 2, (first, second))
 
-        self.room.status = 'maintenance'   # จำลองว่าช่วงแรกเริ่มซ่อมไปแล้ว
+        # จำลองว่าช่วงแรกเริ่มซ่อมไปแล้ว — ปิดงานช่วงที่ยังไม่เริ่มไม่ได้
+        from django.utils import timezone
+        from booking.models import MaintenanceBlock
+        MaintenanceBlock.objects.filter(pk=ids[0]).update(start_time=timezone.now() - timedelta(hours=1))
+        self.room.status = 'maintenance'
         self.room.save(update_fields=['status'])
         r = self.client.post(f'/api/maintenance-blocks/{ids[0]}/complete/')
         self.room.refresh_from_db()

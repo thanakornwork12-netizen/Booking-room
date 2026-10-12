@@ -205,11 +205,39 @@ class AccountQATests(QABase):
         self.assertEqual(r.status_code, 400)
 
     def test_delete_account_happy_path(self):
+        past = Booking.objects.create(
+            user=self.bot, room=self.room, title='ใช้ไปแล้ว', attendees=5, status='approved',
+            start_time=timezone.now() - timedelta(days=3, hours=2),
+            end_time=timezone.now() - timedelta(days=3),
+        )
+        upcoming = Booking.objects.create(
+            user=self.bot, room=self.room, title='ยังไม่ถึง', attendees=5, status='approved',
+            start_time=aware(self.tue, 13), end_time=aware(self.tue, 15),
+        )
         r = self.client.post('/api/auth/delete-account/', {
             'confirm_username': 'qa_test_bot', 'confirm_text': 'DELETE', 'password': 'QaTest1234',
         }, format='json')
         self.assertEqual(r.status_code, 200)
+        # username ถูกปล่อยให้สมัครใหม่ได้ และบัญชีเดิมใช้งานไม่ได้
         self.assertFalse(User.objects.filter(username='qa_test_bot').exists())
+        self.bot.refresh_from_db()
+        self.assertFalse(self.bot.is_active)
+        self.assertFalse(self.bot.has_usable_password())
+        self.assertEqual(self.bot.email, '')
+        self.assertIsNone(self.bot.student_id)
+        # ประวัติที่จบแล้วยังอยู่ (ข้อมูล AI/สถิติ) ส่วนรายการที่ยังไม่ถึงถูกยกเลิก
+        past.refresh_from_db()
+        upcoming.refresh_from_db()
+        self.assertEqual(past.status, 'approved')
+        self.assertEqual(upcoming.status, 'cancelled')
+
+    def test_deleted_account_username_can_register_again(self):
+        self.client.post('/api/auth/delete-account/', {
+            'confirm_username': 'qa_test_bot', 'confirm_text': 'DELETE', 'password': 'QaTest1234',
+        }, format='json')
+        r = self.register(username='qa_test_bot', email='qa_test_bot@example.com',
+                          student_id='6611111111')
+        self.assertEqual(r.status_code, 201, r.data)
 
     def test_delete_account_wrong_password(self):
         r = self.client.post('/api/auth/delete-account/', {
@@ -477,3 +505,84 @@ class MiscQATests(QABase):
 
     def test_forecasts_list(self):
         self.assertEqual(self.client.get('/api/forecasts/').status_code, 200)
+
+
+# ══════════════════════════════════════════════════════════════
+# QA รอบ 12 ต.ค.: แดชบอร์ด, ช่วงปิดซ่อมที่ AI แนะนำ, ปิดงานซ่อม, ผลพยากรณ์ในผลค้นหา
+# ══════════════════════════════════════════════════════════════
+class QARound12OctTests(QABase):
+    def test_dashboard_counts_only_bookable_rooms(self):
+        # ห้องนอกชุด AI นับเป็นห้องทั้งหมดไม่ได้ — เดิมหารด้วยทุกแถวในตาราง
+        Room.objects.create(building=self.building, name='ห้องนอกระบบ', floor=1, capacity=10)
+        Booking.objects.create(user=self.bot, room=self.room, title='วันนี้', attendees=5,
+                               status='approved', start_time=timezone.now(),
+                               end_time=timezone.now() + timedelta(minutes=30))
+        self.as_user(self.admin)
+        r = self.client.get('/api/dashboard/')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['total_rooms'], 2)
+        self.assertEqual(r.data['utilization_rate'], 50.0)  # 1 ใน 2 ห้องมีคนใช้วันนี้
+
+    def test_maintenance_slots_skip_past_hours_today(self):
+        from booking.models import DemandForecast
+        today = timezone.localdate()
+        DemandForecast.objects.bulk_create([
+            DemandForecast(room=self.room, forecast_date=today, hour=h, predicted_demand=0.0)
+            for h in range(24)
+        ])
+        self.as_user(self.admin)
+        r = self.client.get('/api/maintenance/slots/', {'min_hours': 1, 'days': 1})
+        self.assertEqual(r.status_code, 200)
+        now_hour = timezone.localtime().hour
+        for s in r.data['slots']:
+            if s['date'] == str(today):
+                self.assertGreaterEqual(s['start_hour'], now_hour)
+
+    def _block(self, **over):
+        data = dict(room=self.room, reason='ซ่อมแอร์', created_by=self.admin, status='scheduled',
+                    start_time=timezone.now() - timedelta(hours=1),
+                    end_time=timezone.now() + timedelta(hours=1))
+        data.update(over)
+        return MaintenanceBlock.objects.create(**data)
+
+    def test_closed_maintenance_cannot_be_closed_again(self):
+        block = self._block(status='cancelled')
+        self.as_user(self.admin)
+        r = self.client.post(f'/api/maintenance-blocks/{block.id}/complete/')
+        self.assertEqual(r.status_code, 400)
+        block.refresh_from_db()
+        self.assertEqual(block.status, 'cancelled')
+        block.status = 'completed'
+        block.save()
+        r = self.client.post(f'/api/maintenance-blocks/{block.id}/cancel/')
+        self.assertEqual(r.status_code, 400)
+        block.refresh_from_db()
+        self.assertEqual(block.status, 'completed')
+
+    def test_future_maintenance_cannot_be_completed(self):
+        block = self._block(start_time=aware(self.tue, 9), end_time=aware(self.tue, 12))
+        self.as_user(self.admin)
+        r = self.client.post(f'/api/maintenance-blocks/{block.id}/complete/')
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(f'/api/maintenance-blocks/{block.id}/cancel/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_search_uses_forecast_of_requested_slot_only(self):
+        from booking.models import DemandForecast
+        DemandForecast.objects.create(room=self.room, forecast_date=self.tue, hour=13,
+                                      predicted_demand=0.9, demand_level='urgent')
+        # ผลของวันอื่นต้องไม่ปนเข้ามา
+        DemandForecast.objects.create(room=self.room, forecast_date=self.tue - timedelta(days=7),
+                                      hour=13, predicted_demand=0.0)
+        r = self.client.post('/api/rooms/search/', {
+            'attendees': 5, 'date': str(self.tue), 'start_time': '13:00', 'end_time': '14:00',
+        }, format='json')
+        self.assertEqual(r.status_code, 200)
+        room = next(x for x in rows_of(r.data) if x['id'] == self.room.id)
+        self.assertTrue(room['forecast']['has_forecast'])
+        self.assertEqual(room['forecast']['demand_level'], 'urgent')
+
+    def test_room_list_is_ordered(self):
+        r = self.client.get('/api/rooms/')
+        ids = [x['id'] for x in rows_of(r.data)]
+        self.assertEqual(ids, sorted(ids))
