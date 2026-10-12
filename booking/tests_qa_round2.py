@@ -80,12 +80,16 @@ class QARound2Tests(QABase):
                               {'end_time': (now + timedelta(days=5)).isoformat()}, format='json')
         self.assertEqual(r.status_code, 400, r.data)
 
-    def test_can_extend_ongoing_booking(self):
+    def test_ongoing_booking_time_is_locked(self):
+        # เดิมต่อเวลาได้แต่สถานะเด้งกลับเป็นรออนุมัติทั้งที่กำลังใช้ห้อง (QA 12 ต.ค.)
+        # ตอนนี้ล็อกเวลาไว้ ใช้ต่อให้จองช่วงใหม่เพิ่ม ใช้เสร็จก่อนให้คืนห้อง
         now = timezone.now()
         b = self.make_booking(now - timedelta(minutes=30), now + timedelta(minutes=30))
         r = self.client.patch(f'/api/bookings/{b.id}/',
                               {'end_time': (now + timedelta(hours=1)).isoformat()}, format='json')
-        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.status_code, 400, r.data)
+        b.refresh_from_db()
+        self.assertEqual(b.status, 'approved')
 
     # ── แดชบอร์ดยังนับรายการที่คืนห้องก่อนเวลา ─────────────────────
     def test_dashboard_still_counts_after_returning_room(self):

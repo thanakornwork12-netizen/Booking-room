@@ -1,4 +1,5 @@
 import re
+import secrets
 from collections import defaultdict
 from datetime import date as date_type, datetime, time as time_type, timedelta
 from difflib import SequenceMatcher
@@ -9,7 +10,7 @@ import pytz
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -193,7 +194,8 @@ class DeleteAccountView(APIView):
 
             # ปล่อย username/อีเมล/รหัสนักศึกษาให้สมัครหรือล็อกอิน LDAP ใหม่ได้
             # ตั้งรหัสผ่านใช้ไม่ได้ → token เดิมทุกใบตายทันที (authentication.py)
-            user.username   = f'deleted_{user.pk}'
+            # ต่อท้ายด้วยค่าสุ่ม กันชนกับ username เดิมที่มีอยู่แล้วทุกกรณี
+            user.username   = f'{config.DELETED_USERNAME_PREFIX}{user.pk}_{secrets.token_hex(4)}'
             user.email      = ''
             user.first_name = ''
             user.last_name  = ''
@@ -392,6 +394,22 @@ class RoomViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         _require_admin_or_staff(self.request)
         was_open = serializer.instance.is_active and serializer.instance.status != 'disabled'
+        # ห้ามลดความจุต่ำกว่าจำนวนคนของการจองที่ยังไม่จบ — เดิมลด 40 เหลือ 10 ได้
+        # ทั้งที่มีการจอง 40 คนรออยู่ คนจองมาถึงแล้วห้องเล็กเกิน
+        new_capacity = serializer.validated_data.get('capacity')
+        if new_capacity is not None and new_capacity < serializer.instance.capacity:
+            biggest = max(
+                Booking.objects.filter(room=serializer.instance, status__in=ACTIVE_BOOKING_STATUSES,
+                                       end_time__gt=timezone.now())
+                .aggregate(m=Max('attendees'))['m'] or 0,
+                TermBooking.objects.filter(room=serializer.instance, status__in=TERM_BLOCKING_STATUSES,
+                                           term_end__gte=timezone.localdate())
+                .aggregate(m=Max('attendees'))['m'] or 0,
+            )
+            if new_capacity < biggest:
+                raise ValidationError({'capacity': (
+                    f'ลดความจุเหลือ {new_capacity} คนไม่ได้ เพราะมีการจองที่ยังไม่จบใช้ {biggest} คน '
+                    'กรุณายกเลิกหรือย้ายการจองนั้นก่อน')})
         with transaction.atomic():
             room = serializer.save()
             if was_open and (not room.is_active or room.status == 'disabled'):
@@ -1483,7 +1501,8 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
 
-        reason = (request.data.get('reason') or '').strip()
+        # จำกัดความยาวเหมือนหมายเหตุ — เดิมไม่จำกัด (ไปอยู่ในอีเมลและการแจ้งเตือน)
+        reason = str(request.data.get('reason') or '').strip()[:config.NOTE_MAX_LENGTH]
         with transaction.atomic():
             tb = get_object_or_404(TermBooking.objects.select_for_update(), pk=pk)
             if tb.status != 'pending':
@@ -1918,7 +1937,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'ไม่มีสิทธิ์'}, status=403)
 
-        reason = (request.data.get('reason') or '').strip()
+        # จำกัดความยาวเหมือนหมายเหตุ — เดิมไม่จำกัด (ไปอยู่ในอีเมลและการแจ้งเตือน)
+        reason = str(request.data.get('reason') or '').strip()[:config.NOTE_MAX_LENGTH]
         # ล็อกแถว booking เหมือนกับ approve() ด้านบน — ดู comment ที่นั่น
         with transaction.atomic():
             booking = get_object_or_404(Booking.objects.select_for_update(), pk=pk)

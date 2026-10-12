@@ -17,7 +17,9 @@ def send_booking_reminders():
     now          = timezone.now()
     # หน้าต่างกว้างเท่ารอบการตรวจ (±1 นาทีเมื่อตรวจทุกนาที) — การจองที่จะเริ่มอีก
     # REMINDER_MINUTES_BEFORE นาทีตกในหน้าต่างของรอบใดรอบหนึ่งแน่นอน (reminded กันส่งซ้ำ)
-    window_start = now + timedelta(minutes=REMINDER_MINUTES_BEFORE - REMINDER_CHECK_EVERY_MINUTES)
+    # เริ่มหน้าต่างที่ "ตอนนี้" — การจองที่อนุมัติทีหลัง (เหลือไม่ถึง 15 นาทีก่อน
+    # เริ่ม) เดิมตกหน้าต่างไปแล้วจึงไม่เคยได้อีเมลเตือน ตอนนี้ได้ในรอบถัดไปทันที
+    window_start = now
     window_end   = now + timedelta(minutes=REMINDER_MINUTES_BEFORE + REMINDER_CHECK_EVERY_MINUTES)
 
     bookings = Booking.objects.filter(

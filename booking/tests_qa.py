@@ -586,3 +586,105 @@ class QARound12OctTests(QABase):
         r = self.client.get('/api/rooms/')
         ids = [x['id'] for x in rows_of(r.data)]
         self.assertEqual(ids, sorted(ids))
+
+
+# ══════════════════════════════════════════════════════════════
+# QA รอบจุดที่ไม่เคยทดสอบ (12 ต.ค.)
+# ══════════════════════════════════════════════════════════════
+class QAOverlookedTests(QABase):
+    def book(self, **over):
+        p = {'room': self.room.id, 'title': 'probe', 'attendees': 5,
+             'start_time': aware(self.tue, 13).isoformat(), 'end_time': aware(self.tue, 14).isoformat()}
+        p.update(over)
+        return self.client.post('/api/bookings/', p, format='json')
+
+    def test_deleted_prefix_username_reserved_and_delete_never_collides(self):
+        self.client.force_authenticate(user=None)
+        r = self.client.post('/api/auth/register/', {
+            'username': f'deleted_{self.user_b.pk}', 'first_name': 'A', 'last_name': 'B',
+            'email': 'squat@example.com', 'password': 'QaTest1234', 'password2': 'QaTest1234',
+            'role': 'student', 'student_id': '6655555555'}, format='json')
+        self.assertEqual(r.status_code, 400)
+        # แม้มี username แบบนั้นอยู่แล้ว (เช่นสร้างจากแอดมิน) การลบบัญชีต้องไม่พัง
+        User.objects.create_user(username=f'deleted_{self.user_b.pk}', password='x')
+        self.as_user(self.user_b)
+        r = self.client.post('/api/auth/delete-account/', {
+            'confirm_username': 'qa_user_b', 'confirm_text': 'DELETE', 'password': 'QaUserB1234'}, format='json')
+        self.assertEqual(r.status_code, 200)
+
+    def test_started_booking_time_cannot_be_edited(self):
+        now = timezone.now()
+        b = Booking.objects.create(user=self.bot, room=self.room_b, title='inprog', attendees=1,
+                                   status='approved', start_time=now - timedelta(minutes=10),
+                                   end_time=now + timedelta(minutes=50))
+        r = self.client.patch(f'/api/bookings/{b.id}/', {'end_time': (now + timedelta(hours=2)).isoformat()},
+                              format='json')
+        self.assertEqual(r.status_code, 400)
+        b.refresh_from_db()
+        self.assertEqual(b.status, 'approved')
+        # แก้หัวข้ออย่างเดียวยังได้
+        r = self.client.patch(f'/api/bookings/{b.id}/', {'title': 'เปลี่ยนชื่อ'}, format='json')
+        self.assertEqual(r.status_code, 200)
+
+    def test_note_length_limited(self):
+        r = self.book(note='x' * 1001)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('note', r.data)
+
+    def test_seconds_rounded_and_minimum_duration(self):
+        s = aware(self.tue, 10).replace(second=30)
+        r = self.book(start_time=s.isoformat(), end_time=(s + timedelta(seconds=15)).isoformat())
+        self.assertEqual(r.status_code, 400)
+        r = self.book(start_time=aware(self.tue, 10, 0).replace(second=40).isoformat(),
+                      end_time=aware(self.tue, 11, 0).replace(second=10).isoformat())
+        self.assertEqual(r.status_code, 201, r.data)
+        b = Booking.objects.get(title='probe')
+        self.assertEqual((b.start_time.second, b.end_time.second), (0, 0))
+
+    def test_end_time_within_advance_limit(self):
+        from django.conf import settings
+        far = timezone.localdate() + timedelta(days=settings.MAX_ADVANCE_BOOKING_DAYS)
+        r = self.book(start_time=aware(far, 10).isoformat(),
+                      end_time=(aware(far, 10) + timedelta(days=5)).isoformat())
+        self.assertEqual(r.status_code, 400)
+        r = self.book(start_time=aware(far, 10).isoformat(), end_time=aware(far, 12).isoformat())
+        self.assertEqual(r.status_code, 201, r.data)
+
+    def test_term_must_have_a_future_slot(self):
+        today = timezone.localdate()
+        past_day = today - timedelta(days=2)
+        r = self.client.post('/api/term-bookings/', {
+            'room': self.room.id, 'subject_name': 'x', 'attendees': 5,
+            'day_of_week': past_day.weekday(), 'start_time': '08:00', 'end_time': '09:00',
+            'term_start': str(past_day), 'term_end': str(today + timedelta(days=3)), 'term_name': 'x'},
+            format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_capacity_cannot_drop_below_upcoming_booking(self):
+        Booking.objects.create(user=self.bot, room=self.room, title='big', attendees=30, status='approved',
+                               start_time=aware(self.tue, 9), end_time=aware(self.tue, 10))
+        self.as_user(self.admin)
+        r = self.client.patch(f'/api/rooms/{self.room.id}/', {'capacity': 10}, format='json')
+        self.assertEqual(r.status_code, 400)
+        r = self.client.patch(f'/api/rooms/{self.room.id}/', {'capacity': 30}, format='json')
+        self.assertEqual(r.status_code, 200)
+
+    def test_reject_reason_is_capped(self):
+        b = Booking.objects.create(user=self.bot, room=self.room, title='p', attendees=1, status='pending',
+                                   start_time=aware(self.tue, 9), end_time=aware(self.tue, 10))
+        self.as_user(self.admin)
+        self.client.post(f'/api/bookings/{b.id}/reject/', {'reason': 'x' * 5000}, format='json')
+        b.refresh_from_db()
+        self.assertEqual(len(b.reject_reason), 1000)
+
+    def test_late_approved_booking_still_gets_reminder(self):
+        from django.core import mail
+        from booking.scheduler import send_booking_reminders
+        start = timezone.now() + timedelta(minutes=5)
+        b = Booking.objects.create(user=self.bot, room=self.room, title='late', attendees=1, status='approved',
+                                   start_time=start, end_time=start + timedelta(hours=1))
+        send_booking_reminders()
+        b.refresh_from_db()
+        self.assertTrue(b.reminded)
+        self.assertTrue(any('late' in (m.body + str(m.alternatives)) or m.to == [self.bot.email]
+                            for m in mail.outbox))

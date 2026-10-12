@@ -9,7 +9,9 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
-from .config import AI_FORECAST_ROOM_IDS
+from .config import (
+    AI_FORECAST_ROOM_IDS, DELETED_USERNAME_PREFIX, MIN_BOOKING_MINUTES, NOTE_MAX_LENGTH,
+)
 from .models import (
     User, Building, Room, RoomFacility,
     TermBooking, Booking, BookingLog,
@@ -157,6 +159,11 @@ class RegisterSerializer(serializers.ModelSerializer):
                 'รหัสนักศึกษา/บุคลากรใช้เข้าสู่ระบบด้วยรหัสผ่านมหาวิทยาลัยได้เลย ไม่ต้องสมัคร '
                 'หากต้องการสมัครบัญชีแยก กรุณาตั้งชื่อผู้ใช้ที่ไม่ใช่ตัวเลขล้วน'
             )
+        # ชื่อขึ้นต้น deleted_ สงวนไว้ให้บัญชีที่ปิดแล้ว (DeleteAccountView) —
+        # เดิมสมัคร deleted_<id> ของคนอื่นไว้ก่อนได้ พอเจ้าของ id นั้นลบบัญชี
+        # ชื่อชนกันจนพังเป็น 500
+        if value.lower().startswith(DELETED_USERNAME_PREFIX):
+            raise serializers.ValidationError('ชื่อผู้ใช้นี้สงวนไว้สำหรับระบบ กรุณาใช้ชื่ออื่น')
         if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError('ชื่อผู้ใช้นี้ถูกใช้แล้ว')
         return value
@@ -412,6 +419,7 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
         fields = ['room', 'subject_name', 'subject_code', 'attendees',
                   'day_of_week', 'start_time', 'end_time',
                   'term_start', 'term_end', 'term_name', 'note']
+        extra_kwargs = {'note': {'max_length': NOTE_MAX_LENGTH}}
 
     def _get(self, data, field):
         if field in data:
@@ -454,6 +462,17 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
         ):
             raise serializers.ValidationError(
                 'ช่วงวันที่ที่เลือกไม่มีวันดังกล่าวเลย กรุณาขยายช่วงเทอมหรือเลือกวันเริ่มใหม่'
+            )
+        # ต้องเหลือคาบอย่างน้อยหนึ่งครั้งตั้งแต่วันนี้ — เดิมจองกลางเทอมโดยวันที่เลือก
+        # ตกแค่วันที่ผ่านไปแล้ว ได้คำขอที่ไม่มีผลอะไรให้แอดมินอนุมัติ
+        slot_changed = dates_changed or 'day_of_week' in data
+        first_day = max(term_start, timezone.localdate())
+        if slot_changed and not any(
+            (first_day + timedelta(days=i)).weekday() == day_of_week
+            for i in range((term_end - first_day).days + 1)
+        ):
+            raise serializers.ValidationError(
+                'วันที่เลือกในช่วงเทอมนี้ผ่านไปหมดแล้ว ไม่เหลือคาบให้จอง กรุณาเลือกวันหรือช่วงเทอมใหม่'
             )
 
         if attendees < 1:
@@ -506,6 +525,8 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Booking
         fields = ['room', 'title', 'attendees', 'start_time', 'end_time', 'note']
+        # เดิมไม่จำกัด ส่งหมายเหตุ 2 MB ได้ (ไปอยู่ในอีเมลและไฟล์ export)
+        extra_kwargs = {'note': {'max_length': NOTE_MAX_LENGTH}}
 
     def _get(self, data, field):
         # PATCH ส่งมาแค่บางฟิลด์ — ที่เหลือใช้ค่าเดิมของรายการ
@@ -514,13 +535,36 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         return getattr(self.instance, field, None)
 
     def validate(self, data):
+        # ปัดเวลาเป็นนาทีเต็ม — หน้าเว็บส่งนาทีเต็มอยู่แล้ว แต่ API เดิมรับวินาที
+        # จองได้แม้ 15 วินาที (10:00:30–10:00:45)
+        for field in ('start_time', 'end_time'):
+            if data.get(field) is not None:
+                data[field] = data[field].replace(second=0, microsecond=0)
+
         room       = self._get(data, 'room')
         start_time = self._get(data, 'start_time')
         end_time   = self._get(data, 'end_time')
         attendees  = self._get(data, 'attendees')
+        now        = timezone.now()
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+
+        start_changed = self.instance is None or start_time != self.instance.start_time
+        end_changed   = self.instance is not None and end_time != self.instance.end_time
+        room_changed  = self.instance is not None and room.pk != self.instance.room_id
+
+        # รายการที่เริ่มไปแล้วแก้ห้อง/เวลาไม่ได้ — เดิมยืดเวลาจบของห้องที่กำลังใช้
+        # สถานะเด้งกลับเป็นรออนุมัติทั้งที่คนนั่งอยู่ในห้อง และถ้ายกเลิกต่อ ชั่วโมงที่
+        # ใช้ไปแล้วหายทั้งหมด ใช้เสร็จก่อนให้กด "คืนห้อง" ใช้ต่อให้จองช่วงใหม่เพิ่ม
+        if (self.instance is not None and self.instance.start_time <= now
+                and self.instance.end_time > now and (start_changed or end_changed or room_changed)):
+            raise serializers.ValidationError(
+                'การจองที่เริ่มใช้งานแล้วแก้ไขห้องหรือเวลาไม่ได้ '
+                'หากใช้เสร็จก่อนให้กดคืนห้อง หากต้องการใช้ต่อกรุณาจองช่วงเวลาเพิ่ม'
+            )
+        if (start_changed or end_changed) and end_time - start_time < timedelta(minutes=MIN_BOOKING_MINUTES):
+            raise serializers.ValidationError(f'จองได้สั้นสุด {MIN_BOOKING_MINUTES} นาที')
         if end_time - start_time > timedelta(days=settings.MAX_BOOKING_DAYS):
             raise serializers.ValidationError(
                 f'จองได้ยาวสุด {settings.MAX_BOOKING_DAYS} วันต่อครั้ง หากต้องการใช้ประจำให้จองทั้งเทอม'
@@ -531,16 +575,19 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         # ตอนแก้ไข ตรวจเฉพาะเมื่อเปลี่ยนเวลาเริ่มจริง — start_time เดิมอาจผ่าน
         # ไปแล้วโดยชอบธรรมตั้งแต่ตอนสร้าง (เช่น แก้แค่ title)
         time_changed = self.instance is None or 'start_time' in data
-        if time_changed and start_time < timezone.now():
+        if time_changed and start_time < now:
             raise serializers.ValidationError('ไม่สามารถจองเวลาที่ผ่านไปแล้วได้')
         # แก้แค่ end_time ไม่ผ่านด่านบน — เดิมยืดการจองที่จบไปแล้วหลายวันออกไป
         # อนาคตได้ (เริ่มในอดีต จบในอนาคต) ห้ามแก้เวลาของรายการที่จบแล้ว และ
         # เวลาสิ้นสุดใหม่ต้องยังไม่ผ่านไป
-        end_changed = (self.instance is not None and 'end_time' in data
-                       and end_time != self.instance.end_time)
-        if end_changed and (self.instance.end_time <= timezone.now() or end_time <= timezone.now()):
+        if end_changed and (self.instance.end_time <= now or end_time <= now):
             raise serializers.ValidationError('ไม่สามารถแก้ไขเวลาของการจองที่สิ้นสุดไปแล้วได้')
-        if time_changed and timezone.localtime(start_time).date() > _max_advance_date():
+        # เพดานจองล่วงหน้าใช้กับทั้งเวลาเริ่มและเวลาจบ — เดิมตรวจแค่เวลาเริ่ม
+        # เริ่มวันสุดท้ายของเพดานแล้วจองยาว 20 วัน เวลาจบเลยเพดานไป 20 วัน
+        limit_end = timezone.make_aware(datetime.combine(_max_advance_date() + timedelta(days=1),
+                                                         datetime.min.time()))
+        if (time_changed or end_changed) and (
+                timezone.localtime(start_time).date() > _max_advance_date() or end_time > limit_end):
             raise serializers.ValidationError(
                 f'จองล่วงหน้าได้ไม่เกิน {settings.MAX_ADVANCE_BOOKING_DAYS} วัน'
             )
@@ -916,6 +963,7 @@ class MaintenanceBlockCreateSerializer(serializers.ModelSerializer):
         model  = MaintenanceBlock
         # id ส่งกลับด้วย — เดิม response ตอนสร้างไม่มี id หน้าเว็บอ้างถึงรายการใหม่ไม่ได้
         fields = ['id', 'room', 'start_time', 'end_time', 'reason', 'note', 'predicted_demand_avg']
+        extra_kwargs = {'note': {'max_length': NOTE_MAX_LENGTH}}
 
     CONFLICT_MESSAGES = {
         'booking':     'ห้องนี้มีการจองอยู่ในช่วงเวลาดังกล่าว ไม่สามารถปิดซ่อมบำรุงได้',
