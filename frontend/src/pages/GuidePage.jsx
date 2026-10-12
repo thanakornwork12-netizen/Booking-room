@@ -33,30 +33,24 @@ const STEPS = [
   },
 ]
 
+// ตรงกับสิทธิ์ที่ backend บังคับจริง (booking/permissions.py: admin/staff คือฝั่ง
+// ผู้ดูแล ที่เหลือเป็นผู้ใช้ทั่วไปสิทธิ์เท่ากัน) — เดิมตารางบอกว่านักศึกษาจอง
+// ห้องเรียนหรือจองล่วงหน้าเกิน 7 วันไม่ได้ และเจ้าหน้าที่อนุมัติไม่ได้ ซึ่งไม่จริง
 const PERMISSIONS = [
-  {
-    feature: 'จองห้องประชุมกลุ่มย่อย (Co-working)',
-    student: true, lecturer: true, staff: true, admin: true,
-  },
-  {
-    feature: 'จองห้องเรียน / ห้องบรรยาย',
-    student: false, lecturer: true, staff: true, admin: true,
-  },
-  {
-    feature: 'จองล่วงหน้า (มากกว่า 7 วัน)',
-    student: false, lecturer: true, staff: true, admin: true,
-  },
-  {
-    feature: 'จัดการระบบและอนุมัติการจองพิเศษ',
-    student: false, lecturer: false, staff: false, admin: true,
-  },
+  { feature: 'ค้นหาและจองห้องรายครั้ง', student: true, lecturer: true, staff: true, admin: true },
+  { feature: 'จองทั้งเทอม (ซ้ำทุกสัปดาห์)', student: true, lecturer: true, staff: true, admin: true },
+  { feature: 'จองล่วงหน้าได้สูงสุด 365 วัน', student: true, lecturer: true, staff: true, admin: true },
+  { feature: 'ยกเลิก / คืนห้องก่อนเวลา (การจองของตัวเอง)', student: true, lecturer: true, staff: true, admin: true },
+  { feature: 'อนุมัติหรือปฏิเสธคำขอจอง', student: false, lecturer: false, staff: true, admin: true },
+  { feature: 'จัดการห้อง อาคาร และช่วงปิดซ่อมบำรุง', student: false, lecturer: false, staff: true, admin: true },
+  { feature: 'ดูแดชบอร์ดและส่งออกข้อมูล (Excel)', student: false, lecturer: false, staff: true, admin: true },
 ]
 
 const ROLE_COLUMNS = [
   { key: 'student', label: 'นักศึกษา', emoji: '🧑‍🎓' },
   { key: 'lecturer', label: 'อาจารย์', emoji: '🧑‍🏫' },
-  { key: 'staff', label: 'บุคลากร', emoji: '🧑‍💼' },
-  { key: 'admin', label: 'แอดมิน', emoji: '🛠️' },
+  { key: 'staff', label: 'เจ้าหน้าที่', emoji: '🧑‍💼' },
+  { key: 'admin', label: 'ผู้ดูแลระบบ', emoji: '🛠️' },
 ]
 
 function PermissionMark({ ok }) {

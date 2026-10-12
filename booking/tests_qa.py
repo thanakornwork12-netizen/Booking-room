@@ -740,3 +740,55 @@ class QAEndToEndFindingsTests(QABase):
         c.user = self.admin
         asyncio.run(c.booking_update(event(99999)))
         self.assertEqual(len(sent), 2)
+
+
+# ══════════════════════════════════════════════════════════════
+# สิทธิ์ตาม role และการล็อกอิน (12 ต.ค.)
+# ══════════════════════════════════════════════════════════════
+class RoleMatrixTests(QABase):
+    """นักศึกษา/อาจารย์ = ผู้ใช้ทั่วไป, เจ้าหน้าที่/ผู้ดูแล = ฝั่งผู้ดูแล — ตรงกับ
+    ตารางสิทธิ์ในหน้าวิธีใช้งาน (GuidePage)"""
+
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        cache.clear()
+        self.lect = User.objects.create_user(username='qa_lect', password='QaLect1234', role='lecturer',
+                                             email='lect@example.com')
+        self.staff = User.objects.create_user(username='qa_staff', password='QaStaff1234', role='staff',
+                                              email='staff@example.com')
+        self.other = Booking.objects.create(user=self.user_b, room=self.room, title='ของคนอื่น', attendees=1,
+                                            status='pending', start_time=aware(self.tue, 9),
+                                            end_time=aware(self.tue, 10))
+
+    ADMIN_GETS = ['/api/dashboard/', '/api/export/excel/?sheets=rooms', '/api/rooms/usage-stats/',
+                  '/api/rooms/admin-status/', '/api/maintenance/slots/', '/api/maintenance-blocks/']
+
+    def test_general_users_blocked_from_admin_endpoints(self):
+        for user in (self.bot, self.lect):
+            self.as_user(user)
+            for url in self.ADMIN_GETS:
+                self.assertEqual(self.client.get(url).status_code, 403, (user.role, url))
+            self.assertEqual(self.client.post(f'/api/bookings/{self.other.id}/approve/').status_code, 403)
+            self.assertEqual(self.client.get(f'/api/bookings/{self.other.id}/').status_code, 404)
+            # สิทธิ์เช็คก่อนตรวจข้อมูล: ส่งข้อมูลไม่ครบก็ได้ 403 ไม่ใช่ 400
+            self.assertEqual(self.client.post('/api/rooms/', {}, format='json').status_code, 403)
+            self.assertEqual(self.client.post('/api/buildings/', {}, format='json').status_code, 403)
+            rows = rows_of(self.client.get('/api/bookings/').data)
+            self.assertFalse(any(b['id'] == self.other.id for b in rows))
+
+    def test_staff_has_admin_rights(self):
+        for user in (self.staff, self.admin):
+            self.as_user(user)
+            for url in self.ADMIN_GETS:
+                self.assertEqual(self.client.get(url).status_code, 200, (user.role, url))
+            rows = rows_of(self.client.get('/api/bookings/').data)
+            self.assertTrue(any(b['id'] == self.other.id for b in rows))
+        self.as_user(self.staff)
+        self.assertEqual(self.client.post(f'/api/bookings/{self.other.id}/approve/').status_code, 200)
+
+    def test_login_username_is_case_insensitive(self):
+        self.client.force_authenticate(user=None)
+        r = self.client.post('/api/auth/login/', {'username': 'QA_LECT', 'password': 'QaLect1234'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['user']['role'], 'lecturer')

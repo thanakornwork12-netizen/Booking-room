@@ -793,9 +793,14 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
         )
 
         if not ldap_user:
+            # ชื่อผู้ใช้ไม่สนตัวพิมพ์ใหญ่เล็ก — การสมัครกันชื่อที่ต่างกันแค่ตัวพิมพ์ไว้แล้ว
+            # (RegisterSerializer) เดิมพิมพ์ QA_Test_Bot ล็อกอินไม่ได้ ทั้งที่อีเมลไม่สน
+            # ตัวพิมพ์ ลองตรงตัวก่อน กันบัญชีเก่าที่อาจซ้ำกันแบบต่างตัวพิมพ์
             user = (
                 User.objects.filter(username=username).first()
                 or User.objects.filter(username=pure_username).first()
+                or User.objects.filter(username__iexact=username).first()
+                or User.objects.filter(username__iexact=pure_username).first()
                 or User.objects.filter(student_id=pure_username).first()
                 or User.objects.filter(email__iexact=username).first()
             )

@@ -211,6 +211,10 @@ class DeleteAccountView(APIView):
         return Response({'detail': 'ลบบัญชีผู้ใช้สำเร็จ'})
 
 
+# action มาตรฐานของ ModelViewSet ที่แก้ข้อมูลหลัก — ให้เฉพาะผู้ดูแล
+ADMIN_WRITE_ACTIONS = ('create', 'update', 'partial_update', 'destroy')
+
+
 def _require_admin_or_staff(request):
     if not is_admin_or_staff(request.user):
         raise PermissionDenied('สำหรับผู้ดูแลระบบเท่านั้น')
@@ -268,6 +272,8 @@ class BuildingViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             return [AllowAny()]
+        if self.action in ADMIN_WRITE_ACTIONS:
+            return [IsAdminOrStaff()]
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
@@ -367,6 +373,13 @@ def _demand_level_for(avg_pred):
 
 class RoomViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # เช็คสิทธิ์ก่อนตรวจข้อมูล — เดิมเช็คใน perform_create/update หลัง validate
+        # ผู้ใช้ทั่วไปส่งข้อมูลผิดได้ 400 พร้อมรายละเอียดฟิลด์แทน 403
+        if self.action in ADMIN_WRITE_ACTIONS:
+            return [IsAdminOrStaff()]
+        return super().get_permissions()
 
     def get_queryset(self):
         is_staff = is_admin_or_staff(self.request.user)
