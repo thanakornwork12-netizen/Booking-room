@@ -86,14 +86,14 @@ h2{font-size:20px;margin-top:48px}
 <dt>ขอบเขตข้อมูล</dt><dd>AI 8 ห้อง · ประวัติการจองราว 7,250 รายการ</dd>
 <dt>โมเดล direct ชุด C (test)</dt><dd>accuracy 0.813 · balanced 0.620 · MAE 1.44 ชม.</dd>
 <dt>Baseline (seasonal naive)</dt><dd>accuracy 0.737 · MAE 2.07 ชม.</dd>
-<dt>Production</dt><dd>โมเดลเดี่ยวชนะ 56/56 (LightGBM 47, XGBoost 9)</dd>
+<dt>Production</dt><dd>เลือกโมเดลเดี่ยวรายห้อง (LightGBM 47, XGBoost 9 จาก 56 แถว) · <b>ยังไม่เคยวัดผล blend เทียบ</b> (กำลังรัน <code>compare_blend_direct.py</code>)</dd>
 <dt>การทดสอบ</dt><dd>342 เคสผ่านทั้งหมด · แก้บั๊ก 81 รายการ</dd>
 <dt>กฎที่โดนถามบ่อย</dt><dd>จองทุกแบบต้องอนุมัติ (รายครั้งและทั้งเทอม) · <b>ไม่มีเช็คอิน</b> ยกเลิกได้ทุกเมื่อจนถึงเวลาจบ (กำลังใช้อยู่ = คืนห้องก่อนเวลา) · จองยาวสุด 21 วัน · ล่วงหน้าไม่เกิน 365 วัน · JWT access 1 วัน, refresh 30 วัน</dd>
 </dl></div>
 <div class="w"><h3>สามเรื่องที่ห้ามตอบพลาด</h3>
 <ol>
 <li>ตัวที่ใช้จริงบน production คือ <code>forecast.py</code> แบบ recursive ส่วน direct เป็นงานวิจัยล่าสุด ยังไม่ได้ใช้จริง</li>
-<li>Weighted Averaging คำนวณจริง แต่ผลคือโมเดลเดี่ยวดีกว่าทุกกรณี อย่าพูดว่าการถ่วงน้ำหนักลดความคลาดเคลื่อน</li>
+<li>Weighted Averaging: โค้ดปัจจุบัน<b>ไม่ได้วัดคะแนนของ blend</b> แต่บังคับเลือกโมเดลเดี่ยวที่ดีที่สุดบน calibration (น้ำหนัก 1/0) ห้ามพูดว่า "เทียบแล้วโมเดลเดี่ยวชนะ" จนกว่าผล <code>compare_blend_direct.py</code> จะออก</li>
 <li>อย่าใช้คำว่า "อย่างมีนัยสำคัญ" เพราะยังไม่มีการทดสอบทางสถิติ</li>
 <li><b>ระบบไม่มีเช็คอินแล้ว</b> (ไม่มีกฎ 15 นาที) — ผู้จองยกเลิกได้ทุกเมื่อ ใช้เสร็จก่อนเวลากด "คืนห้องก่อนเวลา" ถ้าเล่มยังเขียนเรื่องเช็คอิน ให้แก้เล่มให้ตรง</li>
 </ol></div>
@@ -123,7 +123,7 @@ h2{font-size:20px;margin-top:48px}
 <tr><td>ใช้ AI อะไร ทำไมไม่ใช้ Deep Learning</td><td>LightGBM + XGBoost (gradient boosting) เหมาะกับข้อมูลตารางที่มีไม่มาก · ลอง LSTM แล้วได้น้ำหนัก 0% แทบทุกห้อง</td><td><a href="#s12">12</a></td></tr>
 <tr><td>ผลดีแค่ไหน</td><td>ชุด C: accuracy <b>81.3%</b>, balanced 62.0%, MAE 1.44 ชม. · seasonal naive 73.7%, MAE 2.07 · <b>ยังไม่ได้ทดสอบทางสถิติ</b></td><td><a href="#s14">14</a></td></tr>
 <tr><td>ตัวไหนใช้จริงบนเว็บ</td><td><code>forecast.py</code> แบบ recursive · ตัว direct ที่ได้ 81.3% เป็นงานวิจัย ยังไม่ได้ใช้จริง</td><td><a href="#s12">12</a>, <a href="#s13">13</a></td></tr>
-<tr><td>Weighted Averaging ได้ผลไหม</td><td>คำนวณจริง แต่โมเดลเดี่ยวชนะทุกกรณี (56/56) ระบบจึงเลือกโมเดลเดี่ยวรายห้อง</td><td><a href="#s12">12</a></td></tr>
+<tr><td>Weighted Averaging ได้ผลไหม</td><td>ระบบเลือกโมเดลเดี่ยวรายห้องจาก calibration โดยไม่ได้วัด blend · การเทียบจริงกำลังรันด้วย <code>compare_blend_direct.py</code> (รอผล)</td><td><a href="#s12">12</a></td></tr>
 <tr><td>รู้ได้ยังไงว่าไม่ overfit</td><td>ชุด D train 0.939 แต่ test ตกเหลือ 0.802 · ชุด C train 0.887 test 0.813 ดีสุด จึงหยุดที่ C</td><td><a href="#s14">14</a></td></tr>
 <tr><td>กันข้อมูลรั่วยังไง</td><td>แบ่งข้อมูลตามเวลา ไม่สุ่ม · feature ใช้เฉพาะข้อมูล ณ วันที่ทาย · เคยเจอ leak (<code>diff_1</code>, R²≈1) และแก้แล้ว</td><td><a href="#s12">12</a></td></tr>
 <tr><td>ทำไม calibration (72.6%) ต่ำกว่า test</td><td>ช่วง calibration ตรงปิดเทอมต่อเปิดเทอมซึ่งยากกว่า วิธีพื้นฐานก็ต่ำกว่า 5–6 จุดเหมือนกัน ไม่ใช่ข้อมูลรั่ว</td><td><a href="#s20">20</a></td></tr>
@@ -551,7 +551,7 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 
 <!-- ============================================================ -->
 <h2 id="s12">12. AI ที่ใช้งานจริง (production: <code>ml/saved/forecast.py</code>)</h2>
-<p class="tl"><span class="lab">สรุปสั้น</span>ตัวที่ใช้จริงคือ <code>forecast.py</code>: โมเดลรายห้องแบบ recursive แต่ละห้องใช้ LightGBM หรือ XGBoost ตัวเดียว เพราะโมเดลเดี่ยวชนะการถ่วงน้ำหนักทั้ง 56 กรณี และชนะ seasonal naive 6 จาก 8 ห้อง</p>
+<p class="tl"><span class="lab">สรุปสั้น</span>ตัวที่ใช้จริงคือ <code>forecast.py</code>: โมเดลรายห้องแบบ recursive แต่ละห้องใช้ LightGBM หรือ XGBoost ตัวเดียว (เลือกจาก calibration โดยไม่ได้วัด blend) และชนะ seasonal naive 6 จาก 8 ห้อง</p>
 <div class="k">ต้องแยกให้ออก: <b>production</b> ยังรัน <code>forecast.py</code> (โมเดลรายห้องแบบ recursive) ส่วน <b>งานวิจัยล่าสุด</b> คือ direct forecaster (หัวข้อ 13) ถ้ากรรมการถามว่า "ตัวไหนใช้จริง" ต้องตอบให้ตรง</div>
 <ul>
 <li><b>โจทย์:</b> พยากรณ์ชั่วโมงการใช้ห้องต่อวัน (time series regression) แล้วตัดเป็นระดับ (classification)
@@ -564,8 +564,9 @@ PostgreSQL (localhost ตอนพัฒนา, Neon บน production) · SQLit
 <li><b>โมเดล:</b> LightGBM + XGBoost ต่อห้อง (เดิมมี LSTM เป็น ensemble 3 ตัว แต่ LSTM ได้น้ำหนัก 0% แทบทุกห้อง ตอนนี้เหลือ LGB+XGB)
  <ul>
  <li>หาน้ำหนักถ่วงสองโมเดล (Weighted Averaging) จาก calibration slice</li>
- <li>จากนั้น <code>_prefer_best_single_if_beats_blend()</code> ตรวจว่าโมเดลเดี่ยวชนะ blend ไหม ถ้าชนะใช้ตัวเดียว</li>
- <li><b>ผลจริง:</b> ใน <code>consolidated_results.csv</code> ทั้ง <b>56 แถว</b> (8 ห้อง × 7 ชุด) น้ำหนักเป็น 100/0 ทุกแถว คือโมเดลเดี่ยวชนะทุกกรณี (LightGBM 47, XGBoost 9)</li>
+ <li>จากนั้น <code>_prefer_best_single_if_beats_blend()</code> <b>ทิ้งน้ำหนักนั้นเสมอ</b> แล้วให้ 1.0 กับโมเดลเดี่ยวที่คะแนน calibration สูงสุด โดยไม่ได้คำนวณคะแนนของ blend มาเทียบ (docstring: "no blending, ever, regardless of whether a blend might score higher") แม้ชื่อฟังก์ชันจะบอกว่า "if beats blend"</li>
+ <li><b>ผลที่เห็น:</b> ใน <code>consolidated_results.csv</code> ทั้ง 56 แถว (8 ห้อง × 7 ชุด) น้ำหนักเป็น 100/0 (LightGBM 47, XGBoost 9) แต่เป็นผล<b>จากโค้ดที่บังคับไว้</b> ไม่ใช่ข้อค้นพบว่าโมเดลเดี่ยวชนะ blend</li>
+ <li>การเทียบ blend กับโมเดลเดี่ยวจริง (เลือก w = 0.0–1.0 บน calibration แล้ววัดบน test) อยู่ใน <code>ml/saved/compare_blend_direct.py</code> ผลเก็บแยกที่ <code>ml/saved/logs/blend_&lt;เวลา&gt;/</code></li>
  </ul></li>
 <li><b>Split:</b> ตัดที่ "วันตัดร่วม" เดียวกันทุกห้องและตัดที่ขอบวัน (<code>split_dataset_from_excel.py</code>) แล้วแบ่ง train เป็น train/calibration ส่วน test ไม่เคยใช้ตัดสินใจอะไร
  <ul>
@@ -817,7 +818,7 @@ Neon Postgres (DATABASE_URL)   Brevo (ส่งอีเมล)          LDAP �
 <div class="w"><b>จุดที่เล่มกับระบบจริงอาจไม่ตรงกัน ต้องตอบให้สอดคล้อง</b>
 <ul>
 <li><b>ฐานข้อมูล:</b> บทคัดย่อแก้เป็น PostgreSQL แล้ว (ตรงกับระบบจริง: ในเครื่องและ production ใช้ PostgreSQL ส่วน SQLite เป็นแค่ค่าสำรองเมื่อไม่ได้ตั้ง <code>DATABASE_URL</code>) · ตัวเลขในบทคัดย่อใช้ 81.3% เทียบ seasonal naive 73.7%</li>
-<li><b>Weighted Averaging:</b> ระบบคำนวณการถ่วงน้ำหนักจริง แต่ผลคือโมเดลเดี่ยวชนะ blend ทุกกรณี (น้ำหนัก 100/0 ครบ 56 แถว) อย่าเขียนหรือพูดว่า "Weighted Averaging ลดความคลาดเคลื่อนได้อย่างมีนัยสำคัญเมื่อเทียบกับแบบจำลองเดี่ยว" ให้พูดว่า "เปรียบเทียบการถ่วงน้ำหนักกับโมเดลเดี่ยว แล้วระบบเลือกแบบที่ดีที่สุดรายห้อง ผลคือโมเดลเดี่ยวดีกว่าในข้อมูลชุดนี้"</li>
+<li><b>Weighted Averaging:</b> เล่มหัวข้อ 7.1.6 เขียนว่า "เปรียบเทียบแล้วแบบจำลองเดี่ยวดีกว่าทุกกรณี (56 กรณี)" แต่โค้ดไม่ได้วัดคะแนนของ blend น้ำหนัก 1/0 มาจากการบังคับเลือก ต้องแก้ 7.1.6, บทคัดย่อ, บทที่ 8 และ 9 ตามผลของ <code>compare_blend_direct.py</code> ระหว่างรอผลให้พูดว่า "ระบบเลือกแบบจำลองเดี่ยวที่ดีที่สุดรายห้องจากชุดปรับเทียบ" และอย่าพูดว่า Weighted Averaging ลดความคลาดเคลื่อน</li>
 <li><b>"อย่างมีนัยสำคัญ":</b> ยังไม่มีการทดสอบนัยสำคัญทางสถิติ อย่าใช้คำนี้กับผลของงานเราเอง</li>
 <li><b>บทที่ 1:</b> ปิดย่อหน้าเป็นคำถามวิจัย "Weighted Averaging ให้ผลดีกว่าโมเดลเดี่ยวหรือไม่" ผลที่ออกมาจึงเป็นคำตอบ ไม่ขัดกับบทนำ</li>
 <li><b>LSTM:</b> ถ้าเล่มยังพูดถึง LSTM ให้ระบุว่าลองแล้วได้น้ำหนัก 0% จึงตัดออก</li>
@@ -941,9 +942,9 @@ Neon Postgres (DATABASE_URL)   Brevo (ส่งอีเมล)          LDAP �
 <h3>AI</h3>
 <details><summary>Weighted Averaging ใช้จริงไหม ทำไมผลเป็นโมเดลเดี่ยว?</summary>
 <ul>
-<li>ระบบคำนวณน้ำหนักถ่วงจริงบน calibration แล้วเทียบกับโมเดลเดี่ยว</li>
-<li>ในข้อมูลชุดนี้โมเดลเดี่ยวดีกว่าทุกกรณี (56/56) ระบบจึงเลือกโมเดลเดี่ยวรายห้อง LightGBM 47 กรณี XGBoost 9 กรณี</li>
-<li>เหตุผลที่เป็นไปได้: LightGBM และ XGBoost เป็น gradient boosting บน feature ชุดเดียวกัน ความผิดพลาดจึงไปทางเดียวกัน การเฉลี่ยจึงไม่ค่อยช่วย</li>
+<li>ตอบตรง ๆ: ระบบที่ใช้อยู่เลือกโมเดลเดี่ยวรายห้องจากชุดปรับเทียบ (น้ำหนัก 1 กับตัวที่ดีกว่า 0 กับอีกตัว) โดย<b>ไม่ได้วัดคะแนนของการถ่วงน้ำหนักแบบผสม</b></li>
+<li>การเปรียบเทียบจริงทำด้วย <code>compare_blend_direct.py</code>: ใช้พารามิเตอร์และโมเดลชุดเดียวกัน ลอง w = 0.0–1.0 เลือก w บน calibration แล้ววัดบน test (ใส่ผลที่นี่เมื่อรันเสร็จ)</li>
+<li>เหตุผลที่คาดว่าการเฉลี่ยอาจช่วยน้อย: LightGBM และ XGBoost เป็น gradient boosting บน feature ชุดเดียวกัน ความผิดพลาดมักไปทางเดียวกัน (สคริปต์วัด error correlation ไว้ใช้ยืนยัน)</li>
 </ul></details>
 <details><summary>ทำไมไม่ใช้ deep learning / LSTM?</summary>
 <ul>
