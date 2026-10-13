@@ -24,13 +24,18 @@ Also written, as diagnostics that choose nothing:
 
 The test split is never used to choose w or anything else.
 
-Outputs (metrics_plots/):
+Outputs go to a NEW folder per run, ml/saved/logs/blend_<timestamp>/, and
+nothing outside it is written -- the single-model logs, CSVs, metas and
+model bundles are only read:
+  run.log                            full stdout of this run
   blend_vs_single_direct.csv         one row per (set, room)
   blend_vs_single_direct_curve.csv   calibration and test accuracy per w
 Usage:
-  python ml/saved/compare_blend_direct.py [--sets A,B,C,D] 2>&1 | tee ml/saved/runs/compare_blend_direct.log
+  python ml/saved/compare_blend_direct.py [--sets A,B,C,D]
 """
 import os
+import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -43,9 +48,25 @@ D = TD.D
 F = D.F
 
 WEIGHTS = [round(w, 1) for w in np.linspace(0.0, 1.0, 11)]   # weight on LightGBM
-OUT_CSV = os.path.join(TS.SAVED_DIR, 'metrics_plots', 'blend_vs_single_direct.csv')
-CURVE_CSV = os.path.join(TS.SAVED_DIR, 'metrics_plots', 'blend_vs_single_direct_curve.csv')
+RUN_DIR = os.path.join(TS.SAVED_DIR, 'logs', time.strftime('blend_%Y%m%d-%H%M%S'))
+OUT_CSV = os.path.join(RUN_DIR, 'blend_vs_single_direct.csv')
+CURVE_CSV = os.path.join(RUN_DIR, 'blend_vs_single_direct_curve.csv')
 ENGINES = ('lightgbm', 'xgboost')
+
+
+class _Tee:
+    """Mirror stdout into the run folder's log."""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for st in self.streams:
+            st.write(s)
+            st.flush()
+
+    def flush(self):
+        for st in self.streams:
+            st.flush()
 
 
 def blend(Q_lgb, Q_xgb, w):
@@ -192,6 +213,9 @@ def run_set(set_name, data, train, calib, test):
 
 def main():
     sets = [s.upper() for s in TS._arg_list('--sets', list(TS.SETS))]
+    os.makedirs(RUN_DIR, exist_ok=False)   # never reuse a folder
+    sys.stdout = _Tee(sys.__stdout__, open(os.path.join(RUN_DIR, 'run.log'), 'w', encoding='utf-8'))
+    print(f"run folder: {RUN_DIR}\nsets: {sets}", flush=True)
     data = D.Dataset(TD.TRAIN_XLSX, TD.TEST_XLSX)
     train, calib, test = data.matrix('train'), data.matrix('calib'), data.matrix('test')
     print(f"train {train[0].shape}  calib {calib[0].shape}  test {test[0].shape}  "
@@ -203,7 +227,6 @@ def main():
         rows.extend(r)
         curve.extend(c)
         # Save after every set so a long run keeps what it has finished.
-        os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
         pd.DataFrame(rows).to_csv(OUT_CSV, index=False)
         pd.DataFrame(curve).to_csv(CURVE_CSV, index=False)
 
