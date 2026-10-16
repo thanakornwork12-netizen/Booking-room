@@ -689,6 +689,9 @@ class QAOverlookedTests(QABase):
         self.assertTrue(b.reminded)
         self.assertTrue(any('late' in (m.body + str(m.alternatives)) or m.to == [self.bot.email]
                             for m in mail.outbox))
+        # เหลือ 5 นาที หัวอีเมลต้องบอก 5 นาที ไม่ใช่ 15 นาทีตายตัว
+        subject = next(m.subject for m in mail.outbox if m.to == [self.bot.email])
+        self.assertIn('อีก 5 นาที', subject)
 
 
 # ══════════════════════════════════════════════════════════════

@@ -46,10 +46,14 @@ def send_booking_reminders():
             continue
 
         cancel_url = f'{SITE_URL}/api/bookings/{booking.id}/cancel-email/{booking.cancel_token}/'
+        # นาทีที่เหลือจริง — การจองที่อนุมัติช้า (เหลือไม่ถึง REMINDER_MINUTES_BEFORE นาที)
+        # ได้อีเมลในรอบถัดไปทันที เดิมหัวอีเมลบอก "อีก 15 นาที" ตายตัวทั้งที่เหลือน้อยกว่า
+        minutes_left = max(1, min(REMINDER_MINUTES_BEFORE,
+                                  round((booking.start_time - now).total_seconds() / 60)))
 
         try:
             send_mail(
-                subject=f'⏰ อีก {REMINDER_MINUTES_BEFORE} นาที! ถึงเวลาใช้ห้อง {booking.room.name}',
+                subject=f'⏰ อีก {minutes_left} นาที! ถึงเวลาใช้ห้อง {booking.room.name}',
                 message=f'ไม่สามารถมาใช้งานได้? กดยกเลิกที่: {cancel_url}',
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user_email],
@@ -60,7 +64,7 @@ def send_booking_reminders():
   <div style="max-width:520px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 
     <div style="background:#d97706;padding:28px 32px;">
-      <h1 style="color:white;margin:0;font-size:22px;">⏰ อีก {REMINDER_MINUTES_BEFORE} นาที ก็ถึงเวลาแล้ว!</h1>
+      <h1 style="color:white;margin:0;font-size:22px;">⏰ อีก {minutes_left} นาที ก็ถึงเวลาแล้ว!</h1>
       <p style="color:#fef3c7;margin:8px 0 0;">ระบบจองห้องประชุม สำนักคอมพิวเตอร์และเครือข่าย มหาวิทยาลัยอุบลราชธานี</p>
     </div>
     <div style="height:4px;background:linear-gradient(to right,#fde047,#f59e0b);"></div>
