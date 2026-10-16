@@ -444,3 +444,35 @@ class RoomBookableFieldTests(BookingEdgeBase):
         b = self.seed(aware(self.day, 9), aware(self.day, 10), user=self.bot)
         Room.objects.filter(pk=self.room.pk).update(status='disabled')
         self.assertIs(self._listed(b)['room_bookable'], False)
+
+
+# ══════════════════════════════════════════════════════════════
+# จองทั้งเทอม — เทอมที่จบแล้วต้องยกเลิกย้อนหลังไม่ได้
+# ══════════════════════════════════════════════════════════════
+class FinishedTermCancelTests(BookingEdgeBase):
+    def _term(self, term_start, term_end, status='active'):
+        return TermBooking.objects.create(
+            user=self.bot, room=self.room, subject_name='วิชาทดสอบ', attendees=10,
+            day_of_week=term_start.weekday(), start_time=time_type(9), end_time=time_type(11),
+            term_start=term_start, term_end=term_end, term_name='1/2569', status=status)
+
+    def test_cannot_cancel_finished_term(self):
+        today = timezone.localdate()
+        tb = self._term(today - timedelta(days=70), today - timedelta(days=1))
+        r = self.client.delete(f'/api/term-bookings/{tb.id}/')
+        tb.refresh_from_db()
+        self.assertEqual((r.status_code, tb.status), (400, 'active'))
+
+    def test_admin_cannot_cancel_finished_term_either(self):
+        today = timezone.localdate()
+        tb = self._term(today - timedelta(days=70), today - timedelta(days=1))
+        self.client.force_authenticate(user=self.admin)
+        r = self.client.delete(f'/api/term-bookings/{tb.id}/')
+        self.assertEqual(r.status_code, 400)
+
+    def test_running_term_ending_today_can_still_cancel(self):
+        today = timezone.localdate()
+        tb = self._term(today - timedelta(days=30), today)
+        r = self.client.delete(f'/api/term-bookings/{tb.id}/')
+        tb.refresh_from_db()
+        self.assertEqual((r.status_code, tb.status), (200, 'cancelled'))

@@ -192,7 +192,12 @@ const TERM_STATUS = {
   cancelled: { label: 'ยกเลิกแล้ว',   cls: 'bg-slate-100 text-slate-500 border-slate-200' },
   ended:     { label: 'หมดเทอมแล้ว',  cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 }
-const termStatus = (tb) => TERM_STATUS[tb.status] || TERM_STATUS.pending
+// เทอมที่เลยวันสิ้นสุดแล้ว — backend ไม่เปลี่ยนสถานะให้ (ยังเป็น active) เดิมจึง
+// ขึ้น "อนุมัติแล้ว" ตลอดไปและยังมีปุ่มยกเลิก (YYYY-MM-DD เทียบเป็นสตริงได้)
+const isTermOver = (tb) => !!tb.term_end && tb.term_end < localDateStr()
+const termStatus = (tb) => (tb.status === 'active' && isTermOver(tb))
+  ? TERM_STATUS.ended
+  : (TERM_STATUS[tb.status] || TERM_STATUS.pending)
 const hhmm = (t) => (t || '').slice(0, 5)
 // วันที่แบบไทยสั้น (2 ธ.ค. 69) สำหรับช่วงเทอม — สร้างจาก YYYY-MM-DD ตามเวลาเครื่อง
 const thDate = (iso) => iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'
@@ -200,7 +205,7 @@ const thDate = (iso) => iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('th
 function TermBookingModal({ booking, onClose, onCancel }) {
   if (!booking) return null
   const st = termStatus(booking)
-  const canCancel = booking.status === 'pending' || booking.status === 'active'
+  const canCancel = (booking.status === 'pending' || booking.status === 'active') && !isTermOver(booking)
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white w-full sm:max-w-md max-h-[86vh] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-y-auto si flex flex-col">
@@ -834,9 +839,11 @@ export default function HomePage() {
                 ))
               )}
             </div>
+            {/* รายการรายเทอมแสดงครบทุกรายการ (เลื่อนดูได้) — เดิมมีป้าย "แสดงเฉพาะ
+                4 รายการล่าสุด" ติดมาจากกล่องจองรายวัน ทั้งที่ไม่ได้ตัดเหลือ 4 จริง */}
             {termBookings.length > 4 && (
               <div className="border-t border-slate-100 px-4 py-3 text-[11px] text-slate-500">
-                แสดงเฉพาะ 4 รายการล่าสุด
+                ทั้งหมด {termBookings.length} รายการ เลื่อนลงเพื่อดูเพิ่ม
               </div>
             )}
           </div>

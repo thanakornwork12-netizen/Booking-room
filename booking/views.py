@@ -1472,6 +1472,10 @@ class TermBookingViewSet(viewsets.ModelViewSet):
         if tb.status not in TERM_BLOCKING_STATUSES:
             return Response({'error': f'ยกเลิกไม่ได้ สถานะปัจจุบัน: {tb.get_status_display()}'},
                             status=400)
+        # เทอมที่จบไปแล้วยกเลิกไม่ได้ — เหมือนการจองรายครั้งที่เลยเวลาไปแล้ว เดิมกด
+        # ยกเลิกได้ ประวัติการใช้ห้องทั้งเทอมกลายเป็น "ยกเลิก" ย้อนหลัง (สถิติ/export ผิด)
+        if tb.term_end < timezone.localdate():
+            return Response({'error': 'ยกเลิกไม่ได้ ช่วงเทอมนี้สิ้นสุดไปแล้ว'}, status=400)
         old = tb.status
         tb.status = 'cancelled'
         tb.save()  # อีเมลแจ้งยกเลิกส่งจาก signals

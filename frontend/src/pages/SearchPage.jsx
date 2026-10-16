@@ -175,6 +175,22 @@ const countTermSessions = (startStr, endStr) => {
   return Math.floor((e - s) / (7 * 24 * 60 * 60 * 1000)) + 1
 }
 
+// คาบแรกที่จะจองได้จริง — จองกลางเทอม backend เลื่อนวันเริ่มมาเป็นคาบแรกที่ยัง
+// ไม่ผ่าน (TermBookingCreateSerializer) เดิมหน้าเว็บยังโชว์วันเปิดเทอม (1 มิ.ย.)
+// และนับคาบที่ผ่านไปแล้วรวมด้วย ผู้ใช้เข้าใจว่าจองไว้ตั้งแต่ต้นเทอม
+// คืน null ถ้าไม่เหลือคาบในช่วงที่เลือก
+const firstUpcomingSession = (startStr, endStr) => {
+  if (!startStr || !endStr) return null
+  const d = new Date(`${startStr}T00:00:00`)
+  const e = new Date(`${endStr}T00:00:00`)
+  const today = new Date(`${localDateStr()}T00:00:00`)
+  if (Number.isNaN(d.getTime()) || Number.isNaN(e.getTime())) return null
+  if (d < today) d.setDate(d.getDate() + Math.ceil((today - d) / (7 * 24 * 60 * 60 * 1000)) * 7)
+  return d <= e ? localDateStr(d) : null
+}
+// วันเริ่มที่ใช้แสดงผล: คาบแรกที่ยังไม่ผ่าน ถ้าไม่มีก็ใช้วันที่เลือกไว้
+const displayTermStart = (startStr, endStr) => firstUpcomingSession(startStr, endStr) || startStr
+
 // วันที่ของคาบสุดท้ายที่เกิดขึ้นจริง (อาจก่อนวันสิ้นสุดเทอมที่เลือกไว้)
 // ประกอบสตริงจากค่า local เอง ห้ามใช้ toISOString() เพราะมันแปลงเป็น UTC
 // ก่อน (ไทย UTC+7) แล้ววันที่จะร่นไป 1 วัน
@@ -630,8 +646,12 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
 
   // วันในสัปดาห์/จำนวนคาบ ล้วนคำนวณจากช่วงวันที่ที่เลือก ไม่มี state แยกอีกแล้ว
   const termDow = termDowFromStart(termStart)
-  const termSessionCount = countTermSessions(termStart, termEnd)
   const termLastSession = lastTermSessionDate(termStart, termEnd)
+  // นับเฉพาะคาบที่ยังไม่ผ่าน — คาบที่ผ่านไปแล้วจองไม่ได้อยู่ดี
+  const termFirstSession = firstUpcomingSession(termStart, termEnd)
+  const termSessionCount = termFirstSession && termLastSession
+    ? Math.round((new Date(`${termLastSession}T00:00:00`) - new Date(`${termFirstSession}T00:00:00`)) / (7 * 24 * 60 * 60 * 1000)) + 1
+    : 0
 
   const [customDurationMode, setCustomDurationMode] = useState(!DURATIONS.some(d => d.hours === duration))
   const [customDurationInput, setCustomDurationInput] = useState(String(duration))
@@ -664,7 +684,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     { label: 'ประเภท', value: isTermMode ? 'ทั้งเทอม' : 'รายวัน', tone: isTermMode ? 'text-indigo-700' : 'text-blue-700', icon: BookOpen },
     { label: 'ผู้เข้าร่วม', value: `${attendees} คน`, icon: Users },
     { label: isTermMode ? 'วัน' : 'วันที่', value: isTermMode ? (termDow != null ? `ทุก${getDayLabel(termDow)}` : 'ยังไม่เลือก') : formatDateShort(date), icon: CalendarDays },
-    ...(isTermMode ? [{ label: 'ช่วงเทอม', value: (termStart && termEnd) ? `${formatDateShort(termStart)} - ${formatDateShort(termEnd)}` : 'ยังไม่เลือก', icon: CalendarDays }] : []),
+    ...(isTermMode ? [{ label: 'ช่วงเทอม', value: (termStart && termEnd) ? `${formatDateShort(displayTermStart(termStart, termEnd))} - ${formatDateShort(termEnd)}` : 'ยังไม่เลือก', icon: CalendarDays }] : []),
     { label: 'เวลา', value: startTime ? `${startTime} - ${endTime || '...'}` : 'ยังไม่เลือก', icon: Clock },
     { label: 'อาคาร', value: selectedBuildingLabel, icon: MapPin },
     { label: 'อุปกรณ์', value: `${selectedEquipments.length} รายการ`, icon: Settings2 },
@@ -691,7 +711,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
               {isTermMode ? `ทุก${getDayLabel(termDow)} · ${startTime} - ${endTime} น.` : `${formatDate(date)} · ${startTime} - ${endTime} น.`}
             </p>
             {isTermMode && (
-              <p className="mt-1 text-xs text-slate-400">{formatDateShort(termStart)} - {formatDateShort(termEnd)}</p>
+              <p className="mt-1 text-xs text-slate-400">{formatDateShort(displayTermStart(termStart, termEnd))} - {formatDateShort(termEnd)}</p>
             )}
             <button
               onClick={() => navigate('/home')}
@@ -857,12 +877,16 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                                   ทุก{getDayLabel(termDow)} · รวม {termSessionCount} คาบ
                                 </p>
                                 <p className="mt-0.5 text-[10px] text-indigo-500">
-                                  คาบแรก {formatDateShort(termStart)} · คาบสุดท้าย {formatDateShort(termLastSession)}
+                                  คาบแรก {formatDateShort(termFirstSession)} · คาบสุดท้าย {formatDateShort(termLastSession)}
                                 </p>
                               </div>
                             ) : (
                               <div className="mb-2 rounded-xl border border-amber-100 bg-amber-50/70 px-2.5 py-2">
-                                <p className="text-[11px] font-semibold text-amber-700">เลือกช่วงวันที่ให้ครบก่อน จึงจะสรุปจำนวนคาบได้</p>
+                                <p className="text-[11px] font-semibold text-amber-700">
+                                  {termStart && termEnd && termLastSession
+                                    ? 'คาบในช่วงที่เลือกผ่านไปหมดแล้ว กรุณาเลือกช่วงวันที่ใหม่'
+                                    : 'เลือกช่วงวันที่ให้ครบก่อน จึงจะสรุปจำนวนคาบได้'}
+                                </p>
                               </div>
                             )}
                             <div className="flex flex-wrap gap-1">
@@ -1065,7 +1089,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                       <span className="rounded-full bg-white/15 px-3 py-1.5">{attendees} คน</span>
                       <span className="rounded-full bg-white/15 px-3 py-1.5">{isTermMode ? `ทุก${getDayLabel(termDow)}` : formatDateShort(date)}</span>
                       {isTermMode && (
-                        <span className="rounded-full bg-white/15 px-3 py-1.5">{formatDateShort(termStart)} - {formatDateShort(termEnd)}</span>
+                        <span className="rounded-full bg-white/15 px-3 py-1.5">{formatDateShort(displayTermStart(termStart, termEnd))} - {formatDateShort(termEnd)}</span>
                       )}
                       <span className="rounded-full bg-white/15 px-3 py-1.5">{startTime} - {endTime}</span>
                       {selectedEquipments.length > 0 && <span className="rounded-full bg-white/15 px-3 py-1.5">{selectedEquipments.length} อุปกรณ์</span>}
@@ -1278,7 +1302,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                         <div className="flex justify-between gap-4"><span className="text-slate-500">ประเภท</span><span className="font-semibold text-slate-900">{isTermMode ? 'จองทั้งเทอม' : 'จองรายวัน'}</span></div>
                         <div className="flex justify-between gap-4"><span className="text-slate-500">วัน/วันที่</span><span className="font-semibold text-slate-900">{isTermMode ? `ทุก${getDayLabel(termDow)}` : formatDate(date)}</span></div>
                         {isTermMode && (
-                          <div className="flex justify-between gap-4"><span className="text-slate-500">ช่วงเทอม</span><span className="font-semibold text-slate-900">{formatDateShort(termStart)} - {formatDateShort(termEnd)}</span></div>
+                          <div className="flex justify-between gap-4"><span className="text-slate-500">ช่วงเทอม</span><span className="font-semibold text-slate-900">{formatDateShort(displayTermStart(termStart, termEnd))} - {formatDateShort(termEnd)}</span></div>
                         )}
                         <div className="flex justify-between gap-4"><span className="text-slate-500">เวลา</span><span className="font-semibold text-slate-900">{startTime} - {endTime} น.</span></div>
                         <div className="flex justify-between gap-4"><span className="text-slate-500">ผู้เข้าร่วม</span><span className="font-semibold text-slate-900">{attendees} คน (ความจุ {selectedRoom.capacity})</span></div>
