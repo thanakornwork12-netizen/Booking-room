@@ -476,3 +476,48 @@ class FinishedTermCancelTests(BookingEdgeBase):
         r = self.client.delete(f'/api/term-bookings/{tb.id}/')
         tb.refresh_from_db()
         self.assertEqual((r.status_code, tb.status), (200, 'cancelled'))
+
+
+# ══════════════════════════════════════════════════════════════
+# หน้าแอดมิน: ?upcoming=1 ดึงการจองที่ยังไม่จบได้ครบ ไม่ขึ้นกับหน้าแรก 20 รายการ
+# ══════════════════════════════════════════════════════════════
+class UpcomingFilterTests(BookingEdgeBase):
+    def test_upcoming_excludes_finished_and_keeps_old_approved(self):
+        self.client.force_authenticate(user=self.admin)
+        future = self.seed(aware(self.day, 9), aware(self.day, 10), status='approved')
+        past = Booking.objects.create(
+            user=self.user_b, room=self.room, title='จบแล้ว', attendees=5, status='approved',
+            start_time=timezone.now() - timedelta(days=2, hours=1),
+            end_time=timezone.now() - timedelta(days=2))
+        # รายการใหม่กว่า 25 แถว ดันรายการเดิมตกจากหน้าแรกของ /api/bookings/
+        for i in range(25):
+            self.seed(aware(self.day + timedelta(days=1 + i), 9), aware(self.day + timedelta(days=1 + i), 10),
+                      status='cancelled')
+        first_page = {r['id'] for r in self.client.get('/api/bookings/').data['results']}
+        self.assertNotIn(future.id, first_page)
+        r = self.client.get('/api/bookings/', {'status': 'approved', 'upcoming': 1, 'page_size': 200})
+        ids = {row['id'] for row in r.data['results']}
+        self.assertIn(future.id, ids)
+        self.assertNotIn(past.id, ids)
+
+
+class RoomDuplicateNameMessageTests(BookingEdgeBase):
+    def test_duplicate_room_name_message_is_thai(self):
+        self.client.force_authenticate(user=self.admin)
+        r = self.client.post('/api/rooms/', {
+            'name': self.room.name, 'building': self.building.id, 'floor': 1,
+            'capacity': 10, 'room_type': 'ห้องเรียน', 'status': 'available'}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(str(r.data['non_field_errors'][0]), 'อาคารนี้มีห้องชื่อนี้อยู่แล้ว')
+
+
+class MaintenanceOpenFilterTests(BookingEdgeBase):
+    def test_open_filter_lists_only_scheduled_and_active(self):
+        self.client.force_authenticate(user=self.admin)
+        mk = lambda st, d: MaintenanceBlock.objects.create(
+            room=self.room, start_time=aware(self.day + timedelta(days=d), 8),
+            end_time=aware(self.day + timedelta(days=d), 12), reason='ทดสอบ', status=st, created_by=self.admin)
+        keep, done, gone = mk('scheduled', 0), mk('completed', 1), mk('cancelled', 2)
+        r = self.client.get('/api/maintenance-blocks/', {'open': 1})
+        rows = r.data.get('results', r.data) if isinstance(r.data, dict) else r.data
+        self.assertEqual({row['id'] for row in rows}, {keep.id})

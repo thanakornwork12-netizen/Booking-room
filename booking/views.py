@@ -1842,6 +1842,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         status = _status_param(self.request, Booking)
         if status:
             qs = qs.filter(status=status)
+        # ?upcoming=1 — เฉพาะรายการที่ยังไม่จบ ให้หน้าแอดมินดึง "การจองปัจจุบัน" ได้ครบ
+        # (เดิมใช้หน้าแรก 20 รายการเรียงตามวันที่สร้าง การจองที่อนุมัติไว้นานแล้ว
+        # หลุดจากรายการและตารางสถานะห้อง ขึ้นว่าห้อง "ว่าง" ทั้งที่มีคนจอง)
+        if self.request.query_params.get('upcoming') in ('1', 'true'):
+            qs = qs.filter(end_time__gt=timezone.now())
         return _live_bookings(qs).select_related('user', 'room__building')
 
     def get_serializer_class(self):
@@ -2297,6 +2302,9 @@ class MaintenanceBlockViewSet(viewsets.ModelViewSet):
         room = _query_param(self.request, 'room', int)
         if room:
             qs = qs.filter(room_id=room)
+        # ?open=1 — เฉพาะช่วงที่ยังเปิดอยู่ (ใช้แสดงรายการให้แอดมินยกเลิก/ปิดงานได้)
+        if self.request.query_params.get('open') in ('1', 'true'):
+            qs = qs.filter(status__in=['scheduled', 'active'])
         return qs.order_by('-start_time')
 
     def perform_create(self, serializer):

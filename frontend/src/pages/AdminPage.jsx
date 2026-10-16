@@ -9,7 +9,7 @@ import {
 import api from '../api/axios'
 import { isPast, localDateStr } from '../utils/booking'
 import { extractErrorMessage } from '../utils/errors'
-import { ADMIN_STATUS_REFRESH_MS, STARTING_SOON_MINUTES } from '../config'
+import { ADMIN_STATUS_REFRESH_MS, STARTING_SOON_MINUTES, MY_BOOKINGS_PAGE_SIZE as MAX_PAGE_SIZE } from '../config'
 
 const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -959,6 +959,33 @@ function MaintenancePanel({ dashboard, adminRooms }) {
   // หรือ error อะไร กันปัญหาที่ทั้งฝั่งเราและ user เห็นแค่ "0 ครั้ง" เฉยๆ
   // โดยไม่รู้ว่าจริงๆ คือ API fail หรือ fetch สำเร็จแต่ข้อมูลว่างจริง
   const [statsDebug, setStatsDebug] = useState(null)
+  // ช่วงปิดซ่อมที่ล็อกไว้แล้ว — เดิมกด "ล็อกทันที" แล้วไม่มีที่ไหนในหน้าเว็บให้ดู
+  // หรือยกเลิก กดพลาดห้องถูกปิดทั้งวันโดยแก้คืนเองไม่ได้
+  const [openBlocks, setOpenBlocks] = useState([])
+  const [closingBlock, setClosingBlock] = useState(null)
+
+  const loadOpenBlocks = async () => {
+    try {
+      const res = await api.get('maintenance-blocks/', { params: { open: 1, page_size: MAX_PAGE_SIZE } })
+      const rows = res.data.results ?? res.data ?? []
+      setOpenBlocks([...rows].sort((a, b) => new Date(a.start_time) - new Date(b.start_time)))
+    } catch { /* แสดงรายการเดิมไว้ */ }
+  }
+  useEffect(() => { loadOpenBlocks() }, [])
+
+  const closeBlock = async (block, action) => {
+    const verb = action === 'complete' ? 'ปิดงานซ่อม (เสร็จแล้ว)' : 'ยกเลิกช่วงปิดซ่อม'
+    if (!confirm(`${verb} ห้อง ${block.room_name}?`)) return
+    setClosingBlock(block.id)
+    try {
+      await api.post(`maintenance-blocks/${block.id}/${action}/`)
+      setOpenBlocks(prev => prev.filter(b => b.id !== block.id))
+    } catch (e) {
+      alert(extractErrorMessage(e, `${verb}ไม่สำเร็จ`))
+    } finally {
+      setClosingBlock(null)
+    }
+  }
 
   const runMaintenanceAI = async () => {
     setLoading(true)
@@ -1035,6 +1062,7 @@ function MaintenancePanel({ dashboard, adminRooms }) {
       })
       alert('ล็อกห้องเรียบร้อย — ส่งช่างเข้าบำรุงได้')
       setSlots(prev => prev.filter(s => s.label !== slot.label))
+      loadOpenBlocks()
     } catch (e) {
       alert(extractErrorMessage(e, 'ล็อกห้องไม่สำเร็จ'))
     } finally {
@@ -1108,6 +1136,40 @@ function MaintenancePanel({ dashboard, adminRooms }) {
           )}
         </div>
       </div>
+
+      {openBlocks.length > 0 && (
+        <div className="bg-white border border-rose-100 rounded-3xl p-4 shadow-sm">
+          <h3 className="text-sm font-black text-slate-900">ช่วงปิดซ่อมที่ล็อกไว้ ({openBlocks.length})</h3>
+          <p className="text-xs text-slate-500 mb-3">ห้องจองไม่ได้ในช่วงเหล่านี้ — ยกเลิกได้ถ้าล็อกผิด หรือปิดงานเมื่อซ่อมเสร็จ</p>
+          <div className="space-y-2">
+            {openBlocks.map(blk => {
+              const started = new Date(blk.start_time) <= new Date()
+              const fmt = dt => new Date(dt).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              return (
+                <div key={blk.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                  <Wrench size={14} className="text-rose-500 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-800 truncate">{blk.room_name}
+                      <span className="ml-2 text-[11px] font-semibold text-slate-500">{started ? 'กำลังซ่อม' : 'รอเริ่ม'}</span>
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">{fmt(blk.start_time)} – {fmt(blk.end_time)} น. · {blk.reason}</p>
+                  </div>
+                  {started && (
+                    <button onClick={() => closeBlock(blk, 'complete')} disabled={closingBlock === blk.id}
+                      className="text-xs font-bold text-emerald-700 border border-emerald-200 bg-white hover:bg-emerald-50 px-2.5 py-1.5 rounded-xl disabled:opacity-50">
+                      ซ่อมเสร็จแล้ว
+                    </button>
+                  )}
+                  <button onClick={() => closeBlock(blk, 'cancel')} disabled={closingBlock === blk.id}
+                    className="text-xs font-bold text-rose-600 border border-rose-200 bg-white hover:bg-rose-50 px-2.5 py-1.5 rounded-xl disabled:opacity-50">
+                    ยกเลิก
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {report ? (
         <>
@@ -1359,7 +1421,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
   setSelectedBooking, handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
   fmtDate, fmtTime, fmtDateFull, navigate,
   onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
-  hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
+  hasMoreBookings, loadingMoreBookings, onLoadMoreBookings, bookingsTotal, cancelledTotal }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
   const pendingTerms = termBookings.filter(tb => tb.status === 'pending')
@@ -1375,7 +1437,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
     {key:'rooms',    label:'สถานะห้อง',      count:adminRooms?.length ?? null},
     {key:'maintenance', label:'ซ่อมบำรุง AI', count:null},
     {key:'overview', label:'ภาพรวม',         count:null},
-    {key:'all',      label:'ทั้งหมด',        count:bookings.length},
+    {key:'all',      label:'ทั้งหมด',        count:bookingsTotal ?? bookings.length},
   ]
 
   return (
@@ -1423,7 +1485,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
                 {label:'จองวันนี้',        value:dashboard?.today_bookings??0, color:'text-blue-700'},
                 {label:'รอยืนยัน (pending)',value:pendingB.length + pendingTerms.length, color:'text-yellow-600'},
                 {label:'ยืนยันแล้ว',       value:activeB.length,               color:'text-emerald-600'},
-                {label:'ยกเลิกแล้ว',       value:cancelledB.length,            color:'text-red-500'},
+                {label:'ยกเลิกแล้ว',       value:cancelledTotal ?? cancelledB.length,            color:'text-red-500'},
             ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-4 shadow-sm">
                   <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -1626,7 +1688,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
   setSelectedBooking, handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
   fmtDate, fmtTime, fmtDateFull, navigate,
   onAddRoom, onEditRoom, onDeleteRoom, onAddBuilding,
-  hasMoreBookings, loadingMoreBookings, onLoadMoreBookings }) {
+  hasMoreBookings, loadingMoreBookings, onLoadMoreBookings, bookingsTotal, cancelledTotal }) {
 
   const pendingB   = bookings.filter(b => b.status === 'pending')
   const pendingTerms = termBookings.filter(tb => tb.status === 'pending')
@@ -1642,7 +1704,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
     {key:'rooms',    label:'ห้อง',    count:adminRooms?.length ?? null},
     {key:'maintenance', label:'ซ่อม AI', count:null},
     {key:'overview', label:'ภาพรวม',  count:null},
-    {key:'all',      label:'ทั้งหมด', count:bookings.length},
+    {key:'all',      label:'ทั้งหมด', count:bookingsTotal ?? bookings.length},
   ]
 
   return (
@@ -1684,7 +1746,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                 {label:'วันนี้',     value:dashboard?.today_bookings??0, color:'text-blue-700'},
                 {label:'รอยืนยัน',  value:pendingB.length + pendingTerms.length, color:'text-yellow-600'},
                 {label:'ยืนยันแล้ว',value:activeB.length,               color:'text-emerald-600'},
-                {label:'ยกเลิก',    value:cancelledB.length,            color:'text-red-500'},
+                {label:'ยกเลิก',    value:cancelledTotal ?? cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
                 <div key={i} className="bg-white border border-blue-100 rounded-2xl p-3 text-center shadow-sm">
                   <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -1874,7 +1936,7 @@ function RoomFormModal({ room, buildingsList, onClose, onSaved }) {
       onSaved()
       onClose()
     } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.name?.[0] || 'บันทึกไม่สำเร็จ')
+      setError(extractErrorMessage(err, 'บันทึกไม่สำเร็จ'))
     } finally {
       setSaving(false)
     }
@@ -1950,7 +2012,7 @@ function BuildingFormModal({ building, onClose, onSaved }) {
       onSaved()
       onClose()
     } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.code?.[0] || 'บันทึกไม่สำเร็จ')
+      setError(extractErrorMessage(err, 'บันทึกไม่สำเร็จ'))
     } finally {
       setSaving(false)
     }
@@ -2031,6 +2093,9 @@ export default function AdminPage() {
   const [adminRooms,      setAdminRooms]      = useState([])
   const [bookings,        setBookings]        = useState([])
   const [bookingsNextUrl, setBookingsNextUrl] = useState(null)
+  // จำนวนจริงจาก API (count) — รายการที่โหลดมาเป็นแค่บางหน้า นับจากนั้นจะผิด
+  const [bookingsTotal,   setBookingsTotal]   = useState(null)
+  const [cancelledTotal,  setCancelledTotal]  = useState(null)
   const [loadingMoreBookings, setLoadingMoreBookings] = useState(false)
   const [termBookings,    setTermBookings]    = useState([])
   const [tab,             setTab]             = useState('active')
@@ -2070,16 +2135,21 @@ export default function AdminPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [dashRes, bookingRes, termRes, roomsRes, buildingsRes, pendingRes, pendingTermRes] = await Promise.all([
+        const [dashRes, bookingRes, termRes, roomsRes, buildingsRes, pendingRes, pendingTermRes, upcomingRes, cancelledRes] = await Promise.all([
           api.get('dashboard/'),
           api.get('bookings/'),
           api.get('term-bookings/'),
           api.get('rooms/admin-status/').catch(() => ({ data: [] })),
           api.get('buildings/').catch(() => ({ data: [] })),
           // ดึงรายการรออนุมัติแยกต่างหาก — หน้าแรกของรายการทั้งหมดมีแค่ 20 รายการ
-          // คำขอที่รออนุมัติอาจไม่อยู่ในนั้น แล้วไม่ขึ้นให้กดอนุมัติ
-          api.get('bookings/', { params: { status: 'pending' } }).catch(() => ({ data: [] })),
-          api.get('term-bookings/', { params: { status: 'pending' } }).catch(() => ({ data: [] })),
+          // คำขอที่รออนุมัติอาจไม่อยู่ในนั้น แล้วไม่ขึ้นให้กดอนุมัติ (เดิมคำขอเองก็
+          // ดึงแค่ 20 รายการแรก — ขอสูงสุดของ API แทน)
+          api.get('bookings/', { params: { status: 'pending', page_size: MAX_PAGE_SIZE } }).catch(() => ({ data: [] })),
+          api.get('term-bookings/', { params: { status: 'pending', page_size: MAX_PAGE_SIZE } }).catch(() => ({ data: [] })),
+          // การจองที่อนุมัติแล้วและยังไม่จบ — ใช้ทั้งแท็บการจองปัจจุบันและตารางสถานะห้อง
+          api.get('bookings/', { params: { status: 'approved', upcoming: 1, page_size: MAX_PAGE_SIZE } }).catch(() => ({ data: [] })),
+          // จำนวนที่ยกเลิกทั้งหมด (ขอแค่ count) — เดิมนับจากรายการที่โหลดมาไม่กี่สิบแถว
+          api.get('bookings/', { params: { status: 'cancelled', page_size: 1 } }).catch(() => ({ data: {} })),
         ])
         setDashboard(dashRes.data)
         setAdminRooms(Array.isArray(roomsRes.data) ? roomsRes.data : [])
@@ -2089,9 +2159,11 @@ export default function AdminPage() {
           const ids = new Set(list.map(x => x.id))
           return [...(Array.isArray(pending) ? pending : []).filter(x => !ids.has(x.id)), ...list]
         }
-        const all = withPending(bookingRes.data.results || [], pendingRes.data)
+        const all = withPending(withPending(bookingRes.data.results || [], upcomingRes.data), pendingRes.data)
         setBookings(all)
         setBookingsNextUrl(bookingRes.data.next || null)
+        setBookingsTotal(typeof bookingRes.data.count === 'number' ? bookingRes.data.count : null)
+        setCancelledTotal(typeof cancelledRes.data?.count === 'number' ? cancelledRes.data.count : null)
 
         // term bookings — รองรับ paginated หรือ array โดยตรง
         const termAll = termRes.data.results ?? termRes.data ?? []
@@ -2111,9 +2183,15 @@ export default function AdminPage() {
   const handleCancel = async (id) => {
     if (!confirm('ยืนยันการยกเลิกการจองนี้?')) return
     try {
-      await api.post(`bookings/${id}/cancel/`)
-      setBookings(prev => prev.map(b => b.id===id ? {...b,status:'cancelled'} : b))
-      if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev,status:'cancelled'}))
+      const { data } = await api.post(`bookings/${id}/cancel/`)
+      // รายการที่กำลังใช้อยู่ backend "คืนห้องก่อนเวลา" (released): สถานะยังอนุมัติ
+      // แต่เวลาจบเลื่อนมาเป็นตอนนี้ — เดิมหน้านี้ขึ้นว่า "ยกเลิกแล้ว" ทั้งที่ไม่ใช่
+      const patch = data?.result === 'released'
+        ? { end_time: new Date().toISOString() }
+        : { status: 'cancelled' }
+      setBookings(prev => prev.map(b => b.id===id ? {...b, ...patch} : b))
+      if (data?.result !== 'released') setCancelledTotal(n => (n == null ? n : n + 1))
+      if (selectedBooking?.id===id) setSelectedBooking(prev => ({...prev, ...patch}))
     } catch (err) { alert(extractErrorMessage(err, 'เกิดข้อผิดพลาด')) }
   }
 
@@ -2176,6 +2254,7 @@ export default function AdminPage() {
   const props = {
     dashboard, adminRooms, bookings, termBookings, weekStats, tab, setTab,
     hasMoreBookings: !!bookingsNextUrl, loadingMoreBookings, onLoadMoreBookings: loadMoreBookings,
+    bookingsTotal, cancelledTotal,
     selectedBooking, setSelectedBooking,
     handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
     fmtDate, fmtTime, fmtDateFull, navigate,

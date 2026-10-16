@@ -8,6 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
 
 from .config import (
     AI_FORECAST_ROOM_IDS, DELETED_USERNAME_PREFIX, MIN_BOOKING_MINUTES, NOTE_MAX_LENGTH,
@@ -316,6 +317,15 @@ class RoomSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'building', 'building_name', 'building_code',
                   'floor', 'capacity', 'room_type', 'status',
                   'description', 'image', 'is_active', 'facilities']
+
+    def get_validators(self):
+        # unique (อาคาร, ชื่อห้อง) — ข้อความเดิมของ DRF เป็นภาษาอังกฤษ "The fields
+        # building, name must make a unique set." แสดงในฟอร์มแอดมินแล้วอ่านไม่รู้เรื่อง
+        validators = super().get_validators()
+        for v in validators:
+            if isinstance(v, UniqueTogetherValidator):
+                v.message = 'อาคารนี้มีห้องชื่อนี้อยู่แล้ว'
+        return validators
 
     def validate_capacity(self, value):
         # เดิมสร้างห้องความจุติดลบ/ศูนย์ได้ ห้องนั้นค้นหาไม่เจอและจองไม่ได้ตลอดไป
