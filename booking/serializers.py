@@ -511,12 +511,18 @@ class BookingSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     room_name = serializers.CharField(source='room.name',          read_only=True)
     building  = serializers.CharField(source='room.building.name', read_only=True)
+    # ห้องนี้ยังรับจองใหม่ได้ไหม (เงื่อนไขเดียวกับ _check_room_bookable) — หน้า
+    # "จองซ้ำ" ใช้ซ่อนปุ่ม เดิมกรอกครบแล้วถึงเจอ "ห้องนี้ยังไม่เปิดให้จองในระบบ"
+    room_bookable = serializers.SerializerMethodField()
 
     class Meta:
         model  = Booking
-        fields = ['id', 'user', 'user_name', 'room', 'room_name', 'building',
+        fields = ['id', 'user', 'user_name', 'room', 'room_name', 'building', 'room_bookable',
                   'title', 'attendees', 'start_time', 'end_time',
                   'status', 'note', 'reject_reason', 'created_at', 'updated_at']
+
+    def get_room_bookable(self, obj):
+        return obj.room_id in AI_FORECAST_ROOM_IDS and obj.room.is_open_for_booking
         read_only_fields = ['id', 'user', 'status', 'reject_reason', 'created_at', 'updated_at']
 
 

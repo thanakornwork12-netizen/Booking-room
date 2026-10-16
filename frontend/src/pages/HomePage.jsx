@@ -69,18 +69,16 @@ const timeUntil = (startTime) => {
   return null  // เริ่มแล้ว — ผู้เรียกแสดงเฉพาะรายการที่ยังไม่จบ
 }
 
-// เวลาสิ้นสุด (วัน + เวลา) จากวันเริ่ม เวลาเริ่ม และจำนวนชั่วโมง — เดิมคืนแค่เวลา
-// แล้ววนรอบ 24 ชม. เริ่ม 23:00 นาน 2 ชม. จึงส่ง "วันเดียวกัน 01:00" ไป backend
-// ปฏิเสธว่าเวลาสิ้นสุดก่อนเวลาเริ่ม ตอนนี้ข้ามเที่ยงคืนแล้วขยับวันให้ถูก
-const endOf = (date, time, hrs) => {
-  const [y, mo, d] = date.split('-').map(Number)
-  const [h, m] = time.split(':').map(Number)
-  const end = new Date(y, mo - 1, d, h + hrs, m)
-  return {
-    date: localDateStr(end),
-    time: `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`,
-  }
+// เวลา HH:MM ตามเวลาเครื่อง (ไทย) ของ datetime จาก API
+const localHHMM = (dt) => {
+  const d = new Date(dt)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+
+// จองซ้ำใช้กติกาเดียวกับหน้าค้นหา: จบภายในวันเดียวกันและไม่เกิน 23:00 น.
+// (SearchPage validateCustomDuration) — เดิมเลือกเริ่ม 23:00 นาน 2 ชม. แล้ว
+// ข้ามเที่ยงคืนได้ ทั้งที่หน้าค้นหาห้าม
+const REBOOK_LATEST_END = '23:00'
 
 const TUTORIAL_STEPS = [
   { icon: <Search size={24} className="shrink-0" color="#1d4ed8" />, title: 'ค้นหาห้องว่าง', desc: 'กดปุ่ม "จองห้องเรียน/ประชุม" เลือกวันที่ เวลา และจำนวนผู้เข้าร่วม ระบบ AI จะแนะนำห้องที่เหมาะสม' },
@@ -332,9 +330,15 @@ function BookingModal({ booking, onClose, onCancel, onRebook, fmtTime, fmtDateFu
                 {isFinished ? 'การประชุมนี้สิ้นสุดลงแล้ว' : (isRejected ? 'คำขอจองนี้ถูกปฏิเสธ' : 'การจองนี้ถูกยกเลิกแล้ว')}
               </div>
             )}
-            <button onClick={() => onRebook(booking)} className="w-full border-2 border-blue-100 text-blue-700 hover:bg-blue-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
-              <History size={16} /> จองซ้ำ (ห้องเดิม/ข้อมูลเดิม)
-            </button>
+            {booking.room_bookable === false ? (
+              <div className="rounded-xl px-4 py-3 text-center text-xs font-semibold border bg-slate-50 border-slate-200 text-slate-500">
+                ห้องนี้ปิดรับจองแล้ว จึงจองซ้ำไม่ได้
+              </div>
+            ) : (
+              <button onClick={() => onRebook(booking)} className="w-full border-2 border-blue-100 text-blue-700 hover:bg-blue-50 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                <History size={16} /> จองซ้ำ (ห้องเดิม/ข้อมูลเดิม)
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -345,7 +349,7 @@ function BookingModal({ booking, onClose, onCancel, onRebook, fmtTime, fmtDateFu
 function RebookModal({ booking, onClose, onSuccess }) {
   const [date, setDate] = useState('')
   const [startTime, setStartTime] = useState('')
-  const [duration, setDuration] = useState(1)
+  const [endTime, setEndTime] = useState('')
   const [attendees, setAttendees] = useState(1)
   const [title, setTitle] = useState('')
   const [loading, setLoading] = useState(false)
@@ -357,13 +361,17 @@ function RebookModal({ booking, onClose, onSuccess }) {
 
   useEffect(() => {
     if (!booking) return
-    const start = new Date(booking.start_time)
-    const end = new Date(booking.end_time)
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
     setDate(localDateStr(tomorrow))
-    setStartTime(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
-    setDuration(Math.min(3, Math.max(1, Math.round((end - start) / 3600000))))
+    // ใช้เวลาเริ่ม-จบเดิมตรงๆ — เดิมแปลงเป็นจำนวนชั่วโมงแล้วบีบให้อยู่ 1–3 ชม.
+    // การจอง 09:00–16:00 จองซ้ำแล้วเหลือ 09:00–12:00 โดยไม่เตือน
+    const start = localHHMM(booking.start_time)
+    const end = localHHMM(booking.end_time)
+    setStartTime(start)
+    // รายการเดิมที่ข้ามวันหรือจบหลัง 23:00 ตัดเวลาจบให้อยู่ในกติกา แล้วให้ผู้ใช้เห็นเอง
+    const sameDay = localDateStr(new Date(booking.start_time)) === localDateStr(new Date(booking.end_time))
+    setEndTime(sameDay && end > start && end <= REBOOK_LATEST_END ? end : REBOOK_LATEST_END)
     setAttendees(booking.attendees || 1)
     setTitle(booking.title || '')
     setError('')
@@ -371,14 +379,19 @@ function RebookModal({ booking, onClose, onSuccess }) {
 
   if (!booking) return null
 
-  const end = date && startTime ? endOf(date, startTime, duration) : null
-  const endTime = end ? end.time : ''
   const today = localDateStr()
+  // "HH:MM" เทียบเป็นสตริงได้ตรงๆ เพราะเติมศูนย์หน้าครบ 2 หลักเสมอ
+  const timeProblem = !startTime || !endTime ? ''
+    : endTime <= startTime ? 'เวลาสิ้นสุดต้องหลังเวลาเริ่ม'
+    : endTime > REBOOK_LATEST_END ? `เวลาสิ้นสุดต้องไม่เกิน ${REBOOK_LATEST_END} น.`
+    : ''
 
   const handleSubmit = async () => {
     if (isSubmittingRef.current) return
     if (!date) { setError('กรุณาเลือกวันที่'); return }
     if (!startTime) { setError('กรุณาเลือกเวลาเริ่มต้น'); return }
+    if (!endTime) { setError('กรุณาเลือกเวลาสิ้นสุด'); return }
+    if (timeProblem) { setError(timeProblem); return }
     if (!title.trim()) { setError('กรุณากรอกหัวข้อ'); return }
     isSubmittingRef.current = true
     setLoading(true); setError('')
@@ -388,7 +401,7 @@ function RebookModal({ booking, onClose, onSuccess }) {
         title: title.trim(),
         attendees: parseInt(attendees, 10),
         start_time: `${date}T${startTime}:00`,
-        end_time: `${end.date}T${end.time}:00`,
+        end_time: `${date}T${endTime}:00`,
       })
       onSuccess()
     } catch (err) {
@@ -461,16 +474,14 @@ function RebookModal({ booking, onClose, onSuccess }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">ระยะเวลา (ชม.)</label>
-              <select
-                value={duration}
-                onChange={e => setDuration(parseInt(e.target.value, 10))}
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">เวลาสิ้นสุด</label>
+              <input
+                type="time"
+                value={endTime}
+                max={REBOOK_LATEST_END}
+                onChange={e => setEndTime(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-              >
-                <option value={1}>1 ชม.</option>
-                <option value={2}>2 ชม.</option>
-                <option value={3}>3 ชม.</option>
-              </select>
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">ผู้เข้าร่วม</label>
@@ -484,8 +495,10 @@ function RebookModal({ booking, onClose, onSuccess }) {
             </div>
           </div>
 
-          {startTime && (
-            <p className="text-xs text-slate-500 text-center">เวลาที่จอง: {startTime} - {endTime} น.{end && end.date !== date ? ' (วันถัดไป)' : ''}</p>
+          {startTime && endTime && (
+            timeProblem
+              ? <p className="text-xs text-red-600 font-semibold text-center">{timeProblem}</p>
+              : <p className="text-xs text-slate-500 text-center">เวลาที่จอง: {startTime} - {endTime} น.</p>
           )}
 
           <button

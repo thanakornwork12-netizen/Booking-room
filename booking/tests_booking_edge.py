@@ -419,3 +419,28 @@ class TimingTests(BookingEdgeBase):
         r = self.client.post(f'/api/bookings/{b.id}/cancel/')
         b.refresh_from_db()
         self.assertEqual((r.status_code, b.status), (200, 'cancelled'))
+
+
+# ══════════════════════════════════════════════════════════════
+# จองซ้ำจากประวัติ — ปุ่มต้องรู้ว่าห้องเดิมยังรับจองได้ไหม
+# ══════════════════════════════════════════════════════════════
+class RoomBookableFieldTests(BookingEdgeBase):
+    def _listed(self, booking):
+        rows = self.client.get('/api/bookings/').data
+        rows = rows.get('results', rows) if isinstance(rows, dict) else rows
+        return next(r for r in rows if r['id'] == booking.id)
+
+    def test_open_room_is_bookable(self):
+        b = self.seed(aware(self.day, 9), aware(self.day, 10), user=self.bot)
+        self.assertIs(self._listed(b)['room_bookable'], True)
+
+    def test_room_outside_bookable_list(self):
+        other = Room.objects.create(id=999, building=self.building, name='ห้องเก่า',
+                                    floor=1, capacity=20, room_type='ห้องเรียน')
+        b = self.seed(aware(self.day, 9), aware(self.day, 10), user=self.bot, room=other)
+        self.assertIs(self._listed(b)['room_bookable'], False)
+
+    def test_disabled_room(self):
+        b = self.seed(aware(self.day, 9), aware(self.day, 10), user=self.bot)
+        Room.objects.filter(pk=self.room.pk).update(status='disabled')
+        self.assertIs(self._listed(b)['room_bookable'], False)
