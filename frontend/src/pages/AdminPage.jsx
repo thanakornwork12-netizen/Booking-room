@@ -180,9 +180,13 @@ const extractRooms = (bookings, adminRooms = []) => {
       status: r.status,
     }
   })
+  // เติมห้องจากรายการจองเฉพาะเมื่อยังไม่มีรายชื่อห้องจากระบบ — เดิมเช็ค key
+  // "booking-<id>" ซึ่งไม่ตรงกับ "room-<id>" ด้านบน ห้องที่มีการจองจึงถูกนับซ้ำ
+  // เป็นห้องใหม่ในหมวด "อื่นๆ" (ตารางขึ้น 78 ห้อง ทั้งที่ระบบมี 70)
+  if (adminRooms.length) return Object.values(map).sort((a, b) => a.name.localeCompare(b.name, 'th'))
   bookings.forEach(b => {
     const bname = b.room_name || `ห้อง #${b.room}`
-    const key = `booking-${b.room}`
+    const key = `room-${b.room}`
     if (!map[key]) {
       map[key] = {
         roomKey: key,
