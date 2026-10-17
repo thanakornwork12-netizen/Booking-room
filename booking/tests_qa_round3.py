@@ -46,7 +46,7 @@ class QARound3Tests(QABase):
         r = self.client.post('/api/auth/register/', {
             'username': 'qa_weakpw', 'first_name': 'a', 'last_name': 'b',
             'email': 'qa_weakpw@example.com', 'password': '123456', 'password2': '123456',
-            'role': 'student'}, format='json')
+            'role': 'student', 'student_id': '6600000103'}, format='json')
         self.assertEqual(r.status_code, 400, r.data)
         self.assertIn('ตัวเลขล้วน', str(r.data))
 

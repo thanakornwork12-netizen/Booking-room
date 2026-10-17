@@ -526,9 +526,9 @@ class MaintenanceOpenFilterTests(BookingEdgeBase):
 class StudentIdRequiredTests(TestCase):
     def _register(self, role, student_id, username):
         return APIClient().post('/api/auth/register/', {
-            'first_name': 'ทดสอบ', 'username': username, 'email': f'{username}@example.com',
-            'password': 'QaRegister2026!', 'password2': 'QaRegister2026!', 'role': role,
-            'faculty': 'QA', 'student_id': student_id}, format='json')
+            'email': f'{username}@example.com', 'want_lecturer': role == 'lecturer',
+            'password': 'QaRegister2026!', 'password2': 'QaRegister2026!',
+            'student_id': student_id}, format='json')
 
     def test_student_must_give_student_id(self):
         r = self._register('student', '', 'qa_no_sid')
@@ -552,3 +552,64 @@ class StudentIdRequiredTests(TestCase):
         c = APIClient(); c.force_authenticate(u)
         self.assertEqual(c.patch('/api/auth/profile/', {'phone': '0800000000', 'student_id': ''},
                                  format='json').status_code, 200)
+
+
+# ══════════════════════════════════════════════════════════════
+# คำขอสิทธิ์อาจารย์ — สมัครเองได้แค่สิทธิ์นักศึกษาจนแอดมินอนุมัติ
+# ══════════════════════════════════════════════════════════════
+class LecturerRequestTests(BookingEdgeBase):
+    def setUp(self):
+        super().setUp()
+        r = APIClient().post('/api/auth/register/', {
+            'email': 'new.lecturer@example.com', 'want_lecturer': True,
+            'password': 'QaRegister2026!', 'password2': 'QaRegister2026!'}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.applicant = User.objects.get(email='new.lecturer@example.com')
+
+    def term_payload(self):
+        d = next_weekday(2)
+        return {'room': self.room.id, 'subject_name': 'วิชาทดสอบ', 'attendees': 10,
+                'day_of_week': d.weekday(), 'start_time': '09:00', 'end_time': '11:00',
+                'term_start': str(d), 'term_end': str(d + timedelta(days=30)), 'term_name': 'x'}
+
+    def test_pending_applicant_cannot_book_term(self):
+        c = APIClient(); c.force_authenticate(self.applicant)
+        r = c.post('/api/term-bookings/', self.term_payload(), format='json')
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('รอแอดมินยืนยัน', str(r.data))
+
+    def test_admins_are_notified(self):
+        from booking.models import Notification
+        self.assertTrue(Notification.objects.filter(user=self.admin, title='มีคำขอสิทธิ์อาจารย์ใหม่').exists())
+
+    def test_non_admin_cannot_list_or_approve(self):
+        self.client.force_authenticate(self.user_b)
+        self.assertEqual(self.client.get('/api/lecturer-requests/').status_code, 403)
+        self.assertEqual(self.client.post(f'/api/lecturer-requests/{self.applicant.id}/approve/').status_code, 403)
+        self.applicant.refresh_from_db()
+        self.assertEqual(self.applicant.role, 'student')
+
+    def test_admin_approves_then_applicant_can_book_term(self):
+        self.client.force_authenticate(self.admin)
+        rows = self.client.get('/api/lecturer-requests/').data
+        self.assertEqual([row['id'] for row in rows], [self.applicant.id])
+        r = self.client.post(f'/api/lecturer-requests/{self.applicant.id}/approve/')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.applicant.refresh_from_db()
+        self.assertEqual((self.applicant.role, self.applicant.lecturer_status), ('lecturer', ''))
+        self.assertEqual(self.client.post(f'/api/lecturer-requests/{self.applicant.id}/approve/').status_code, 400)
+        c = APIClient(); c.force_authenticate(self.applicant)
+        self.assertEqual(c.post('/api/term-bookings/', self.term_payload(), format='json').status_code, 201)
+
+    def test_admin_rejects(self):
+        self.client.force_authenticate(self.admin)
+        r = self.client.post(f'/api/lecturer-requests/{self.applicant.id}/reject/')
+        self.assertEqual(r.status_code, 200)
+        self.applicant.refresh_from_db()
+        self.assertEqual((self.applicant.role, self.applicant.lecturer_status), ('student', 'rejected'))
+        self.assertEqual(self.client.get('/api/lecturer-requests/').data, [])
+
+    def test_lecturer_logs_in_with_email(self):
+        r = APIClient().post('/api/auth/login/', {'username': 'new.lecturer@example.com',
+                                                   'password': 'QaRegister2026!'}, format='json')
+        self.assertEqual(r.status_code, 200)

@@ -28,6 +28,14 @@ class IsAdminOrStaff(BasePermission):
 # อาจารย์และฝั่งผู้ดูแล นักศึกษาจองได้เฉพาะรายครั้ง
 TERM_BOOKING_ROLES = ('lecturer', 'staff', 'admin')
 TERM_BOOKING_DENIED = 'นักศึกษาจองทั้งเทอมไม่ได้ จองได้เฉพาะรายครั้ง (การจองทั้งเทอมสำหรับอาจารย์และเจ้าหน้าที่)'
+TERM_BOOKING_PENDING_LECTURER = 'สิทธิ์อาจารย์ของคุณรอแอดมินยืนยัน ระหว่างนี้จองได้เฉพาะรายครั้ง'
+
+
+def term_booking_denied_message(user):
+    """ข้อความเมื่อจองทั้งเทอมไม่ได้ — แยกกรณีที่ขอสิทธิ์อาจารย์ไว้แล้วแต่ยังรออนุมัติ"""
+    if getattr(user, 'lecturer_status', '') == 'pending':
+        return TERM_BOOKING_PENDING_LECTURER
+    return TERM_BOOKING_DENIED
 
 
 def can_book_term(user):
@@ -40,4 +48,8 @@ class CanBookTerm(BasePermission):
     message = TERM_BOOKING_DENIED
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and can_book_term(request.user))
+        allowed = bool(request.user and request.user.is_authenticated and can_book_term(request.user))
+        # สมัครเป็นอาจารย์แล้วแต่แอดมินยังไม่ยืนยัน — บอกให้ชัดว่ารออยู่ ไม่ใช่ "นักศึกษา"
+        if not allowed:
+            self.message = term_booking_denied_message(request.user)
+        return allowed

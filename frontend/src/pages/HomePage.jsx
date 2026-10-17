@@ -5,7 +5,7 @@ import {
   Building2, ChevronRight, CheckCircle2,
   ArrowRight, ArrowLeft, BookOpen, Zap, AlertCircle, History
 } from 'lucide-react'
-import api, { getUser } from '../api/axios'
+import api, { getUser, updateStoredUser } from '../api/axios'
 import { addHours, isInUse, isPast, pickRandomFittingDuration, minutesBetween, localDateStr } from '../utils/booking'
 import { extractErrorMessage } from '../utils/errors'
 import { MY_BOOKINGS_PAGE_SIZE } from '../config'
@@ -546,6 +546,8 @@ export default function HomePage() {
         api.get('/rooms/today-feed/').catch(() => ({ data: [] })),
       ])
       setUser(p.data)
+      // สิทธิ์ที่เก็บไว้ตอน login อาจเก่าแล้ว (เช่นแอดมินเพิ่งยืนยันสิทธิ์อาจารย์)
+      updateStoredUser({ role: p.data.role, lecturer_status: p.data.lecturer_status || '' })
       setBookings(b.data.results || b.data || [])
       // ซ่อนรายการที่ยกเลิกแล้ว — เหลือรออนุมัติ/อนุมัติแล้ว/ถูกปฏิเสธ (ให้เห็นเหตุผล)
       setTermBookings((Array.isArray(t.data) ? t.data : (t.data.results || [])).filter(tb => tb.status !== 'cancelled'))

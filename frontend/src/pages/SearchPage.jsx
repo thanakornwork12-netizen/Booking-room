@@ -423,10 +423,13 @@ const canBookTerm = () => TERM_BOOKING_ROLES.includes(String(getUser()?.role || 
 
 function BookingTypeSelector({ value, onChange }) {
   const termAllowed = canBookTerm()
+  // สมัครเป็นอาจารย์แล้วแต่แอดมินยังไม่ยืนยัน — บอกให้รู้ว่ารออยู่ ไม่ใช่ "สำหรับอาจารย์"
+  const lecturerPending = getUser()?.lecturer_status === 'pending'
+  const termSub = termAllowed ? 'จองประจำทุกสัปดาห์'
+    : lecturerPending ? 'รอแอดมินยืนยันสิทธิ์อาจารย์' : 'สำหรับอาจารย์และเจ้าหน้าที่'
   const types = [
     { key: 'daily', icon: Coffee, label: 'รายวัน', sub: 'เลือกวันและเวลา' },
-    { key: 'term', icon: BookOpen, label: 'ทั้งเทอม',
-      sub: termAllowed ? 'จองประจำทุกสัปดาห์' : 'สำหรับอาจารย์และเจ้าหน้าที่', disabled: !termAllowed },
+    { key: 'term', icon: BookOpen, label: 'ทั้งเทอม', sub: termSub, disabled: !termAllowed },
   ]
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -436,7 +439,7 @@ function BookingTypeSelector({ value, onChange }) {
         const accent = active ? (t.key === 'term' ? 'from-indigo-600 to-violet-600 border-indigo-600' : 'from-blue-600 to-indigo-600 border-blue-600') : 'bg-white border-slate-200'
         return (
           <button key={t.key} onClick={() => !t.disabled && onChange(t.key)} disabled={t.disabled}
-            title={t.disabled ? 'นักศึกษาจองได้เฉพาะรายวัน' : undefined}
+            title={t.disabled ? (lecturerPending ? 'สิทธิ์อาจารย์รอแอดมินยืนยัน ระหว่างนี้จองได้เฉพาะรายวัน' : 'นักศึกษาจองได้เฉพาะรายวัน') : undefined}
             className={`group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2.5 transition-all text-left
               ${t.disabled ? 'cursor-not-allowed opacity-50 bg-white text-slate-500' : active ? `bg-gradient-to-br ${accent} text-white shadow-md shadow-blue-200/70` : 'bg-white text-slate-700 hover:border-blue-300 hover:shadow-sm'}`}>
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${active ? 'bg-white/15' : 'bg-blue-50 group-hover:bg-blue-100'}`}>

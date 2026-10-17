@@ -104,8 +104,8 @@ class UserSerializer(serializers.ModelSerializer):
         model  = User
         fields = ['id', 'username', 'first_name', 'last_name',
                   'email', 'role', 'faculty', 'phone', 'avatar', 'student_id',
-                  'can_change_password']
-        read_only_fields = ['id', 'role', 'username']
+                  'can_change_password', 'lecturer_status']
+        read_only_fields = ['id', 'role', 'username', 'lecturer_status']
 
     def get_can_change_password(self, obj):
         return obj.has_usable_password()
@@ -129,89 +129,82 @@ class UserSerializer(serializers.ModelSerializer):
         return _clean_email(value, exclude_pk=getattr(self.instance, 'pk', None))
 
 
-class RegisterSerializer(serializers.ModelSerializer):
-    password   = serializers.CharField(write_only=True)
-    password2  = serializers.CharField(write_only=True)
-    student_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+class RegisterSerializer(serializers.Serializer):
+    """สมัครด้วย เลข นศ. + อีเมล + รหัสผ่าน เท่านั้น
 
-    # ห้ามสมัครเองแล้วได้สิทธิ์ 'admin' หรือ 'staff' — ทั้งสองอนุมัติการจอง ดึง
-    # export ข้อมูลผู้ใช้ทุกคน และจัดการห้องได้ แอดมินตั้งให้ใน backend เท่านั้น
-    # (User.ROLE_CHOICES มีทั้งสองอยู่ ถ้าไม่กันตรงนี้ ModelSerializer จะ
-    # validate role ผ่านหมด เพราะเป็น choice ที่ถูกต้องของ model)
-    SELF_REGISTERABLE_ROLES = {'student', 'lecturer'}
-
-    class Meta:
-        model  = User
-        fields = ['username', 'first_name', 'last_name', 'email',
-                  'password', 'password2', 'role', 'faculty', 'phone', 'student_id']
-
-    def validate_username(self, value):
-        # สมัครด้วยอีเมล (6611234567@ubu.ac.th) ให้ได้ username เดียวกับที่
-        # LDAP ใช้ (6611234567) — ต้องตัดก่อนตรวจซ้ำ
-        value = value.split('@')[0]
-        # NFKC แปลงตัวอักษรเต็มความกว้าง (ｑａ) เป็นตัวปกติ และเทียบแบบไม่สนตัว
-        # พิมพ์ใหญ่เล็ก — ไม่งั้นสมัคร 'QA_Test_Bot' หรือ 'ｑａ_test_bot' ปลอมเป็น
-        # 'qa_test_bot' ได้ (หน้าตาเหมือนกันในรายการแอดมิน/อีเมล)
-        value = unicodedata.normalize('NFKC', value)
-        # '@ubu.ac.th' ผ่าน validator ของ field (อักขระถูกต้อง) แต่ตัดแล้วเหลือ
-        # ค่าว่าง — เดิมสร้างบัญชี username '' ได้สำเร็จ
-        if not value:
-            raise serializers.ValidationError('กรุณากรอกชื่อผู้ใช้')
-        # username ที่เป็นตัวเลขล้วนคือรหัสนักศึกษา/บุคลากรใน LDAP — ถ้าให้สมัครเอง
-        # ใครก็จองรหัสของคนอื่นไว้ก่อนได้ แล้วระบบจะรวมเป็นบัญชีเดียวกันตอน
-        # เจ้าของล็อกอินผ่าน LDAP เจ้าของตัวจริงไม่ต้องสมัคร ล็อกอินได้เลย
-        if value.isdigit():
-            raise serializers.ValidationError(
-                'รหัสนักศึกษา/บุคลากรใช้เข้าสู่ระบบด้วยรหัสผ่านมหาวิทยาลัยได้เลย ไม่ต้องสมัคร '
-                'หากต้องการสมัครบัญชีแยก กรุณาตั้งชื่อผู้ใช้ที่ไม่ใช่ตัวเลขล้วน'
-            )
-        # ชื่อขึ้นต้น deleted_ สงวนไว้ให้บัญชีที่ปิดแล้ว (DeleteAccountView) —
-        # เดิมสมัคร deleted_<id> ของคนอื่นไว้ก่อนได้ พอเจ้าของ id นั้นลบบัญชี
-        # ชื่อชนกันจนพังเป็น 500
-        if value.lower().startswith(DELETED_USERNAME_PREFIX):
-            raise serializers.ValidationError('ชื่อผู้ใช้นี้สงวนไว้สำหรับระบบ กรุณาใช้ชื่ออื่น')
-        if User.objects.filter(username__iexact=value).exists():
-            raise serializers.ValidationError('ชื่อผู้ใช้นี้ถูกใช้แล้ว')
-        return value
+    - นักศึกษา: ต้องกรอกเลข นศ. — ใช้เลข นศ. เป็นชื่อเข้าสู่ระบบ
+    - อาจารย์/บุคลากร: ติ๊ก want_lecturer ไม่ต้องมีเลข นศ. — ใช้อีเมลเป็นชื่อเข้าสู่ระบบ
+    ทุกบัญชีที่สมัครเองได้ role 'student' เสมอ ขอเป็นอาจารย์ได้แค่สถานะ
+    lecturer_status='pending' จนแอดมินอนุมัติ (LecturerRequestView) — เดิมเลือก
+    "อาจารย์" ตอนสมัครแล้วได้สิทธิ์ทันที นักศึกษาสมัครเป็นอาจารย์ไปจองทั้งเทอมได้
+    ฟิลด์อื่นที่ส่งมา (username, role, is_staff ฯลฯ) ถูกทิ้งทั้งหมด"""
+    email         = serializers.EmailField()
+    student_id    = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    want_lecturer = serializers.BooleanField(required=False, default=False)
+    password      = serializers.CharField(write_only=True)
+    password2     = serializers.CharField(write_only=True)
 
     def validate_email(self, value):
-        return _clean_email(value)
-
-    def validate_role(self, value):
-        if value not in self.SELF_REGISTERABLE_ROLES:
-            raise serializers.ValidationError('สถานะไม่ถูกต้อง')
-        return value
+        # NFKC: อีเมลตัวอักษรเต็มความกว้าง (ｑａ@...) หน้าตาเหมือนอีเมลเดิมในรายการ
+        # แอดมิน ต้องแปลงก่อนตรวจซ้ำ ไม่งั้นสมัครปลอมเป็นบัญชีเดิมได้
+        return _clean_email(unicodedata.normalize('NFKC', value))
 
     def validate(self, data):
         if data['password'] != data['password2']:
             raise serializers.ValidationError({'password': 'รหัสผ่านไม่ตรงกัน'})
-        candidate = User(**{k: v for k, v in data.items() if k not in ('password', 'password2')})
+
+        if data.get('want_lecturer'):
+            # อาจารย์ไม่มีเลข นศ. — ใช้อีเมลเป็นชื่อเข้าสู่ระบบ
+            data['student_id'] = None
+            username = unicodedata.normalize('NFKC', data['email']).lower()
+        else:
+            if not (data.get('student_id') or '').strip():
+                raise serializers.ValidationError({'student_id': 'กรุณากรอกรหัสนักศึกษา'})
+            try:
+                data['student_id'] = _clean_student_id(data['student_id'].strip())
+            except serializers.ValidationError as e:
+                raise serializers.ValidationError({'student_id': e.detail}) from e
+            username = data['student_id']
+
+        # ชื่อขึ้นต้น deleted_ สงวนไว้ให้บัญชีที่ปิดแล้ว (DeleteAccountView)
+        if username.startswith(DELETED_USERNAME_PREFIX):
+            raise serializers.ValidationError({'email': 'อีเมลนี้ใช้สมัครไม่ได้ กรุณาใช้อีเมลอื่น'})
+        if User.objects.filter(username__iexact=username).exists():
+            field = 'email' if data.get('want_lecturer') else 'student_id'
+            raise serializers.ValidationError({field: 'มีบัญชีนี้อยู่ในระบบแล้ว กรุณาเข้าสู่ระบบ'})
+        data['username'] = username
+
+        candidate = User(username=username, email=data['email'])
         problems = check_password_strength(data['password'], user=candidate)
         if problems:
             raise serializers.ValidationError({'password': problems})
-
-        # นักศึกษาต้องกรอกรหัสนักศึกษา (อาจารย์ไม่มีรหัสนักศึกษา ไม่ต้องกรอก)
-        if data.get('role', 'student') == 'student' and not (data.get('student_id') or '').strip():
-            raise serializers.ValidationError({'student_id': 'กรุณากรอกรหัสนักศึกษา'})
-        try:
-            data['student_id'] = _clean_student_id(data.get('student_id'))
-        except serializers.ValidationError as e:
-            raise serializers.ValidationError({'student_id': e.detail}) from e
-
         return data
 
     def create(self, validated_data):
-        validated_data.pop('password2')
-        password = validated_data.pop('password')
-
-        user = User(**validated_data)
-        user.set_password(password)
+        user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            student_id=validated_data.get('student_id'),
+            role='student',
+            lecturer_status='pending' if validated_data.get('want_lecturer') else '',
+        )
+        user.set_password(validated_data['password'])
         user.save()
 
         from .signals import send_email_after_commit, send_welcome_email
         send_email_after_commit(send_welcome_email, user)
-
+        if user.lecturer_status == 'pending':
+            # แจ้งแอดมิน/เจ้าหน้าที่ทุกคนในระบบ ให้ไปยืนยันในแดชบอร์ด
+            Notification.objects.bulk_create([
+                Notification(user=admin, type='system', title='มีคำขอสิทธิ์อาจารย์ใหม่',
+                             message=f'{user.email} สมัครและขอสิทธิ์อาจารย์ กรุณาตรวจสอบในแดชบอร์ดผู้ดูแลระบบ')
+                for admin in User.objects.filter(role__in=('admin', 'staff'), is_active=True)
+            ])
         return user
+
+    def to_representation(self, user):
+        return {'username': user.username, 'email': user.email, 'student_id': user.student_id,
+                'lecturer_status': user.lecturer_status}
 
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -848,6 +841,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                     'email': user.email,
                     'faculty': user.faculty,
                     'role': user.role,
+                    'lecturer_status': user.lecturer_status,
                     'avatar': (
                         user.avatar.url
                         if getattr(user, 'avatar', None)
@@ -960,6 +954,7 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'faculty': user.faculty,
 
                 'role': user.role,
+                'lecturer_status': user.lecturer_status,
 
                 'avatar': (
                     user.avatar.url

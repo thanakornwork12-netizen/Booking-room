@@ -1,25 +1,20 @@
 import { Fragment, useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
-  Eye, EyeOff, UserPlus, ChevronRight, Building2, ShieldCheck,
-  Check, ChevronDown, CalendarRange, UserRound, AtSign, Mail, Lock,
+  Eye, EyeOff, UserPlus, Building2, ShieldCheck,
+  Check, ChevronDown, CalendarRange, Mail, Lock,
   ShieldCheck as ShieldIcon, Bell, Hash,
 } from 'lucide-react'
 import api from '../api/axios'
 import { extractErrorMessage } from '../utils/errors'
 import { passwordProblem } from '../utils/booking'
 
-const FACULTIES = [
-  'วิทยาศาสตร์','วิศวกรรมศาสตร์','บริหารธุรกิจ',
-  'นิติศาสตร์','แพทยศาสตร์','พยาบาลศาสตร์',
-  'เกษตรศาสตร์','ศิลปศาสตร์','สาธารณสุขศาสตร์','เภสัชศาสตร์',
-]
-
-// ตัวเลือกสถานะตอนสมัคร — ไม่มี "ผู้ดูแลระบบ" และ "เจ้าหน้าที่" ให้เลือกเอง
-// เพราะทั้งสองมีสิทธิ์อนุมัติการจอง/ดึงข้อมูลผู้ใช้ทั้งหมด แอดมินตั้งให้ใน backend
-const ROLE_OPTIONS = [
-  { value: 'student', label: 'นักศึกษา' },
-  { value: 'lecturer', label: 'อาจารย์' },
+// สมัครได้แค่สิทธิ์นักศึกษา — อาจารย์/บุคลากรติ๊ก "ขอสิทธิ์อาจารย์" แล้วรอแอดมิน
+// ยืนยัน (backend: RegisterSerializer, LecturerRequestView) เดิมกดเลือก "อาจารย์"
+// แล้วได้สิทธิ์ทันที นักศึกษาสมัครเป็นอาจารย์ไปจองทั้งเทอมได้
+const ACCOUNT_TYPES = [
+  { lecturer: false, label: 'นักศึกษา' },
+  { lecturer: true,  label: 'อาจารย์ / บุคลากร' },
 ]
 
 const ANIM = `
@@ -42,10 +37,6 @@ const inputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 p
   text-slate-800 outline-none transition-all placeholder:text-slate-400
   focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
 
-const plainInputCls = `w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 sm:py-3 text-sm
-  text-slate-800 outline-none transition-all placeholder:text-slate-400
-  focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100`
-
 const SCHEDULE_TIMES = ['08:00', '09:00', '10:00', '11:00', '12:00']
 const SCHEDULE_ROOMS = [
   { name: 'ห้อง 301', busy: [1] },
@@ -56,7 +47,7 @@ const SCHEDULE_ROOMS = [
 ]
 
 const FEATURE_CHIPS = [
-  { icon: CalendarRange, label: 'กรอกง่าย',   sub: 'ทีละขั้นตอน ไม่งง' },
+  { icon: CalendarRange, label: 'กรอกง่าย',   sub: 'แค่ 3 ช่อง' },
   { icon: ShieldIcon,    label: 'ปลอดภัย',    sub: 'ข้อมูลถูกเข้ารหัส' },
   { icon: Bell,          label: 'ยืนยันไว',   sub: 'ใช้งานได้ทันที' },
 ]
@@ -64,38 +55,25 @@ const FEATURE_CHIPS = [
 export default function RegisterPage() {
   const navigate = useNavigate()
   const [form, setForm] = useState({
-    username: '',
-    first_name: '',
-    email: '',
     student_id: '',
+    email: '',
     password: '',
     password2: '',
-    role: 'student',
-    faculty: '',
+    want_lecturer: false,
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [showPass2, setShowPass2] = useState(false)
-  const [step, setStep] = useState(1)
+  const [done, setDone] = useState(null)
   const isSubmittingRef = useRef(false)
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  const goNext = () => {
-    if (!form.first_name) return setError('กรุณากรอกชื่อ-นามสกุล')
-    if (!form.username) return setError('กรุณากรอกชื่อผู้ใช้')
-    if (!form.email) return setError('กรุณากรอกอีเมล')
-    // นักศึกษาต้องกรอกรหัสนักศึกษา (อาจารย์ไม่ต้อง) — backend ตรวจซ้ำ
-    if (form.role === 'student' && !form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
-    if (form.student_id && !/^\d+$/.test(form.student_id)) return setError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
-    setError('')
-    setStep(2)
-  }
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setError('') }
 
   const onSubmit = async () => {
     if (isSubmittingRef.current) return
-    if (!form.faculty) return setError('กรุณาเลือกคณะ/หน่วยงาน')
+    if (!form.want_lecturer && !form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
+    if (!form.email) return setError('กรุณากรอกอีเมล')
     if (!form.password) return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
     if (passwordProblem(form.password)) return setError(passwordProblem(form.password))
@@ -104,8 +82,9 @@ export default function RegisterPage() {
     setLoading(true)
     setError('')
     try {
-      await api.post('/auth/register/', form)
-      navigate('/login')
+      const payload = { ...form, student_id: form.want_lecturer ? '' : form.student_id }
+      const { data } = await api.post('/auth/register/', payload)
+      setDone(data)
     } catch (err) {
       setError(extractErrorMessage(err, 'สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่'))
     } finally {
@@ -204,14 +183,14 @@ export default function RegisterPage() {
               <UserPlus size={22} color="#fff" />
             </div>
             <h1 className="text-lg font-extrabold text-slate-900 sm:text-xl">สมัครสมาชิก</h1>
-            <p className="mt-1 text-xs text-slate-500">สร้างบัญชีผู้ใช้งานหรือผู้ดูแลระบบ</p>
+            <p className="mt-1 text-xs text-slate-500">ใช้เลขนักศึกษา อีเมล และรหัสผ่าน</p>
           </div>
 
           <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.10)] au1 sm:rounded-[28px]">
             <div className="flex items-center justify-between gap-4 p-5 pb-0 sm:p-6 sm:pb-0">
               <div>
                 <p className="text-[11px] font-bold tracking-[0.22em] text-slate-400 uppercase">Register</p>
-                <p className="mt-1 text-xl font-extrabold text-slate-900">{step === 1 ? 'ข้อมูลผู้ใช้งาน' : 'ตั้งรหัสผ่าน'}</p>
+                <p className="mt-1 text-xl font-extrabold text-slate-900">{done ? 'สมัครสำเร็จ' : 'สร้างบัญชี'}</p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-700 sm:h-11 sm:w-11">
                 <ShieldCheck size={20} />
@@ -219,53 +198,45 @@ export default function RegisterPage() {
             </div>
 
             <div className="p-5 pt-4 sm:p-6 sm:pt-4">
-              <div className="mb-5 flex items-center gap-2">
-                {[1, 2].map(s => (
-                  <div key={s} className="flex flex-1 items-center">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all
-                      ${step >= s ? 'bg-blue-700 text-white shadow-md shadow-blue-200' : 'bg-blue-100 text-blue-300'}`}>
-                      {s}
-                    </div>
-                    {s < 2 && <div className={`mx-1.5 h-0.5 flex-1 rounded-full transition-all ${step > s ? 'bg-blue-700' : 'bg-blue-100'}`} />}
+              {done ? (
+                <div className="au space-y-4">
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                    <p className="text-sm font-bold text-emerald-800">สร้างบัญชีเรียบร้อยแล้ว</p>
+                    <p className="mt-1 text-xs text-emerald-700">
+                      เข้าสู่ระบบด้วย <b>{done.student_id || done.email}</b> และรหัสผ่านที่ตั้งไว้
+                    </p>
                   </div>
-                ))}
-                <span className="ml-2 flex-shrink-0 text-xs text-slate-500">
-                  {step === 1 ? 'ข้อมูลส่วนตัว' : 'ตั้งรหัสผ่าน'}
-                </span>
-              </div>
-
-              {error && (
-                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {error}
+                  {done.lecturer_status === 'pending' && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <p className="text-sm font-bold text-amber-800">รอแอดมินยืนยันสิทธิ์อาจารย์</p>
+                      <p className="mt-1 text-xs text-amber-700">
+                        ระหว่างนี้ใช้งานและจองรายครั้งได้ตามปกติ จองทั้งเทอมได้หลังแอดมินยืนยัน (จะมีแจ้งเตือนในระบบ)
+                      </p>
+                    </div>
+                  )}
+                  <button type="button" onClick={() => navigate('/login')}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700">
+                    ไปหน้าเข้าสู่ระบบ
+                  </button>
                 </div>
-              )}
-
-              {step === 1 && (
+              ) : (
                 <div className="space-y-3.5 sm:space-y-4">
-                  <div className="au2">
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ชื่อ-นามสกุล</label>
-                    <div className="relative">
-                      <UserRound size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="ชื่อจริง - นามสกุล"
-                        className={inputCls}
-                        value={form.first_name}
-                        onChange={e => set('first_name', e.target.value)}
-                        style={{ fontFamily: 'inherit' }}
-                      />
+                  {error && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                      {error}
                     </div>
-                  </div>
+                  )}
+
                   <div className="au2">
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">สถานะ</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {ROLE_OPTIONS.map(opt => (
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ประเภทบัญชี</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ACCOUNT_TYPES.map(opt => (
                         <button
-                          key={opt.value}
+                          key={opt.label}
                           type="button"
-                          onClick={() => set('role', opt.value)}
+                          onClick={() => set('want_lecturer', opt.lecturer)}
                           className={`rounded-2xl border py-2.5 text-sm font-semibold transition-all ${
-                            form.role === opt.value
+                            form.want_lecturer === opt.lecturer
                               ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
                               : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
                           }`}
@@ -274,41 +245,31 @@ export default function RegisterPage() {
                         </button>
                       ))}
                     </div>
+                    {form.want_lecturer && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        บัญชีอาจารย์ต้องรอแอดมินยืนยันก่อนจึงจะจองทั้งเทอมได้ เข้าสู่ระบบด้วยอีเมล
+                      </p>
+                    )}
                   </div>
-                  <div className="au2">
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ชื่อผู้ใช้</label>
-                    <div className="relative">
-                      <AtSign size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="เช่น somchai123"
-                        className={inputCls}
-                        value={form.username}
-                        onChange={e => set('username', e.target.value)}
-                        style={{ fontFamily: 'inherit' }}
-                      />
+
+                  {!form.want_lecturer && (
+                    <div className="au2">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">รหัสนักศึกษา</label>
+                      <div className="relative">
+                        <Hash size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="เช่น 6512345678 (ใช้เข้าสู่ระบบ)"
+                          className={inputCls}
+                          value={form.student_id}
+                          onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
+                          style={{ fontFamily: 'inherit' }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="au2">
-                    <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-blue-700">
-                      รหัสนักศึกษา
-                      {form.role === 'student'
-                        ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-red-500">*จำเป็น</span>
-                        : <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-blue-500">#ไม่บังคับ</span>}
-                    </label>
-                    <div className="relative">
-                      <Hash size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder={form.role === 'student' ? 'เช่น 6512345678' : 'ไม่ต้องกรอก'}
-                        className={inputCls}
-                        value={form.student_id}
-                        onChange={e => set('student_id', e.target.value.replace(/\D/g, ''))}
-                        style={{ fontFamily: 'inherit' }}
-                      />
-                    </div>
-                  </div>
+                  )}
+
                   <div className="au3">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">อีเมล</label>
                     <div className="relative">
@@ -324,37 +285,7 @@ export default function RegisterPage() {
                     </div>
                   </div>
 
-                  <div className="au4">
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">คณะ / หน่วยงาน</label>
-                    <select
-                      className={plainInputCls}
-                      value={form.faculty}
-                      onChange={e => set('faculty', e.target.value)}
-                      style={{ fontFamily: 'inherit' }}
-                    >
-                      <option value="">-- เลือกคณะ --</option>
-                      {FACULTIES.map(f => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={goNext}
-                    className="au5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] sm:py-3.5"
-                  >
-                    ถัดไป <ChevronRight size={14} />
-                  </button>
-                </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-3.5 sm:space-y-4">
-                  <div className="au2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
-                    <p className="text-sm font-bold text-slate-800">{form.first_name}</p>
-                    <p className="mt-0.5 text-xs text-blue-500">{form.faculty || '—'}</p>
-                  </div>
-
-                  <div className="au2">
+                  <div className="au3">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">รหัสผ่าน</label>
                     <div className="relative">
                       <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -376,7 +307,7 @@ export default function RegisterPage() {
                     </div>
                   </div>
 
-                  <div className="au3">
+                  <div className="au4">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">ยืนยันรหัสผ่าน</label>
                     <div className="relative">
                       <Lock size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -386,6 +317,7 @@ export default function RegisterPage() {
                         className={`${inputCls} pr-11 ${form.password2 && form.password !== form.password2 ? 'border-red-300 ring-2 ring-red-100' : ''}`}
                         value={form.password2}
                         onChange={e => set('password2', e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && onSubmit()}
                         style={{ fontFamily: 'inherit' }}
                       />
                       <button
@@ -401,25 +333,16 @@ export default function RegisterPage() {
                     )}
                   </div>
 
-                  <div className="au4 flex gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => { setStep(1); setError('') }}
-                      className="flex-1 rounded-2xl border-2 border-slate-200 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-                    >
-                      ← ย้อนกลับ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onSubmit}
-                      disabled={loading}
-                      className="flex-[2] flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
-                    >
-                      {loading
-                        ? <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white" style={{ animation: 'rot .7s linear infinite' }} />กำลังสมัคร...</>
-                        : <><UserPlus size={14} />สมัครสมาชิก</>}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={onSubmit}
+                    disabled={loading}
+                    className="au5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none sm:py-3.5"
+                  >
+                    {loading
+                      ? <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white" style={{ animation: 'rot .7s linear infinite' }} />กำลังสมัคร...</>
+                      : <><UserPlus size={14} />สมัครสมาชิก</>}
+                  </button>
                 </div>
               )}
             </div>

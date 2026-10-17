@@ -39,7 +39,7 @@ from .overlap import (
     ACTIVE_BOOKING_STATUSES, TERM_BLOCKING_STATUSES, find_booking_conflict, find_term_conflict,
 )
 from .permissions import (
-    TERM_BOOKING_DENIED, CanBookTerm, IsAdminOrStaff, can_book_term, is_admin_or_staff,
+    CanBookTerm, IsAdminOrStaff, can_book_term, is_admin_or_staff, term_booking_denied_message,
 )
 from .throttles import PasswordResetThrottle, ThaiThrottleMixin
 from .serializers import (
@@ -65,6 +65,39 @@ class RegisterView(generics.CreateAPIView):
     queryset           = User.objects.all()
     serializer_class   = RegisterSerializer
     permission_classes = [AllowAny]
+
+
+class LecturerRequestView(APIView):
+    """คำขอสิทธิ์อาจารย์ที่รอแอดมินยืนยัน (ดู RegisterSerializer)
+
+    GET  /api/lecturer-requests/                    รายการที่รออนุมัติ
+    POST /api/lecturer-requests/<id>/<approve|reject>/
+    """
+    permission_classes = [IsAdminOrStaff]
+
+    def get(self, request):
+        rows = User.objects.filter(lecturer_status='pending', is_active=True).order_by('date_joined')
+        return Response([{'id': u.id, 'email': u.email, 'username': u.username,
+                          'name': u.get_full_name(), 'date_joined': u.date_joined} for u in rows])
+
+    def post(self, request, pk, action):
+        if action not in ('approve', 'reject'):
+            return Response({'error': 'คำสั่งไม่ถูกต้อง'}, status=400)
+        with transaction.atomic():
+            user = get_object_or_404(User.objects.select_for_update(), pk=pk, is_active=True)
+            if user.lecturer_status != 'pending':
+                return Response({'error': 'บัญชีนี้ไม่มีคำขอที่รออนุมัติ'}, status=400)
+            if action == 'approve':
+                user.role, user.lecturer_status = 'lecturer', ''
+                title, message = ('ได้รับสิทธิ์อาจารย์แล้ว',
+                                  'แอดมินยืนยันสิทธิ์อาจารย์ของคุณแล้ว จองห้องทั้งเทอมได้ตั้งแต่ตอนนี้')
+            else:
+                user.lecturer_status = 'rejected'
+                title, message = ('คำขอสิทธิ์อาจารย์ไม่ผ่าน',
+                                  'แอดมินไม่อนุมัติสิทธิ์อาจารย์ บัญชีของคุณยังใช้จองรายครั้งได้ตามปกติ')
+            user.save(update_fields=['role', 'lecturer_status'])
+            Notification.objects.create(user=user, type='system', title=title, message=message)
+        return Response({'message': title, 'role': user.role, 'lecturer_status': user.lecturer_status})
 
 
 class ProfileView(generics.RetrieveUpdateAPIView):
@@ -447,7 +480,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         if booking_type == 'dynamic':
             return self._search_dynamic(d, request)
         if not can_book_term(request.user):
-            raise PermissionDenied(TERM_BOOKING_DENIED)
+            raise PermissionDenied(term_booking_denied_message(request.user))
         return self._search_term(d, request)
 
     @action(detail=False, methods=['get'], url_path='suggestions')

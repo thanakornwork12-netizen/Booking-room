@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .serializers import LDAPTokenObtainPairSerializer
 from .throttles import LoginThrottle, ThaiThrottleMixin
 from .views import (
-    RegisterView, ProfileView,
+    RegisterView, ProfileView, LecturerRequestView,
     ChangePasswordView, DeleteAccountView,
     ForgotPasswordView, ResetPasswordConfirmView,
     BuildingViewSet, RoomViewSet,
@@ -48,6 +48,8 @@ urlpatterns = [
     path('auth/delete-account/',   DeleteAccountView.as_view(),  name='delete_account'),
     path('auth/forgot-password/',  ForgotPasswordView.as_view(),        name='forgot_password'),
     path('auth/reset-password-confirm/', ResetPasswordConfirmView.as_view(), name='reset_password_confirm'),
+    path('lecturer-requests/', LecturerRequestView.as_view(), name='lecturer_requests'),
+    path('lecturer-requests/<int:pk>/<str:action>/', LecturerRequestView.as_view(), name='lecturer_request_action'),
 
     # Dashboard + Export
     path('dashboard/',     DashboardView.as_view(),           name='dashboard'),

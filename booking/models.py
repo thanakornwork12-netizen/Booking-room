@@ -16,6 +16,16 @@ class User(AbstractUser):
         ('student',  'นักศึกษา'),
     ]
     role       = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
+    # คำขอสิทธิ์อาจารย์ — สมัครเองได้แค่สิทธิ์นักศึกษา ถ้าขอเป็นอาจารย์จะเป็น
+    # 'pending' จนแอดมินอนุมัติ (role → lecturer) หรือปฏิเสธ ('rejected')
+    # กันนักศึกษาสมัครเป็นอาจารย์เองแล้วจองทั้งเทอมได้
+    LECTURER_STATUS_CHOICES = [
+        ('',         'ไม่ได้ขอ'),
+        ('pending',  'รอแอดมินยืนยัน'),
+        ('rejected', 'ถูกปฏิเสธ'),
+    ]
+    lecturer_status = models.CharField(max_length=10, choices=LECTURER_STATUS_CHOICES, blank=True, default='',
+                                       verbose_name='คำขอสิทธิ์อาจารย์')
     faculty    = models.CharField(max_length=100, blank=True, verbose_name='คณะ/หน่วยงาน')
     phone      = models.CharField(max_length=20, blank=True)
     student_id = models.CharField(max_length=20, null=True, blank=True, unique=True, verbose_name='รหัสนักศึกษา')

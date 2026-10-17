@@ -193,6 +193,7 @@ async function _doLoginWithLDAP(username, password, remember) {
     email:    user.email,
     faculty:  user.faculty,
     role:     user.role,
+    lecturer_status: user.lecturer_status || '',
   }))
 
   return res.data

@@ -71,48 +71,52 @@ class AccountQATests(QABase):
     def register(self, **over):
         self.client.force_authenticate(user=None)
         payload = {
-            'username': 'qa_new_user', 'first_name': 'QA', 'last_name': 'New',
             'email': 'qa_new_user@example.com', 'password': 'QaTest1234',
-            'password2': 'QaTest1234', 'role': 'student', 'student_id': '6633333333',
+            'password2': 'QaTest1234', 'student_id': '6633333333',
         }
         payload.update(over)
         return self.client.post('/api/auth/register/', payload, format='json')
 
-    def test_register_duplicate_username(self):
-        self.assertEqual(self.register(username='qa_test_bot').status_code, 400)
-
-    def test_register_email_username_colliding_after_normalisation(self):
-        """qa_test_bot@ubu.ac.th ถูกตัดเหลือ qa_test_bot ซึ่งมีอยู่แล้ว — ต้องได้ 400 ไม่ใช่ 500"""
-        r = self.register(username='qa_test_bot@ubu.ac.th')
-        self.assertEqual(r.status_code, 400)
-
-    def test_register_email_username_is_normalised(self):
-        r = self.register(username='qa.person@ubu.ac.th')
+    def test_register_student_uses_student_id_as_login(self):
+        r = self.register()
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertTrue(User.objects.filter(username='qa.person').exists())
+        u = User.objects.get(student_id='6633333333')
+        self.assertEqual((u.username, u.role, u.lecturer_status), ('6633333333', 'student', ''))
 
-    def test_register_student_id_username_rejected(self):
-        """รหัสนักศึกษาเป็นของบัญชี LDAP — สมัครจองไว้ก่อนไม่ได้ ทั้งแบบตรงและแบบอีเมล"""
-        for name in ('6699999999', '6699999999@ubu.ac.th', '６６９９９９９９９９'):
-            with self.subTest(name=name):
-                r = self.register(username=name)
-                self.assertEqual(r.status_code, 400)
-        self.assertFalse(User.objects.filter(username__contains='99999999').exists())
+    def test_register_duplicate_student_id(self):
+        self.assertEqual(self.register(student_id=self.bot.student_id).status_code, 400)
 
-    def test_register_staff_role_rejected(self):
-        r = self.register(role='staff')
-        self.assertEqual(r.status_code, 400)
-        self.assertFalse(User.objects.filter(username='qa_new_user').exists())
+    def test_register_student_id_taken_as_username(self):
+        """มีบัญชีที่ใช้เลขนี้เป็นชื่อเข้าสู่ระบบอยู่แล้ว (เช่นสร้างจากแอดมิน) — 400 ไม่ใช่ 500"""
+        User.objects.create_user(username='6644444444', password='x')
+        self.assertEqual(self.register(student_id='6644444444').status_code, 400)
 
-    def test_register_admin_role_rejected(self):
-        self.assertEqual(self.register(role='admin').status_code, 400)
+    def test_register_ignores_chosen_username(self):
+        r = self.register(username='qa_test_bot')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(User.objects.filter(username='qa_test_bot').count(), 1)
+
+    def test_register_staff_role_ignored(self):
+        """เลือก role เองไม่ได้แล้ว — ส่ง staff/admin มาก็ได้แค่นักศึกษา"""
+        for i, role in enumerate(('staff', 'admin', 'lecturer')):
+            with self.subTest(role=role):
+                r = self.register(role=role, student_id=f'663333334{i}', email=f'qa_role{i}@example.com')
+                self.assertEqual(r.status_code, 201, r.data)
+                self.assertEqual(User.objects.get(student_id=f'663333334{i}').role, 'student')
+
+    def test_register_lecturer_request_is_pending(self):
+        r = self.register(want_lecturer=True, student_id='', email='qa.lect@example.com')
+        self.assertEqual(r.status_code, 201, r.data)
+        u = User.objects.get(email='qa.lect@example.com')
+        self.assertEqual((u.username, u.role, u.lecturer_status, u.student_id),
+                         ('qa.lect@example.com', 'student', 'pending', None))
 
     def test_register_short_password(self):
         self.assertEqual(self.register(password='abc', password2='abc').status_code, 400)
 
     def test_register_password_is_hashed(self):
         self.register()
-        u = User.objects.get(username='qa_new_user')
+        u = User.objects.get(username='6633333333')
         self.assertTrue(u.check_password('QaTest1234'))
         self.assertNotIn('QaTest1234', u.password)
 
@@ -602,9 +606,8 @@ class QAOverlookedTests(QABase):
     def test_deleted_prefix_username_reserved_and_delete_never_collides(self):
         self.client.force_authenticate(user=None)
         r = self.client.post('/api/auth/register/', {
-            'username': f'deleted_{self.user_b.pk}', 'first_name': 'A', 'last_name': 'B',
-            'email': 'squat@example.com', 'password': 'QaTest1234', 'password2': 'QaTest1234',
-            'role': 'student', 'student_id': '6655555555'}, format='json')
+            'email': f'deleted_{self.user_b.pk}@example.com', 'want_lecturer': True,
+            'password': 'QaTest1234', 'password2': 'QaTest1234'}, format='json')
         self.assertEqual(r.status_code, 400)
         # แม้มี username แบบนั้นอยู่แล้ว (เช่นสร้างจากแอดมิน) การลบบัญชีต้องไม่พัง
         User.objects.create_user(username=f'deleted_{self.user_b.pk}', password='x')

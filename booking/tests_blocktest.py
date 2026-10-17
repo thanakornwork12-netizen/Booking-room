@@ -94,11 +94,9 @@ class BlockTest(TestCase):
 
     def reg_payload(self, **over):
         p = {
-            'username': 'qa_new_user', 'first_name': 'QA', 'last_name': 'New',
             'email': 'qa_new_user@example.com',
             'password': 'QaTest1234', 'password2': 'QaTest1234',
-            'role': 'student', 'faculty': 'วิศวกรรมศาสตร์',
-            'phone': '0812345678', 'student_id': '6633333333',
+            'student_id': '6633333333',
         }
         p.update(over)
         return p
@@ -115,9 +113,9 @@ class BlockTest(TestCase):
     # ══════════════════════════════════════════════════════════
     def test_T01_register_valid(self):
         r = self.client.post('/api/auth/register/', self.reg_payload(), format='json')
-        # ต้องเข้าสู่ระบบได้จริงหลังสมัคร
+        # ต้องเข้าสู่ระบบได้จริงหลังสมัคร (นักศึกษาใช้เลข นศ. เป็นชื่อเข้าสู่ระบบ)
         lr = self.client.post('/api/auth/login/',
-                              {'username': 'qa_new_user', 'password': 'QaTest1234'},
+                              {'username': '6633333333', 'password': 'QaTest1234'},
                               format='json')
         record('T01', r, f'login after register -> {lr.status_code}')
         self.assertEqual(r.status_code, 201)

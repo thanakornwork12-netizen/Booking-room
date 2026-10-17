@@ -186,19 +186,20 @@ class TokenAttackTests(AdvBase):
             'password2': 'QaTest1234', 'role': 'student', 'student_id': '6600000101',
             'is_staff': True, 'is_superuser': True,
         }, format='json')
-        u = User.objects.get(username='qa_sneaky')
+        u = User.objects.get(student_id='6600000101')
         self.assertFalse(u.is_staff or u.is_superuser)
+        self.assertEqual(u.role, 'student')
 
-    def test_register_lookalike_usernames_rejected(self):
-        """ชื่อที่หน้าตาเหมือนกันแต่ตัวพิมพ์/ตัวอักษรเต็มความกว้างต่างกัน ใช้ปลอมตัวได้"""
+    def test_register_lookalike_emails_rejected(self):
+        """อีเมลที่หน้าตาเหมือนบัญชีเดิม (ตัวพิมพ์ใหญ่/ตัวอักษรเต็มความกว้าง) ใช้ปลอมตัวได้"""
         self.client.force_authenticate(user=None)
-        for name in ('QA_Test_Bot', 'ｑａ_test_bot'):
-            with self.subTest(name=name):
+        for email in ('QA_Test_Bot@Example.com', 'ｑａ_test_bot@example.com'):
+            with self.subTest(email=email):
                 r = self.client.post('/api/auth/register/', {
-                    'username': name, 'email': 'x@example.com', 'password': 'QaTest1234',
-                    'password2': 'QaTest1234', 'role': 'student',
+                    'email': email, 'want_lecturer': True,
+                    'password': 'QaTest1234', 'password2': 'QaTest1234',
                 }, format='json')
-                self.assertEqual(r.status_code, 400, f'สมัคร {name!r} ได้ทั้งที่มี qa_test_bot อยู่แล้ว')
+                self.assertEqual(r.status_code, 400, f'สมัคร {email!r} ได้ทั้งที่มีบัญชีอีเมลนี้อยู่แล้ว')
 
     def test_avatar_must_be_an_image(self):
         fake = SimpleUploadedFile('evil.png', b'<svg onload=alert(1)>', content_type='image/png')
