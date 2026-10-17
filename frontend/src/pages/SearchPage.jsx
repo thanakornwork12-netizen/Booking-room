@@ -130,18 +130,6 @@ const validateCustomDuration = (rawValue, startTime) => {
 }
 const formatDate = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const formatDateShort = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
-// ผลที่ไม่ได้มาจากแบบจำลองล้วน (สถิติช่วงเดียวกันของปีก่อน ๆ ดู ml/saved/serve_direct.py)
-// ต้องบอกผู้ใช้ ไม่ให้เข้าใจว่าเป็นผลทำนายของ AI ทั้งหมด
-function SourceNote({ room }) {
-  if (room.forecast?.source !== 'season') return null
-  return (
-    <span title="ระดับนี้คำนวณจากการใช้ห้องช่วงเดียวกันของปีก่อน ๆ ไม่ใช่ผลของแบบจำลอง AI"
-      className="whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-      ตามสถิติปีก่อน
-    </span>
-  )
-}
-
 const getDemandLevel = room => {
   const raw = room.forecast?.demand_level
   const availMap = { book_now: 'urgent', recommended: 'medium', likely_available: 'low' }
@@ -560,7 +548,6 @@ function RoomCard({ room, onClick, isTermMode, selectedEquipments, equipmentPres
               </span>
             )}
             {level !== 'none' && <span className={`whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold ${cfg.badgeCls}`}>{cfg.badge}</span>}
-            {level !== 'none' && <SourceNote room={room} />}
           </div>
         </div>
       </div>
@@ -597,7 +584,6 @@ function SuggestedRoomCard({ room, onSelect, bookingType, attendees, selectedEqu
                 <Sparkles size={10} /> แผนสอง
               </span>
               {level !== 'none' && <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${cfg.badgeCls}`}>{cfg.badge}</span>}
-              {level !== 'none' && <SourceNote room={room} />}
             </div>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
