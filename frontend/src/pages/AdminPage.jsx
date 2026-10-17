@@ -4,7 +4,7 @@ import {
   ArrowLeft, Clock, BarChart2, TrendingUp, Calendar, X,
   Building2, AlertTriangle, Zap,
   Download, ChevronDown, FileSpreadsheet, Check, LayoutGrid,
-  BookOpen, Wrench, Loader2, Sparkles, Plus, Pencil, Trash2, Bot
+  BookOpen, Wrench, Loader2, Sparkles, Plus, Pencil, Trash2, Bot, UserCheck
 } from 'lucide-react'
 import api from '../api/axios'
 import { isPast, localDateStr } from '../utils/booking'
@@ -1451,6 +1451,27 @@ function LecturerRequestCard({ req, onApprove, onReject }) {
   )
 }
 
+function LecturerRequestsTab({ lecturerRequests, handleLecturerRequest }) {
+  return (
+    <div className="space-y-3 au">
+      <div className="flex items-center gap-2">
+        <UserCheck size={14} className="text-violet-600" />
+        <p className="text-sm font-bold text-slate-800">คำขอสิทธิ์อาจารย์</p>
+        <span className="text-xs text-slate-400">ยืนยันแล้วบัญชีจะเปลี่ยนเป็นอาจารย์ · ปฏิเสธแล้วยังใช้งานแบบนักศึกษาได้</span>
+      </div>
+      {lecturerRequests.length === 0
+        ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center shadow-sm">
+            <UserCheck size={36} className="text-violet-200 mx-auto mb-3" />
+            <p className="text-slate-400 text-sm">ไม่มีคำขอสิทธิ์อาจารย์ที่รอยืนยัน</p>
+          </div>
+        : lecturerRequests.map(req => (
+            <LecturerRequestCard key={`lect-${req.id}`} req={req}
+              onApprove={r => handleLecturerRequest(r, 'approve')} onReject={r => handleLecturerRequest(r, 'reject')} />
+          ))}
+    </div>
+  )
+}
+
 function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats, tab, setTab, selectedBooking,
   setSelectedBooking, handleCancel, handleApprove, handleReject, handleApproveTerm, handleRejectTerm,
   fmtDate, fmtTime, fmtDateFull, navigate,
@@ -1468,7 +1489,8 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
   )
 
   const tabs = [
-    {key:'active',   label:'การจองปัจจุบัน', count:currentB.length + pendingTerms.length + lecturerRequests.length},
+    {key:'active',   label:'การจองปัจจุบัน', count:currentB.length + pendingTerms.length},
+    {key:'lecturers', label:'ขอสิทธิ์อาจารย์', count:lecturerRequests.length},
     {key:'rooms',    label:'สถานะห้อง',      count:adminRooms?.length ?? null},
     {key:'maintenance', label:'ซ่อมบำรุง AI', count:null},
     {key:'overview', label:'ภาพรวม',         count:null},
@@ -1518,7 +1540,7 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
             <div className="space-y-3 au">
               {[
                 {label:'จองวันนี้',        value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'รอยืนยัน (pending)',value:pendingB.length + pendingTerms.length + lecturerRequests.length, color:'text-yellow-600'},
+                {label:'รอยืนยัน (pending)',value:pendingB.length + pendingTerms.length, color:'text-yellow-600'},
                 {label:'ยืนยันแล้ว',       value:activeB.length,               color:'text-emerald-600'},
                 {label:'ยกเลิกแล้ว',       value:cancelledTotal ?? cancelledB.length,            color:'text-red-500'},
             ].map((s,i) => (
@@ -1542,14 +1564,10 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
               )}
             </div>
             <div className="col-span-2 space-y-3 au1">
-              {lecturerRequests.map(req => (
-                <LecturerRequestCard key={`lect-${req.id}`} req={req}
-                  onApprove={r => handleLecturerRequest(r, 'approve')} onReject={r => handleLecturerRequest(r, 'reject')} />
-              ))}
               {pendingTerms.map(tb => (
                 <PendingTermCard key={`term-${tb.id}`} tb={tb} onApprove={handleApproveTerm} onReject={handleRejectTerm} />
               ))}
-              {currentB.length === 0 && pendingTerms.length === 0 && lecturerRequests.length === 0
+              {currentB.length === 0 && pendingTerms.length === 0
                 ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center shadow-sm">
                     <Calendar size={40} className="text-blue-200 mx-auto mb-3" />
                     <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
@@ -1600,6 +1618,10 @@ function DesktopAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats
               }
             </div>
           </div>
+        )}
+
+        {tab === 'lecturers' && (
+          <LecturerRequestsTab lecturerRequests={lecturerRequests} handleLecturerRequest={handleLecturerRequest} />
         )}
 
         {tab === 'rooms' && (
@@ -1740,7 +1762,8 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
   )
 
   const tabs = [
-    {key:'active',   label:'จอง',     count:currentB.length + pendingTerms.length + lecturerRequests.length},
+    {key:'active',   label:'จอง',     count:currentB.length + pendingTerms.length},
+    {key:'lecturers', label:'ขอสิทธิ์อาจารย์', count:lecturerRequests.length},
     {key:'rooms',    label:'ห้อง',    count:adminRooms?.length ?? null},
     {key:'maintenance', label:'ซ่อม AI', count:null},
     {key:'overview', label:'ภาพรวม',  count:null},
@@ -1784,7 +1807,7 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
             <div className="grid grid-cols-2 gap-2 au">
               {[
                 {label:'วันนี้',     value:dashboard?.today_bookings??0, color:'text-blue-700'},
-                {label:'รอยืนยัน',  value:pendingB.length + pendingTerms.length + lecturerRequests.length, color:'text-yellow-600'},
+                {label:'รอยืนยัน',  value:pendingB.length + pendingTerms.length, color:'text-yellow-600'},
                 {label:'ยืนยันแล้ว',value:activeB.length,               color:'text-emerald-600'},
                 {label:'ยกเลิก',    value:cancelledTotal ?? cancelledB.length,            color:'text-red-500'},
               ].map((s,i) => (
@@ -1794,14 +1817,10 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                 </div>
               ))}
             </div>
-            {lecturerRequests.map(req => (
-              <LecturerRequestCard key={`lect-${req.id}`} req={req}
-                onApprove={r => handleLecturerRequest(r, 'approve')} onReject={r => handleLecturerRequest(r, 'reject')} />
-            ))}
             {pendingTerms.map(tb => (
               <PendingTermCard key={`term-${tb.id}`} tb={tb} onApprove={handleApproveTerm} onReject={handleRejectTerm} />
             ))}
-            {currentB.length === 0 && pendingTerms.length === 0 && lecturerRequests.length === 0
+            {currentB.length === 0 && pendingTerms.length === 0
               ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center au1">
                   <Calendar size={32} className="text-blue-200 mx-auto mb-3" />
                   <p className="text-slate-400 text-sm">ไม่มีการจองที่กำลังดำเนินอยู่</p>
@@ -1848,6 +1867,10 @@ function MobileAdmin({ dashboard, bookings, termBookings, adminRooms, weekStats,
                 })
             }
           </>
+        )}
+
+        {tab === 'lecturers' && (
+          <LecturerRequestsTab lecturerRequests={lecturerRequests} handleLecturerRequest={handleLecturerRequest} />
         )}
 
         {tab === 'rooms' && (
