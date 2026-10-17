@@ -290,3 +290,76 @@ class AvatarUploadTests(QABase):
         self.bot.refresh_from_db()
         self.assertFalse(self.bot.avatar)
         self.assertEqual(self.bot.faculty, 'วิทย์')
+
+
+# ══════════════════════════════════════════════════════════════
+# สิทธิ์: นักศึกษาแตะของคนอื่น/ของแอดมินไม่ได้ทุกเส้นทาง
+# ══════════════════════════════════════════════════════════════
+from booking.models import MaintenanceBlock, Notification  # noqa: E402
+
+
+class AuthorizationMatrixTests(QABase):
+    def setUp(self):
+        super().setUp()
+        day = timezone.localdate() + timedelta(days=6)
+        self.other_booking = Booking.objects.create(
+            user=self.bot, room=self.room, title='ของคนอื่น', attendees=5,
+            start_time=aware(day, 10), end_time=aware(day, 11))
+        self.other_term = TermBooking.objects.create(
+            user=self.bot, room=self.room, subject_name='ของคนอื่น', attendees=5, day_of_week=day.weekday(),
+            start_time=time_type(13), end_time=time_type(14), term_start=day, term_end=day + timedelta(days=30))
+        self.other_notif = Notification.objects.create(user=self.bot, type='system', title='t', message='m')
+        self.block = MaintenanceBlock.objects.create(room=self.room_b, start_time=aware(day, 15),
+                                                     end_time=aware(day, 16))
+        self.pending_lect = User.objects.create_user(username='qa_pending_lect', password='QaLect1234',
+                                                     email='qa_pending_lect@example.com', lecturer_status='pending')
+        self.as_user(self.user_b)  # นักศึกษา
+
+    def test_student_cannot_touch_others_or_admin_endpoints(self):
+        b, t, n, m = self.other_booking.id, self.other_term.id, self.other_notif.id, self.block.id
+        day = (timezone.localdate() + timedelta(days=6)).isoformat()
+        cases = [
+            ('get', f'/api/bookings/{b}/', None), ('patch', f'/api/bookings/{b}/', {'title': 'x'}),
+            ('put', f'/api/bookings/{b}/', {'title': 'x'}), ('get', f'/api/bookings/{b}/logs/', None),
+            ('post', f'/api/bookings/{b}/cancel/', None), ('post', f'/api/bookings/{b}/approve/', None),
+            ('post', f'/api/bookings/{b}/reject/', None), ('delete', f'/api/bookings/{b}/', None),
+            ('get', f'/api/term-bookings/{t}/', None), ('patch', f'/api/term-bookings/{t}/', {'note': 'x'}),
+            ('delete', f'/api/term-bookings/{t}/', None), ('post', f'/api/term-bookings/{t}/approve/', None),
+            ('post', f'/api/term-bookings/{t}/reject/', None),
+            ('get', f'/api/notifications/{n}/', None), ('post', f'/api/notifications/{n}/read/', None),
+            ('get', '/api/maintenance-blocks/', None), ('get', f'/api/maintenance-blocks/{m}/', None),
+            ('post', '/api/maintenance-blocks/', {'room': self.room.id, 'start_time': day + 'T08:00:00+07:00',
+                                                  'end_time': day + 'T09:00:00+07:00'}),
+            ('post', f'/api/maintenance-blocks/{m}/cancel/', None), ('post', f'/api/maintenance-blocks/{m}/complete/', None),
+            ('get', '/api/maintenance/slots/', None), ('get', '/api/dashboard/', None),
+            ('get', '/api/export/excel/', None), ('get', '/api/rooms/admin-status/', None),
+            ('get', '/api/rooms/usage-stats/', None), ('get', '/api/lecturer-requests/', None),
+            ('post', f'/api/lecturer-requests/{self.pending_lect.id}/approve/', None),
+            ('post', '/api/rooms/', {'building': self.building.id, 'name': 'Z', 'floor': 1, 'capacity': 5, 'room_type': 'x'}),
+            ('patch', f'/api/rooms/{self.room.id}/', {'capacity': 1}), ('delete', f'/api/rooms/{self.room.id}/', None),
+            ('post', '/api/buildings/', {'name': 'B', 'code': 'BB'}),
+            ('patch', f'/api/buildings/{self.building.id}/', {'is_active': False}),
+            ('delete', f'/api/buildings/{self.building.id}/', None),
+            ('post', '/api/term-bookings/', {}),
+        ]
+        leaks = []
+        for method, url, data in cases:
+            r = getattr(self.client, method)(url, data, format='json')
+            if r.status_code not in (403, 404, 405):
+                leaks.append((method.upper(), url, r.status_code))
+        self.assertEqual(leaks, [])
+        # ไม่มีอะไรเปลี่ยนจริง
+        self.other_booking.refresh_from_db(); self.other_term.refresh_from_db(); self.block.refresh_from_db()
+        self.pending_lect.refresh_from_db(); self.room.refresh_from_db(); self.building.refresh_from_db()
+        self.assertEqual((self.other_booking.status, self.other_booking.title), ('pending', 'ของคนอื่น'))
+        self.assertEqual(self.other_term.status, 'pending')
+        self.assertEqual(self.block.status, 'scheduled')
+        self.assertEqual(self.pending_lect.role, 'student')
+        self.assertTrue(self.room.is_active and self.building.is_active)
+
+    def test_anonymous_gets_401_everywhere_private(self):
+        self.client.force_authenticate(user=None)
+        for url in ('/api/bookings/', '/api/term-bookings/', '/api/notifications/', '/api/rooms/',
+                    '/api/auth/profile/', '/api/dashboard/', '/api/forecasts/', '/api/rooms/today-feed/',
+                    '/api/rooms/status-feed/', f'/api/rooms/{self.room.id}/availability/?date=2030-01-01'):
+            self.assertEqual(self.client.get(url).status_code, 401, url)
