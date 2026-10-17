@@ -294,7 +294,10 @@ export default function ProfilePage() {
   }
 
   const localUser = getUser()
-  const roleLabel = roleLabels[profile?.role] || roleLabels[localUser?.role] || 'ผู้ใช้ระบบ'
+  const baseRole = roleLabels[profile?.role] || roleLabels[localUser?.role] || 'ผู้ใช้ระบบ'
+  // ขอสิทธิ์อาจารย์ไว้ — เดิมขึ้นแค่ "นักศึกษา" ไม่รู้ว่าคำขอยังรออยู่หรือถูกปฏิเสธ
+  const lecturerNote = { pending: ' · รอแอดมินยืนยันสิทธิ์อาจารย์', rejected: ' · คำขอสิทธิ์อาจารย์ไม่ผ่าน' }
+  const roleLabel = baseRole + (lecturerNote[profile?.lecturer_status] || '')
   const initials = (form?.first_name?.[0] || form?.last_name?.[0] || profile?.username?.[0] || '?').toUpperCase()
 
   if (loading) {
