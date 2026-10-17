@@ -259,3 +259,6 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 AUTH_LDAP_SERVER_HOST = '202.28.50.28'
 AUTH_LDAP_DOMAIN     = 'UBU'
 AUTH_LDAP_BASE_OU    = 'OU=STD,OU=SCI,DC=UBU,DC=AC,DC=TH'
+
+# เทสต์ไม่ยิง LDAP จริงของมหาวิทยาลัย (ดู room_booking/test_runner.py)
+TEST_RUNNER = 'room_booking.test_runner.NoLiveLDAPRunner'
