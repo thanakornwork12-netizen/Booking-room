@@ -426,3 +426,12 @@ class StaleRefreshTokenTests(QABase):
 
     def test_garbage_refresh_is_401(self):
         self.assertEqual(self.client.post('/api/auth/refresh/', {'refresh': 'abc'}, format='json').status_code, 401)
+
+
+class LDAPSwitchTests(QABase):
+    def test_disabled_ldap_never_connects(self):
+        from django.test import override_settings
+        from booking.ldap_auth import authenticate_ldap
+        with override_settings(AUTH_LDAP_ENABLED=False), mock.patch('booking.ldap_auth.Connection') as conn:
+            self.assertIsNone(authenticate_ldap('6611111111', 'pw123456'))
+            conn.assert_not_called()

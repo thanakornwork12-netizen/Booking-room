@@ -269,6 +269,10 @@ MAX_ADVANCE_BOOKING_DAYS = int(os.environ.get('MAX_ADVANCE_BOOKING_DAYS', '365')
 SITE_URL     = os.environ.get('SITE_URL', 'http://127.0.0.1:8000')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
+# ปิด LDAP ได้ผ่าน env — server LDAP มหาวิทยาลัยไม่รับการเชื่อมต่อจากนอกประเทศไทย
+# บน Render ทุกการล็อกอินเลยต้องรอ connect timeout 5 วินาทีก่อนไปตรวจบัญชีในระบบ
+# ตั้ง LDAP_ENABLED=False ที่นั่น (ค่าเริ่มต้นเปิด ใช้ได้เมื่อเซิร์ฟเวอร์อยู่ในไทย)
+AUTH_LDAP_ENABLED = os.environ.get('LDAP_ENABLED', 'True') == 'True'
 AUTH_LDAP_SERVER_HOST = '202.28.50.28'
 AUTH_LDAP_DOMAIN     = 'UBU'
 AUTH_LDAP_BASE_OU    = 'OU=STD,OU=SCI,DC=UBU,DC=AC,DC=TH'

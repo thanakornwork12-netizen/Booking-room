@@ -17,6 +17,10 @@ services:
         sync: false
       - key: DEBUG
         value: "False"
+      # LDAP มหาวิทยาลัยไม่รับการเชื่อมต่อจากนอกไทย — ปิดไว้ ไม่งั้นทุกการล็อกอินรอ
+      # timeout 5 วินาทีก่อนไปตรวจบัญชีในระบบ (ดู room_booking/settings.py)
+      - key: LDAP_ENABLED
+        value: "False"
       - key: SECRET_KEY
         generateValue: true
       # ใช้สร้างลิงก์ในอีเมล — ไม่ตั้งแล้วลิงก์ยกเลิก/รีเซ็ตรหัสผ่านจะชี้

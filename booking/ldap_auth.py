@@ -18,6 +18,8 @@ def authenticate_ldap(username: str, password: str, extra_principal: str | None 
     # รหัสอะไรก็ได้แล้วระบบนับว่าผ่าน สร้างบัญชีชื่อว่างให้เข้าใช้
     if not (username or '').strip() or not password:
         return None
+    if not settings.AUTH_LDAP_ENABLED:
+        return None
 
     # ต่อผ่าน plain LDAP (port 389) + STARTTLS ก่อน bind แทน LDAPS (port 636)
     # ที่ใช้มาแต่แรก — เทียบกับสคริปต์อ้างอิงที่ใช้งานได้จริงแล้วพบว่า
