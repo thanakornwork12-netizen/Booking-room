@@ -94,7 +94,7 @@ function TutorialModal({ onClose, userId }) {
   const [step, setStep] = useState(0)
   const isLast = step === TUTORIAL_STEPS.length - 1
   const s = TUTORIAL_STEPS[step]
-  const finish = () => { localStorage.setItem(`tutorial_done_${userId}`, '1'); onClose() }
+  const finish = () => { try { localStorage.setItem(`tutorial_done_${userId}`, '1') } catch { /* ignore */ } onClose() }
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -558,7 +558,16 @@ export default function HomePage() {
         pickedHours: pickRandomFittingDuration(room.available_from, room.available_until),
       }))
       setTodayFeed(feedRooms)
-      if (!localStorage.getItem(`tutorial_done_${p.data.id}`)) setShowTutorial(true)
+      // คู่มือเด้งแค่ครั้งแรกที่เข้าเว็บ — จำไว้ทันทีที่แสดง ไม่ใช่ตอนกด "ข้าม"/
+      // "เริ่มใช้งาน" เดิมรีเฟรชหรือกดเมนูออกไประหว่างที่คู่มือเปิดอยู่ คู่มือเด้งซ้ำ
+      // ทุกครั้ง (ดูซ้ำได้จากเมนู "คู่มือ")
+      const tutorialKey = `tutorial_done_${p.data.id}`
+      try {
+        if (!localStorage.getItem(tutorialKey)) {
+          localStorage.setItem(tutorialKey, '1')
+          setShowTutorial(true)
+        }
+      } catch { /* เบราว์เซอร์ปิด storage — ไม่แสดงคู่มืออัตโนมัติ */ }
     } catch (err) {
       console.error("Load Data Error", err)
       // ไม่ redirect ไป /login ที่นี่ทันที — ถ้า token หมดอายุจริง axios
