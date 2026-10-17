@@ -400,3 +400,29 @@ class SchedulerConnectionTests(QABase):
             self.assertEqual(wrapped(), 'done')
         self.assertEqual(calls, [1])
         close.assert_called()
+
+
+class StaleRefreshTokenTests(QABase):
+    def _tokens(self, user):
+        from booking.authentication import issue_tokens
+        r = issue_tokens(user)
+        return str(r)
+
+    def test_refresh_works_normally(self):
+        r = self.client.post('/api/auth/refresh/', {'refresh': self._tokens(self.bot)}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertIn('access', r.data)
+
+    def test_refresh_after_password_change_is_401(self):
+        old = self._tokens(self.bot)
+        self.bot.set_password('QaNewPass987!'); self.bot.save()
+        r = self.client.post('/api/auth/refresh/', {'refresh': old}, format='json')
+        self.assertEqual(r.status_code, 401)
+
+    def test_refresh_for_deactivated_account_is_401(self):
+        old = self._tokens(self.bot)
+        self.bot.is_active = False; self.bot.save()
+        self.assertEqual(self.client.post('/api/auth/refresh/', {'refresh': old}, format='json').status_code, 401)
+
+    def test_garbage_refresh_is_401(self):
+        self.assertEqual(self.client.post('/api/auth/refresh/', {'refresh': 'abc'}, format='json').status_code, 401)

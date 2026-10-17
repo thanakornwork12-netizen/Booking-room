@@ -3,6 +3,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .authentication import StampedTokenRefreshSerializer
 from .serializers import LDAPTokenObtainPairSerializer
 from .throttles import LoginThrottle, ThaiThrottleMixin
 from .views import (
@@ -42,7 +43,8 @@ urlpatterns = [
     # Auth
     path('auth/register/', RegisterView.as_view(),           name='register'),
     path('auth/login/',    LDAPTokenObtainPairView.as_view(), name='login'),    # LDAP ก่อน แล้วค่อยบัญชีในระบบ
-    path('auth/refresh/',  TokenRefreshView.as_view(),        name='token_refresh'),
+    path('auth/refresh/',  TokenRefreshView.as_view(serializer_class=StampedTokenRefreshSerializer),
+         name='token_refresh'),
     path('auth/profile/',  ProfileView.as_view(),             name='profile'),
     path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('auth/delete-account/',   DeleteAccountView.as_view(),  name='delete_account'),
