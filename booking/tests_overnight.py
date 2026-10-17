@@ -275,3 +275,18 @@ class EmailEscapingTests(QABase):
             self.assertNotIn(EVIL, part)
             self.assertNotIn('<i>c</i>', part)
             self.assertNotIn('<i>t</i>', part)
+
+
+class AvatarUploadTests(QABase):
+    def test_profile_ignores_avatar_upload(self):
+        import io
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        buf = io.BytesIO()
+        Image.new('RGB', (10, 10)).save(buf, 'PNG')
+        img = SimpleUploadedFile('a.png', buf.getvalue(), content_type='image/png')
+        r = self.client.patch('/api/auth/profile/', {'avatar': img, 'faculty': 'วิทย์'}, format='multipart')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.bot.refresh_from_db()
+        self.assertFalse(self.bot.avatar)
+        self.assertEqual(self.bot.faculty, 'วิทย์')

@@ -110,7 +110,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'first_name', 'last_name',
                   'email', 'role', 'faculty', 'phone', 'avatar', 'student_id',
                   'can_change_password', 'lecturer_status']
-        read_only_fields = ['id', 'role', 'username', 'lecturer_status']
+        # avatar อ่านอย่างเดียว — หน้าเว็บไม่มีที่อัปโหลดรูป แต่ API เดิมรับไฟล์ขนาด
+        # เท่าไหร่ก็ได้ลงดิสก์เซิร์ฟเวอร์ (ใครล็อกอินได้ก็อัปจนดิสก์เต็มได้)
+        read_only_fields = ['id', 'role', 'username', 'lecturer_status', 'avatar']
 
     def get_can_change_password(self, obj):
         return obj.has_usable_password()
