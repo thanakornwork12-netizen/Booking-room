@@ -6,7 +6,7 @@ import {
   LifeBuoy, LayoutDashboard, MapPin, RefreshCw, Search, Settings2,
   Sparkles, ArrowRight, Users, X, BookOpen, AlertTriangle,
 } from 'lucide-react'
-import api, { getUser } from '../api/axios'
+import api, { getUser, updateStoredUser } from '../api/axios'
 import { DURATIONS, addHours, pickFittingDuration, localDateStr } from '../utils/booking'
 import { TIME_SLOTS } from '../config'
 import { extractErrorMessage } from '../utils/errors'
@@ -422,6 +422,17 @@ const TERM_BOOKING_ROLES = ['lecturer', 'staff', 'admin']
 const canBookTerm = () => TERM_BOOKING_ROLES.includes(String(getUser()?.role || '').toLowerCase())
 
 function BookingTypeSelector({ value, onChange }) {
+  // role ที่เก็บในเบราว์เซอร์อาจเก่า — เดิมแอดมินอนุมัติสิทธิ์อาจารย์แล้ว เปิดหน้านี้
+  // ตรงๆ ปุ่ม "ทั้งเทอม" ยังกดไม่ได้จนกว่าจะกลับหน้าแรก (HomePage ซิงก์ role ให้)
+  const [, setRoleSynced] = useState(0)
+  useEffect(() => {
+    let alive = true
+    api.get('auth/profile/').then(p => {
+      updateStoredUser({ role: p.data.role, lecturer_status: p.data.lecturer_status || '' })
+      if (alive) setRoleSynced(n => n + 1)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
   const termAllowed = canBookTerm()
   // สมัครเป็นอาจารย์แล้วแต่แอดมินยังไม่ยืนยัน — บอกให้รู้ว่ารออยู่ ไม่ใช่ "สำหรับอาจารย์"
   const lecturerPending = getUser()?.lecturer_status === 'pending'
