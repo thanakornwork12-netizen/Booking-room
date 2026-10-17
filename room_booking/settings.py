@@ -199,7 +199,15 @@ USE_TZ = True
 # ---------------- STATIC & MEDIA ----------------
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles' # สำหรับ Production
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# STATICFILES_STORAGE เดิมถูกยกเลิกตั้งแต่ Django 5.1 จึงไม่มีผล ใช้ STORAGES แทน
+# (ไม่ใช้แบบ Manifest — ไฟล์ไหนไม่อยู่ใน manifest หน้าจะพังเป็น 500 ตอน DEBUG=False)
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage'},
+}
+# ให้ WhiteNoise หาไฟล์จากแอปได้เองแม้ไม่ได้รัน collectstatic — เดิมคำสั่ง build บน
+# Render ไม่มี collectstatic หน้า Django admin บน production จึงไม่มี CSS (404)
+WHITENOISE_USE_FINDERS = True
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
