@@ -812,7 +812,7 @@ function AppShell({ children }) {
   // ใส่ไว้เป็นตัวกระตุ้น แม้ฟังก์ชันจะไม่ได้ใช้ค่านั้นตรงๆ
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const user = useMemo(() => getUser(), [location.pathname])
-  const displayName = normalizeDisplayName(
+  const realName = normalizeDisplayName(
     [
       user?.display_name,
       user?.full_name,
@@ -822,6 +822,9 @@ function AppShell({ children }) {
       user?.username,
     ],
   )
+  // สมัครแบบใหม่ไม่มีชื่อ (ชื่อเข้าสู่ระบบเป็นเลข นศ./อีเมล) — เดิมขึ้น "ผู้ใช้ระบบ"
+  // ให้แสดงอีเมลแทนจนกว่าผู้ใช้จะตั้งชื่อในหน้าโปรไฟล์
+  const displayName = realName !== 'ผู้ใช้ระบบ' ? realName : (user?.email || realName)
   const roleLabel = roleLabels[user?.role] || 'ผู้ใช้ระบบ'
   const isAdminOrStaff = ['admin', 'staff'].includes(user?.role)
   // แดชบอร์ดเป็นหน้าสำหรับแอดมิน/เจ้าหน้าที่เท่านั้น (AdminRoute เด้งกลับ
@@ -1033,7 +1036,7 @@ function AppShell({ children }) {
                 <UserCircle2 size={18} />
               </div>
               <div className="min-w-0 text-left">
-                <p className="truncate text-sm font-semibold leading-tight text-slate-900">{displayName}</p>
+                <p className="max-w-[180px] truncate text-sm font-semibold leading-tight text-slate-900" title={displayName}>{displayName}</p>
                 <p className="truncate text-[11px] text-slate-500">{roleLabel}</p>
               </div>
             </button>

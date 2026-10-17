@@ -613,3 +613,12 @@ class LecturerRequestTests(BookingEdgeBase):
         r = APIClient().post('/api/auth/login/', {'username': 'new.lecturer@example.com',
                                                    'password': 'QaRegister2026!'}, format='json')
         self.assertEqual(r.status_code, 200)
+
+
+class RegisterFacultyTests(TestCase):
+    def test_faculty_is_saved(self):
+        r = APIClient().post('/api/auth/register/', {
+            'student_id': '6612121212', 'email': 'qa_fac@example.com', 'faculty': 'วิทยาศาสตร์',
+            'password': 'QaRegister2026!', 'password2': 'QaRegister2026!'}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(User.objects.get(student_id='6612121212').faculty, 'วิทยาศาสตร์')

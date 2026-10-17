@@ -12,6 +12,13 @@ import { passwordProblem } from '../utils/booking'
 // สมัครได้แค่สิทธิ์นักศึกษา — อาจารย์/บุคลากรติ๊ก "ขอสิทธิ์อาจารย์" แล้วรอแอดมิน
 // ยืนยัน (backend: RegisterSerializer, LecturerRequestView) เดิมกดเลือก "อาจารย์"
 // แล้วได้สิทธิ์ทันที นักศึกษาสมัครเป็นอาจารย์ไปจองทั้งเทอมได้
+const FACULTIES = [
+  'วิทยาศาสตร์','วิศวกรรมศาสตร์','บริหารธุรกิจ',
+  'นิติศาสตร์','แพทยศาสตร์','พยาบาลศาสตร์',
+  'เกษตรศาสตร์','ศิลปศาสตร์','สาธารณสุขศาสตร์','เภสัชศาสตร์',
+  'หน่วยงานอื่น',
+]
+
 const ACCOUNT_TYPES = [
   { lecturer: false, label: 'นักศึกษา' },
   { lecturer: true,  label: 'อาจารย์ / บุคลากร' },
@@ -47,7 +54,7 @@ const SCHEDULE_ROOMS = [
 ]
 
 const FEATURE_CHIPS = [
-  { icon: CalendarRange, label: 'กรอกง่าย',   sub: 'แค่ 3 ช่อง' },
+  { icon: CalendarRange, label: 'กรอกง่าย',   sub: 'หน้าเดียวจบ' },
   { icon: ShieldIcon,    label: 'ปลอดภัย',    sub: 'ข้อมูลถูกเข้ารหัส' },
   { icon: Bell,          label: 'ยืนยันไว',   sub: 'ใช้งานได้ทันที' },
 ]
@@ -60,6 +67,7 @@ export default function RegisterPage() {
     password: '',
     password2: '',
     want_lecturer: false,
+    faculty: '',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -74,6 +82,7 @@ export default function RegisterPage() {
     if (isSubmittingRef.current) return
     if (!form.want_lecturer && !form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
     if (!form.email) return setError('กรุณากรอกอีเมล')
+    if (!form.faculty) return setError('กรุณาเลือกคณะ/หน่วยงาน')
     if (!form.password) return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
     if (passwordProblem(form.password)) return setError(passwordProblem(form.password))
@@ -282,6 +291,23 @@ export default function RegisterPage() {
                         onChange={e => set('email', e.target.value)}
                         style={{ fontFamily: 'inherit' }}
                       />
+                    </div>
+                  </div>
+
+                  <div className="au3">
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-blue-700">คณะ / หน่วยงาน</label>
+                    <div className="relative">
+                      <Building2 size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <select
+                        className={`${inputCls} appearance-none`}
+                        value={form.faculty}
+                        onChange={e => set('faculty', e.target.value)}
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        <option value="">-- เลือกคณะ/หน่วยงาน --</option>
+                        {FACULTIES.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                      <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                   </div>
 

@@ -130,7 +130,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.Serializer):
-    """สมัครด้วย เลข นศ. + อีเมล + รหัสผ่าน เท่านั้น
+    """สมัครด้วย เลข นศ. + อีเมล + คณะ/หน่วยงาน + รหัสผ่าน
 
     - นักศึกษา: ต้องกรอกเลข นศ. — ใช้เลข นศ. เป็นชื่อเข้าสู่ระบบ
     - อาจารย์/บุคลากร: ติ๊ก want_lecturer ไม่ต้องมีเลข นศ. — ใช้อีเมลเป็นชื่อเข้าสู่ระบบ
@@ -141,6 +141,7 @@ class RegisterSerializer(serializers.Serializer):
     email         = serializers.EmailField()
     student_id    = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     want_lecturer = serializers.BooleanField(required=False, default=False)
+    faculty       = serializers.CharField(required=False, allow_blank=True, max_length=100)
     password      = serializers.CharField(write_only=True)
     password2     = serializers.CharField(write_only=True)
 
@@ -185,6 +186,7 @@ class RegisterSerializer(serializers.Serializer):
             username=validated_data['username'],
             email=validated_data['email'],
             student_id=validated_data.get('student_id'),
+            faculty=(validated_data.get('faculty') or '').strip(),
             role='student',
             lecturer_status='pending' if validated_data.get('want_lecturer') else '',
         )
@@ -204,7 +206,7 @@ class RegisterSerializer(serializers.Serializer):
 
     def to_representation(self, user):
         return {'username': user.username, 'email': user.email, 'student_id': user.student_id,
-                'lecturer_status': user.lecturer_status}
+                'faculty': user.faculty, 'lecturer_status': user.lecturer_status}
 
 
 class ChangePasswordSerializer(serializers.Serializer):
