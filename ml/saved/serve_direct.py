@@ -1,29 +1,25 @@
-"""พยากรณ์ความต้องการใช้ห้องล่วงหน้าด้วยแบบจำลองชุด C (วิธี direct ที่รายงานในเล่ม) เสริมด้วย
-สถิติตามฤดูกาลจากปีก่อน ๆ แล้วบันทึกลงตาราง DemandForecast ให้หน้าค้นหาใช้
-
-  วันที่ 1–14   แบบจำลอง C (+ ตัวเสริมเมื่อข้อมูลล่าสุดขาด) — ช่วงที่แบบจำลองเทรนและวัดผลไว้
-  วันที่ 15–N   สถิติตามฤดูกาลอย่างเดียว — แบบจำลองไม่ได้เทรนให้ทายไกลกว่า 14 วัน
+"""พยากรณ์ความต้องการใช้ห้องล่วงหน้าด้วยแบบจำลองชุด C (วิธี direct ที่รายงานในเล่ม) แล้วบันทึกลง
+ตาราง DemandForecast ให้หน้าค้นหาใช้ — ทุกวันที่บันทึกเป็นผลทำนายของแบบจำลอง C
 
 ไม่เทรนใหม่ — โหลด saved_direct_sets/C/model.pkl ที่เทรนไว้แล้ว และทำนายด้วยขั้นตอนเดียวกับ
 test_direct_sets.py ทุกอย่าง (engine รายห้อง, quantile ensemble, strategy รายห้อง, block floor)
 ตัวเลขในเล่มจึงไม่เปลี่ยน
 
-ตัวเสริมตามฤดูกาล
-────────────────
-แบบจำลองพึ่งการใช้งานช่วงล่าสุด (lag / ค่าเฉลี่ย 7–56 วัน) เป็นหลัก ถ้าระบบไม่มีการจองเข้ามา
-ต่อเนื่อง (เช่นหลังข้อมูลส่งออกจบ 29 เม.ย. 2569) ตัวแปรเหล่านี้เป็น 0 และทายต่ำทุกวัน ทั้งที่สถิติ
-3 ปีบอกว่าบางช่วงของปีใช้เยอะ จึงเสริมด้วยค่าตามฤดูกาล = ค่าเฉลี่ยชั่วโมงใช้งานของวันในสัปดาห์
-เดียวกัน ตำแหน่งเดียวกันของปีก่อน ๆ (52 สัปดาห์ก่อน ±1 สัปดาห์ สูงสุด 3 ปี) โดยมีผลตามสัดส่วนที่
-ข้อมูล 28 วันล่าสุดขาดหายไป:
+สถิติปีก่อนช่วยเติมข้อมูลนำเข้า
+──────────────────────────
+แบบจำลองต้องการการใช้งานย้อนหลัง (lag / ค่าเฉลี่ย 7–56 วัน) เป็นตัวแปรหลัก ถ้าระบบไม่มีการจอง
+เข้ามาต่อเนื่อง (หลังข้อมูลส่งออกจบ 29 เม.ย. 2569) ตัวแปรเหล่านี้เป็น 0 และแบบจำลองทายต่ำทุกวัน
+จึงเติมช่วงที่ไม่มีข้อมูลด้วยสถิติปีก่อน = ค่าเฉลี่ยชั่วโมงใช้งานของวันในสัปดาห์เดียวกัน ตำแหน่งเดียวกัน
+ของปีก่อน ๆ (52 สัปดาห์ก่อน ±1 สัปดาห์ สูงสุด 3 ปี ใช้เฉพาะวันที่มีข้อมูลจริง) แล้วให้แบบจำลอง C
+ทำนายจากข้อมูลนั้น การจองจริงที่มีในช่วงนั้นยังนับเหมือนเดิม (ใช้ค่าที่มากกว่า)
 
-    ผลสุดท้าย = max(แบบจำลอง C, (1 − ความครบของข้อมูล 28 วันล่าสุด) × ค่าตามฤดูกาล)
-
-ระบบที่มีการจองต่อเนื่อง ความครบ → 1 ตัวเสริมหายไปเอง เหลือแบบจำลอง C ล้วน
+แบบจำลองทายได้ 1–14 วันจากจุดเริ่ม ช่วงที่ยาวกว่านั้นทำนายเป็นรอบ ๆ ละ 14 วัน โดยเลื่อนจุดเริ่ม
+ไปทีละ 14 วัน (ข้อมูลนำเข้าระหว่างรอบมาจากสถิติปีก่อนเช่นกัน)
 
 การรัน (ใช้ฐานข้อมูลตาม DATABASE_URL ของเครื่องที่รัน):
     python ml/saved/serve_direct.py --dry-run      # แสดงผล ไม่เขียนฐานข้อมูล
     python ml/saved/serve_direct.py                # เขียนผล 190 วันข้างหน้าลง DemandForecast
-    python ml/saved/serve_direct.py --days 60      # กำหนดจำนวนวันเอง (14 = แบบจำลอง C อย่างเดียว)
+    python ml/saved/serve_direct.py --days 60      # กำหนดจำนวนวันเอง
 """
 import argparse
 import os
@@ -58,7 +54,8 @@ META_DIR = os.path.join(BASE_DIR, 'ml/saved/saved_meta_C_direct')
 
 DEFAULT_DAYS = 190         # ถึงราว 28 เม.ย. 2570 — ทุกวันยังมีข้อมูลจริงของปีก่อนครบ 3 ปี
 SEASON_YEARS = 3           # ใช้ปีก่อนหน้าสูงสุดกี่ปี
-COVERAGE_DAYS = 28         # หน้าต่างวัดความครบของข้อมูลล่าสุด
+COVERAGE_DAYS = 28         # หน้าต่างวัดว่าช่วงไหนยังมีการใช้ระบบต่อเนื่อง
+MIN_COVERAGE = 0.5         # 28 วันต้องมีวันที่ใช้ห้องอย่างน้อยครึ่งหนึ่ง จึงนับเป็นข้อมูลจริง
 FORECAST_HOURS = range(8, 18)   # ชั่วโมงที่บันทึก (เหมือนผลพยากรณ์เดิม 10 แถวต่อห้องต่อวัน)
 # เกณฑ์ของหน้าค้นหา (booking/config.py DEMAND_LEVEL_THRESHOLDS) — คะแนน 0–1 ที่บันทึกถูกจัดให้
 # เส้นแบ่งรายห้องของแบบจำลองตกที่ 0.50 (ปานกลาง) และ 0.70 (เร่งด่วน) พอดี
@@ -160,35 +157,38 @@ def predict_model_c(data, bundle, origin):
     return out
 
 
-def last_observed(data, origin):
-    """วันล่าสุดที่มีการใช้ห้องใดห้องหนึ่ง — ช่วงหลังจากนั้นถึง origin คือ "ไม่มีข้อมูล" ไม่ใช่
-    "ไม่มีคนใช้" (ระบบยังไม่ได้ถูกใช้จองจริง) จึงไม่นำมาเฉลี่ยเป็นศูนย์"""
-    used = np.zeros(origin + 1, dtype=bool)
+def last_real_day(data, upto):
+    """วันสุดท้ายที่ระบบยังถูกใช้ต่อเนื่อง (COVERAGE_DAYS วันที่ลงท้ายวันนั้นมีวันที่ใช้ห้องใดห้องหนึ่ง
+    ≥ MIN_COVERAGE) — การจองประปรายหลังจากนั้น (เช่นการจองเดโม) ไม่ทำให้นับว่าช่วงที่ว่างคือ
+    "ไม่มีคนใช้" ช่วงหลังวันนี้ถือว่า "ไม่มีข้อมูล" และเติมด้วยสถิติปีก่อน"""
+    used = np.zeros(upto + 1, dtype=bool)
     for r in data.rooms.values():
-        used |= r['v'][:origin + 1] > 0
-    return int(np.flatnonzero(used)[-1]) if used.any() else origin
+        used |= r['v'][:upto + 1] > 0
+    cov = pd.Series(used.astype(float)).rolling(COVERAGE_DAYS, min_periods=COVERAGE_DAYS).mean().to_numpy()
+    ok = np.flatnonzero(cov >= MIN_COVERAGE)
+    return int(ok[-1]) if ok.size else upto
 
 
-def seasonal_norm(data, code, j, last_seen):
-    """ค่าเฉลี่ยชั่วโมงใช้งาน (หารด้วย peak) ของวันในสัปดาห์เดียวกัน ตำแหน่งเดียวกันของปีก่อน ๆ
-    (52 สัปดาห์ก่อน ±1 สัปดาห์) ใช้เฉพาะวันที่มีข้อมูลจริง (≤ last_seen)"""
-    r = data.rooms[code]
+def seasonal_hours(real_v, start, p, last_real):
+    """ชั่วโมงใช้งานเฉลี่ยของวันในสัปดาห์เดียวกัน ตำแหน่งเดียวกันของปีก่อน ๆ (52 สัปดาห์ก่อน
+    ±1 สัปดาห์ สูงสุด SEASON_YEARS ปี) จากวันที่มีข้อมูลจริงเท่านั้น"""
     vals = []
     for k in range(1, SEASON_YEARS + 1):
-        ya = j - 364 * k
-        win = [ya + d for d in (-7, 0, 7) if r['start'] <= ya + d <= last_seen]
+        ya = p - 364 * k
+        win = [ya + d for d in (-7, 0, 7) if start <= ya + d <= last_real]
         if win:
-            vals.append(float(np.mean(r['v'][win])))
-    return (float(np.mean(vals)) / r['scale']) if vals else 0.0
+            vals.append(float(np.mean(real_v[win])))
+    return float(np.mean(vals)) if vals else 0.0
 
 
-def recent_coverage(data, origin):
-    """สัดส่วนวันใน COVERAGE_DAYS วันล่าสุดที่มีการใช้ห้องใดห้องหนึ่ง (ทั้งวิทยาเขต)"""
-    lo = max(0, origin - COVERAGE_DAYS + 1)
-    used = np.zeros(origin - lo + 1, dtype=bool)
+def fill_gap_with_history(data, last_real):
+    """เติมช่วงหลัง last_real ด้วยสถิติปีก่อน (คงการจองจริงที่มากกว่าไว้) แล้วคำนวณ rolling ใหม่"""
     for r in data.rooms.values():
-        used |= r['v'][lo:origin + 1] > 0
-    return float(used.mean())
+        real = r['v'].copy()
+        r['v'] = real.copy()   # to_numpy() คืนอาร์เรย์อ่านอย่างเดียว
+        for p in range(last_real + 1, len(real)):
+            r['v'][p] = max(real[p], seasonal_hours(real, r['start'], p, last_real))
+    data._precompute_rollups()
 
 
 def to_score(x, lo, hi):
@@ -231,7 +231,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--dry-run', action='store_true', help='แสดงผล ไม่เขียนฐานข้อมูล')
     ap.add_argument('--days', type=int, default=DEFAULT_DAYS,
-                    help=f'พยากรณ์ล่วงหน้ากี่วัน (ค่าเริ่มต้น {DEFAULT_DAYS}; 1–{D.HORIZON} ใช้แบบจำลอง C)')
+                    help=f'พยากรณ์ล่วงหน้ากี่วัน (ค่าเริ่มต้น {DEFAULT_DAYS})')
     args = ap.parse_args()
     days = max(1, min(args.days, 365))
 
@@ -240,7 +240,7 @@ def main():
     extra = bookings_after(export_end)
     print(f'วันนี้ {today} | ข้อมูลส่งออกถึง {export_end} | การจองในระบบหลังจากนั้น {len(extra)} รายการ')
 
-    data = ServeData(TRAIN_XLSX, TEST_XLSX, extra, today + timedelta(days=max(days, D.HORIZON)))
+    data = ServeData(TRAIN_XLSX, TEST_XLSX, extra, today + timedelta(days=days + D.HORIZON))
     bundle = joblib.load(MODEL_PATH)
     # กันโหลดผิดชุด/ข้อมูลไม่ตรงกับตอนเทรน: ลำดับห้อง (room_ix) และ peak ต้องเท่าเดิม
     trained = bundle['rooms']
@@ -250,19 +250,17 @@ def main():
     print(f"แบบจำลองชุด {bundle['param_set']} ({bundle['param_set_name']}) engine รายห้อง: "
           f"{bundle.get('room_engine')}")
 
-    origin = data.pos[pd.Timestamp(today)]
-    coverage = recent_coverage(data, origin)
-    w_season = 1.0 - coverage
-    print(f'ความครบของข้อมูล {COVERAGE_DAYS} วันล่าสุด = {coverage:.2f} → น้ำหนักตัวเสริมตามฤดูกาล {w_season:.2f}')
+    today_pos = data.pos[pd.Timestamp(today)]
+    last_real = last_real_day(data, today_pos)
+    fill_gap_with_history(data, last_real)
+    print(f'ข้อมูลการใช้ระบบต่อเนื่องจริงถึง {data.calendar[last_real].date()} — '
+          f'ช่วงหลังจากนั้น {today_pos - last_real} วันเติมด้วยสถิติปีก่อนเป็นข้อมูลนำเข้า')
 
-    last_seen = last_observed(data, origin)
-    print(f'ข้อมูลการใช้ห้องจริงล่าสุด {data.calendar[last_seen].date()} — ตัวเสริมเฉลี่ยเฉพาะวันที่มีข้อมูล')
-    preds = predict_model_c(data, bundle, origin)
-    # วันที่ 1–14 จากแบบจำลอง C; ถ้าขอเกิน 14 วัน ต่อด้วยวันที่ไม่มีผลแบบจำลอง (band = None)
-    for code in data.codes:
-        rows = [x for x in preds.get(code, []) if x[0] - origin <= days]
-        rows += [(origin + h, None, None) for h in range(D.HORIZON + 1, days + 1)]
-        preds[code] = rows
+    # แบบจำลอง C ทายได้ 1–14 วันจากจุดเริ่ม: ทำนายเป็นรอบ ๆ เลื่อนจุดเริ่มทีละ 14 วัน
+    preds = {code: [] for code in data.codes}
+    for origin in range(today_pos, today_pos + days, D.HORIZON):
+        for code, rows in predict_model_c(data, bundle, origin).items():
+            preds[code] += [x for x in rows if today_pos < x[0] <= today_pos + days]
     profiles = hour_profile(data)
     accuracy = {}
     for code in data.codes:
@@ -275,31 +273,23 @@ def main():
         lo, hi = data.cuts(code)
         for j, band, hours in rows:
             fc_date = data.calendar[j].date()
-            season = seasonal_norm(data, code, j, last_seen)
-            if band is None:       # เกินช่วงที่แบบจำลองทายได้ — ใช้สถิติตามฤดูกาลอย่างเดียว
-                final, source = season, 'season_only'
-            else:
-                final = max(band, w_season * season)
-                source = 'model' if band >= w_season * season else 'season'
-            day_score = to_score(final, lo, hi)
-            summary.append((code, fc_date, level_of(day_score)[0], source, band, season, hours))
+            day_score = to_score(band, lo, hi)
+            summary.append((code, fc_date, level_of(day_score)[0], band, hours))
             for h in FORECAST_HOURS:
                 score = round(day_score * (0.6 + 0.4 * profiles[code][h]), 4)
                 lvl, avail = level_of(score)
                 bulk.append(DemandForecast(
                     room_id=r['rid'], forecast_date=fc_date, hour=h, predicted_demand=score,
                     demand_level=lvl, availability=avail, confidence=round(accuracy[code] * 100, 1),
-                    term_demand=0.0, dynamic_demand=score,
-                    source='model' if source == 'model' else 'season'))
+                    term_demand=0.0, dynamic_demand=score, source='model'))
 
-    df = pd.DataFrame(summary, columns=['room', 'date', 'level', 'source', 'model_norm', 'season_norm', 'hours'])
-    print('\nระดับรายวัน 14 วันแรก (แบบจำลอง C):')
-    print(df[df.source != 'season_only'].pivot(index='date', columns='room', values='level').to_string())
+    df = pd.DataFrame(summary, columns=['room', 'date', 'level', 'model_norm', 'hours'])
+    print('\nระดับรายวัน 14 วันแรก:')
+    first = df[pd.to_datetime(df['date']) <= pd.Timestamp(today + timedelta(days=D.HORIZON))]
+    print(first.pivot(index='date', columns='room', values='level').to_string())
     df['month'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m')
-    print('\nจำนวนวันที่เป็นแต่ละระดับ รายเดือน (ทุกห้องรวม):')
+    print('\nจำนวนวันที่เป็นแต่ละระดับ รายเดือน (ทุกห้องรวม, ผลของแบบจำลอง C):')
     print(df.pivot_table(index='month', columns='level', values='room', aggfunc='count', fill_value=0).to_string())
-    print('\nที่มาของผล:', df['source'].value_counts().to_dict(),
-          '(model = แบบจำลอง C, season = ตัวเสริมสูงกว่าแบบจำลอง, season_only = เกิน 14 วัน)')
 
     if args.dry_run:
         print('\n--dry-run: ไม่ได้เขียนฐานข้อมูล')
