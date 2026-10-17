@@ -1955,15 +1955,19 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         # ล็อกห้องแล้วตรวจซ้ำ เหมือน perform_create — กันสองคนแก้/จองเข้าช่วง
         # เดียวกันพร้อมกัน (ถ้าย้ายห้อง ล็อกทั้งห้องเดิมและห้องใหม่)
+        # ย้ายเวลาเริ่มแล้วต้องเตือนใหม่ — เดิม reminded ค้าง True จากเวลาเดิม
+        # อีเมลเตือนของเวลาใหม่จึงไม่ถูกส่ง
+        extra = {'reminded': False} if start_time != booking.start_time else {}
+
         with transaction.atomic():
             for pk in sorted({booking.room_id, room.pk}):
                 Room.objects.select_for_update().get(pk=pk)
             self._raise_if_conflict(room, start_time, end_time, exclude_pk=booking.pk)
             if not needs_reapproval:
-                serializer.save()
+                serializer.save(**extra)
                 return
 
-            booking = serializer.save(status='pending')
+            booking = serializer.save(status='pending', **extra)
             BookingLog.objects.create(
                 booking=booking, changed_by=self.request.user,
                 old_status='approved', new_status='pending',

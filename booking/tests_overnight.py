@@ -194,3 +194,25 @@ class ConcurrentBookingTests(TransactionTestCase):
             'start_time': (aware(day, 9) + timedelta(minutes=5 * self.users.index(u))).isoformat(),
             'end_time': (aware(day, 11)).isoformat()})
         self.assertEqual(codes.count(201), 1, codes)
+
+
+class ReminderAfterRescheduleTests(QABase):
+    def test_moving_start_time_resets_reminder(self):
+        day = timezone.localdate() + timedelta(days=4)
+        b = Booking.objects.create(user=self.bot, room=self.room, title='ประชุม', attendees=5,
+                                   start_time=aware(day, 10), end_time=aware(day, 11),
+                                   status='approved', reminded=True)
+        r = self.client.patch(f'/api/bookings/{b.id}/', {'start_time': aware(day, 14).isoformat(),
+                                                          'end_time': aware(day, 15).isoformat()}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        b.refresh_from_db()
+        self.assertFalse(b.reminded)
+
+    def test_title_only_edit_keeps_reminder_flag(self):
+        day = timezone.localdate() + timedelta(days=4)
+        b = Booking.objects.create(user=self.bot, room=self.room, title='ประชุม', attendees=5,
+                                   start_time=aware(day, 10), end_time=aware(day, 11),
+                                   status='approved', reminded=True)
+        self.client.patch(f'/api/bookings/{b.id}/', {'title': 'ประชุมใหม่'}, format='json')
+        b.refresh_from_db()
+        self.assertTrue(b.reminded)
