@@ -86,6 +86,8 @@ export default function RegisterPage() {
     if (!form.first_name) return setError('กรุณากรอกชื่อ-นามสกุล')
     if (!form.username) return setError('กรุณากรอกชื่อผู้ใช้')
     if (!form.email) return setError('กรุณากรอกอีเมล')
+    // นักศึกษาต้องกรอกรหัสนักศึกษา (อาจารย์ไม่ต้อง) — backend ตรวจซ้ำ
+    if (form.role === 'student' && !form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
     if (form.student_id && !/^\d+$/.test(form.student_id)) return setError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
     setError('')
     setStep(2)
@@ -290,7 +292,9 @@ export default function RegisterPage() {
                   <div className="au2">
                     <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-blue-700">
                       รหัสนักศึกษา
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-blue-500">#ไม่บังคับ</span>
+                      {form.role === 'student'
+                        ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-red-500">*จำเป็น</span>
+                        : <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-blue-500">#ไม่บังคับ</span>}
                     </label>
                     <div className="relative">
                       <Hash size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />

@@ -112,7 +112,12 @@ class UserSerializer(serializers.ModelSerializer):
 
     def validate_student_id(self, value):
         # เดิมตรวจแค่ตอนสมัคร — PATCH โปรไฟล์ตั้ง "65abc123" ได้
-        return _clean_student_id(value, exclude_pk=getattr(self.instance, 'pk', None))
+        # นักศึกษาลบรหัสที่มีอยู่ทิ้งไม่ได้ (สมัครต้องกรอกแล้ว ดู RegisterSerializer)
+        # บัญชีที่ไม่เคยมีรหัส (เช่นสร้างจาก LDAP) ยังบันทึกโปรไฟล์ได้ตามเดิม
+        inst = self.instance
+        if (not value and inst is not None and inst.role == 'student' and inst.student_id):
+            raise serializers.ValidationError('นักศึกษาต้องมีรหัสนักศึกษา ลบออกไม่ได้')
+        return _clean_student_id(value, exclude_pk=getattr(inst, 'pk', None))
 
     def validate_email(self, value):
         # ตรวจเฉพาะตอนเปลี่ยนอีเมลจริง — หน้าโปรไฟล์ส่งอีเมลมาทุกครั้งที่กดบันทึก
@@ -185,6 +190,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         if problems:
             raise serializers.ValidationError({'password': problems})
 
+        # นักศึกษาต้องกรอกรหัสนักศึกษา (อาจารย์ไม่มีรหัสนักศึกษา ไม่ต้องกรอก)
+        if data.get('role', 'student') == 'student' and not (data.get('student_id') or '').strip():
+            raise serializers.ValidationError({'student_id': 'กรุณากรอกรหัสนักศึกษา'})
         try:
             data['student_id'] = _clean_student_id(data.get('student_id'))
         except serializers.ValidationError as e:

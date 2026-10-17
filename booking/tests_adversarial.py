@@ -183,7 +183,8 @@ class TokenAttackTests(AdvBase):
         self.client.force_authenticate(user=None)
         self.client.post('/api/auth/register/', {
             'username': 'qa_sneaky', 'email': 'qa_sneaky@example.com', 'password': 'QaTest1234',
-            'password2': 'QaTest1234', 'role': 'student', 'is_staff': True, 'is_superuser': True,
+            'password2': 'QaTest1234', 'role': 'student', 'student_id': '6600000101',
+            'is_staff': True, 'is_superuser': True,
         }, format='json')
         u = User.objects.get(username='qa_sneaky')
         self.assertFalse(u.is_staff or u.is_superuser)

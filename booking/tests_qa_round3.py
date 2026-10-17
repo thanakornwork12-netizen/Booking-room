@@ -55,7 +55,7 @@ class QARound3Tests(QABase):
         r = self.client.post('/api/auth/register/', {
             'username': 'qa_strongpw', 'first_name': 'a', 'last_name': 'b',
             'email': 'qa_strongpw@example.com', 'password': 'Booking#2026', 'password2': 'Booking#2026',
-            'role': 'student'}, format='json')
+            'role': 'student', 'student_id': '6600000102'}, format='json')
         self.assertEqual(r.status_code, 201, r.data)
 
     def test_reset_rejects_weak_password(self):

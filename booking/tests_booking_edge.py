@@ -521,3 +521,34 @@ class MaintenanceOpenFilterTests(BookingEdgeBase):
         r = self.client.get('/api/maintenance-blocks/', {'open': 1})
         rows = r.data.get('results', r.data) if isinstance(r.data, dict) else r.data
         self.assertEqual({row['id'] for row in rows}, {keep.id})
+
+
+class StudentIdRequiredTests(TestCase):
+    def _register(self, role, student_id, username):
+        return APIClient().post('/api/auth/register/', {
+            'first_name': 'ทดสอบ', 'username': username, 'email': f'{username}@example.com',
+            'password': 'QaRegister2026!', 'password2': 'QaRegister2026!', 'role': role,
+            'faculty': 'QA', 'student_id': student_id}, format='json')
+
+    def test_student_must_give_student_id(self):
+        r = self._register('student', '', 'qa_no_sid')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('student_id', r.data)
+
+    def test_lecturer_does_not_need_student_id(self):
+        self.assertEqual(self._register('lecturer', '', 'qa_lect_nosid').status_code, 201)
+
+    def test_student_cannot_clear_student_id_in_profile(self):
+        u = User.objects.create_user(username='qa_sid', password='QaRegister2026!', role='student',
+                                     email='qa_sid@example.com', student_id='6699990001')
+        c = APIClient(); c.force_authenticate(u)
+        r = c.patch('/api/auth/profile/', {'student_id': ''}, format='json')
+        u.refresh_from_db()
+        self.assertEqual((r.status_code, u.student_id), (400, '6699990001'))
+
+    def test_account_without_student_id_can_still_save_profile(self):
+        u = User.objects.create_user(username='qa_ldap_like', password='x', role='student',
+                                     email='qa_ldap_like@example.com')
+        c = APIClient(); c.force_authenticate(u)
+        self.assertEqual(c.patch('/api/auth/profile/', {'phone': '0800000000', 'student_id': ''},
+                                 format='json').status_code, 200)
