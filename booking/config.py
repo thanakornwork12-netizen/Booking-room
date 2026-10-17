@@ -23,12 +23,13 @@ REMINDER_CHECK_EVERY_MINUTES = 1    # งานเบื้องหลังต
 STARTING_SOON_MINUTES = 30          # การจองที่จะเริ่มภายในกี่นาทีนับเป็น "จะเริ่มเร็วๆ"
 
 # ── ระดับความต้องการจาก AI ───────────────────────────────────
+# 3 ระดับ ต่ำ / ปานกลาง / เร่งด่วน — ตรงกับที่ใช้วัด Accuracy ของแบบจำลอง
+# (ml/saved/forecast.py demand_score_to_label) ระดับ "สูง" เดิมกลายเป็น "ปานกลาง"
 # ค่าเฉลี่ย predicted_demand (0–1) ≥ เกณฑ์ → (demand_level, availability)
 # ไล่จากสูงลงต่ำ ต่ำกว่าทุกเกณฑ์ = ('low', 'likely_available')
 DEMAND_LEVEL_THRESHOLDS = (
     (0.70, 'urgent', 'book_now'),
-    (0.50, 'high',   'book_soon'),
-    (0.30, 'medium', 'recommended'),
+    (0.50, 'medium', 'recommended'),
 )
 
 # ── ค้นหาและแนะนำห้อง ─────────────────────────────────────────

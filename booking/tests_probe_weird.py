@@ -359,7 +359,7 @@ class ThaiDayProbe(BookingEdgeBase):
     def test_room_forecast_uses_thai_hour(self):
         self.client.force_authenticate(user=self.admin)
         DemandForecast.objects.create(room=self.room, forecast_date=self.day, hour=10,
-                                      predicted_demand=0.9, demand_level='high')
+                                      predicted_demand=0.9, demand_level='urgent')
         with mock.patch('django.utils.timezone.now', return_value=thai_now(self.day, 10, 20)):
             r = self.client.get('/api/rooms/')
         rows = r.json()['results'] if isinstance(r.json(), dict) else r.json()

@@ -641,7 +641,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         if end_time.minute > 0:
             end_hour += 1
         check_end_hour = end_hour if end_hour > start_hour else start_hour + 1
-        level_order = {'low': 0, 'medium': 1, 'high': 2, 'urgent': 3}
+        level_order = {'low': 0, 'medium': 1, 'urgent': 2}
 
         # ดึงเฉพาะผลพยากรณ์ของวันและชั่วโมงที่ค้นหา ครั้งเดียวสำหรับทุกห้อง — เดิม
         # prefetch ผลพยากรณ์ทุกวันของทุกห้อง (รวมวันที่ผ่านไปแล้วที่สะสมไม่ถูกลบ)
@@ -2485,7 +2485,7 @@ class DashboardView(generics.GenericAPIView):
             for i in range(7)
         ]
         demand_alerts = list(
-            DemandForecast.objects.filter(forecast_date=today, demand_level__in=['urgent', 'high'])
+            DemandForecast.objects.filter(forecast_date=today, demand_level__in=['urgent', 'medium'])
             .values('room__name', 'hour', 'predicted_demand', 'term_demand', 'dynamic_demand', 'demand_level')
             .order_by('-predicted_demand')[:5]
         )

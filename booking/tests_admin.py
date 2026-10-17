@@ -177,9 +177,9 @@ class DemandLevelTests(TestCase):
         from booking.views import _demand_level_for
         cases = [
             (0.95, ('urgent', 'book_now')), (0.70, ('urgent', 'book_now')),
-            (0.69, ('high', 'book_soon')),  (0.50, ('high', 'book_soon')),
-            (0.49, ('medium', 'recommended')), (0.30, ('medium', 'recommended')),
-            (0.29, ('low', 'likely_available')), (0.0, ('low', 'likely_available')),
+            (0.69, ('medium', 'recommended')), (0.50, ('medium', 'recommended')),
+            (0.49, ('low', 'likely_available')), (0.30, ('low', 'likely_available')),
+            (0.0, ('low', 'likely_available')),
         ]
         for value, expected in cases:
             with self.subTest(value=value):

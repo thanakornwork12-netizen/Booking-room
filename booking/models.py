@@ -265,16 +265,15 @@ class BookingLog(models.Model):
 # 8. DEMAND FORECAST
 # ============================================================
 class DemandForecast(models.Model):
+    # 3 ระดับ ตรงกับการวัดผลแบบจำลอง (ดู config.DEMAND_LEVEL_THRESHOLDS)
     DEMAND_LEVEL_CHOICES = [
         ('low',    'ต่ำ'),
         ('medium', 'ปานกลาง'),
-        ('high',   'สูง'),
         ('urgent', 'เร่งด่วน'),
     ]
     AVAILABILITY_CHOICES = [
         ('likely_available', '🟢 ยังว่าง'),
         ('recommended',      '🟡 ควรจอง'),
-        ('book_soon',        '🟠 รีบจอง'),
         ('book_now',         '🔴 ควรจองตอนนี้เลย'),
     ]
 

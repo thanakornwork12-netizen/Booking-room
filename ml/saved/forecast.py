@@ -3337,11 +3337,12 @@ def _build_forecast_bulk(
             if not np.isfinite(hr_dyn):
                 hr_dyn = 0.0
 
+            # 3 ระดับ เส้นแบ่งเดียวกับที่ใช้วัด Accuracy (demand_score_to_label)
+            # — เดิมบันทึก 4 ระดับ ซึ่ง 'high' คือ medium ของการวัดผล และ
+            # 'medium' (0.6–1.0 × thr_med) คือ low ของการวัดผล
             if demand_score >= thr_high:
                 day_level = 'urgent';  day_avail = 'book_now'
             elif demand_score >= thr_med:
-                day_level = 'high';    day_avail = 'book_soon'
-            elif demand_score >= thr_med * 0.6:
                 day_level = 'medium';  day_avail = 'recommended'
             else:
                 day_level = 'low';     day_avail = 'likely_available'
@@ -4276,7 +4277,7 @@ def retrain_and_forecast():
 
 def _print_summary():
     print("\n── จำนวน Record ต่อระดับ ──")
-    for lvl in ['urgent', 'high', 'medium', 'low']:
+    for lvl in ['urgent', 'medium', 'low']:
         c = DemandForecast.objects.filter(demand_level=lvl).count()
         print(f"  {lvl:8s}: {c:,}")
     print("=" * 60)

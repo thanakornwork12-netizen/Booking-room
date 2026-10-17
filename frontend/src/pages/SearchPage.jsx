@@ -36,13 +36,6 @@ const FORECAST_CONFIG = {
     textCls: 'text-red-700', subCls: 'text-red-500',
     cardBg: 'bg-red-50', cardBorder: 'border-red-200', numCls: 'text-red-600',
   },
-  high: {
-    badge: 'ความต้องการสูง', sub: 'เริ่มเป็นที่ต้องการ',
-    badgeCls: 'bg-orange-50 text-orange-700 border border-orange-200',
-    dotColor: '#f97316', pillCls: 'bg-orange-50 border border-orange-200',
-    textCls: 'text-orange-700', subCls: 'text-orange-500',
-    cardBg: 'bg-orange-50', cardBorder: 'border-orange-200', numCls: 'text-orange-600',
-  },
   medium: {
     badge: 'ควรจองตอนนี้', sub: 'เริ่มมีคนสนใจ',
     badgeCls: 'bg-yellow-50 text-yellow-800 border border-yellow-300',
@@ -68,8 +61,7 @@ const FORECAST_CONFIG = {
 
 const SUMMARY_TIERS = [
   { level: 'urgent', label: 'รีบจองด่วน!' },
-  { level: 'high',   label: 'ความต้องการสูง' },
-  { level: 'medium', label: 'ควรจองตอนนี้' },
+  { level: 'medium', label: 'ควรจอง' },
   { level: 'low',    label: 'ยังว่างอยู่' },
 ]
 
@@ -140,7 +132,7 @@ const formatDate = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { 
 const formatDateShort = d => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 const getDemandLevel = room => {
   const raw = room.forecast?.demand_level
-  const availMap = { book_now: 'urgent', book_soon: 'high', recommended: 'medium', likely_available: 'low' }
+  const availMap = { book_now: 'urgent', recommended: 'medium', likely_available: 'low' }
   if (raw && availMap[raw]) return availMap[raw]
   if (raw && FORECAST_CONFIG[raw]) return raw
   return 'none'
@@ -314,8 +306,7 @@ const scoreFallbackRoom = (room, {
 
   const level = getDemandLevel(room)
   if (level === 'low') score += 8
-  else if (level === 'medium') score += 5
-  else if (level === 'high') score += 2
+  else if (level === 'medium') score += 3
 
   const matchedEquipmentCount = getMatchedEquipmentCount(room, selectedEquipments, equipmentPresets)
   if (matchedEquipmentCount > 0) {
@@ -494,7 +485,7 @@ function CancelReminder({ startTime }) {
 
 function SummaryTiles({ rooms }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-3 gap-2">
       {SUMMARY_TIERS.map(s => {
         const cfg = FORECAST_CONFIG[s.level]
         const count = rooms.filter(r => getDemandLevel(r) === s.level).length
