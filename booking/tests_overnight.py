@@ -139,3 +139,58 @@ class TermEdgeTests(QABase):
     def test_term_huge_attendees_is_400(self):
         r = self.client.post('/api/term-bookings/', self.payload(attendees=10 ** 12), format='json')
         self.assertEqual(r.status_code, 400, r.data)
+
+
+# ══════════════════════════════════════════════════════════════
+# จองพร้อมกันจริงหลายเธรดบน Postgres — ต้องได้รายการเดียว
+# ══════════════════════════════════════════════════════════════
+import threading  # noqa: E402
+
+from django.db import connections  # noqa: E402
+from django.test import TransactionTestCase  # noqa: E402
+from rest_framework.test import APIClient  # noqa: E402
+
+
+class ConcurrentBookingTests(TransactionTestCase):
+    def setUp(self):
+        b = Building.objects.create(name='อาคารทดสอบ', code='TT')
+        self.room = Room.objects.create(id=445, building=b, name='2C09', floor=1, capacity=40, room_type='ห้องเรียน')
+        self.users = [User.objects.create_user(username=f'qa_race_{i}', password='QaRace1234', role='student',
+                                               email=f'qa_race_{i}@example.com') for i in range(10)]
+
+    def _race(self, payload_for, path='/api/bookings/'):
+        barrier = threading.Barrier(len(self.users))
+        codes = []
+
+        def worker(user):
+            try:
+                c = APIClient()
+                c.force_authenticate(user)
+                barrier.wait()
+                codes.append(c.post(path, payload_for(user), format='json').status_code)
+            finally:
+                connections.close_all()
+
+        threads = [threading.Thread(target=worker, args=(u,)) for u in self.users]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        return codes
+
+    def test_ten_users_same_slot_only_one_wins(self):
+        day = timezone.localdate() + timedelta(days=5)
+        start, end = aware(day, 10), aware(day, 11)
+        codes = self._race(lambda u: {'room': self.room.id, 'title': 'แข่ง', 'attendees': 5,
+                                      'start_time': start.isoformat(), 'end_time': end.isoformat()})
+        self.assertEqual(sorted(codes).count(201), 1, codes)
+        self.assertEqual(Booking.objects.filter(room=self.room, status__in=['pending', 'approved']).count(), 1)
+
+    def test_overlapping_but_different_slots_only_one_wins(self):
+        day = timezone.localdate() + timedelta(days=5)
+        # แต่ละคนเลื่อนเวลาเริ่ม 5 นาที แต่ทุกช่วงทับกันหมด
+        codes = self._race(lambda u: {
+            'room': self.room.id, 'title': 'ทับ', 'attendees': 5,
+            'start_time': (aware(day, 9) + timedelta(minutes=5 * self.users.index(u))).isoformat(),
+            'end_time': (aware(day, 11)).isoformat()})
+        self.assertEqual(codes.count(201), 1, codes)

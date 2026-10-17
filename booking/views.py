@@ -295,7 +295,11 @@ class BuildingViewSet(viewsets.ModelViewSet):
     serializer_class   = BuildingSerializer
 
     def get_queryset(self):
-        qs = Building.objects.filter(is_active=True).order_by('name')
+        # นับห้องใน query เดียว — เดิม room_count ยิง query แยกทีละอาคาร (16 อาคาร
+        # = 18 query) annotate ก่อน filter ข้างล่างให้นับห้องทั้งหมดของอาคาร
+        qs = Building.objects.annotate(
+            active_room_count=Count('rooms', filter=Q(rooms__is_active=True), distinct=True),
+        ).filter(is_active=True).order_by('name')
         # การจอง (SearchPage) กับการจัดการ inventory (AdminPage) เรียก endpoint
         # นี้ร่วมกัน แยกด้วย query param แทน role ของผู้ใช้ — ไม่งั้น admin ที่เข้า
         # หน้าค้นหาห้องเพื่อจองจริงจะเห็นอาคารที่ไม่มีห้องให้จองเลยสักห้องไปด้วย

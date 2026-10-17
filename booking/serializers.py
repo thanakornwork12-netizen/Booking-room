@@ -303,7 +303,9 @@ class BuildingSerializer(serializers.ModelSerializer):
         fields = ['id', 'code', 'name', 'description', 'is_active', 'room_count']
 
     def get_room_count(self, obj):
-        return obj.rooms.filter(is_active=True).count()
+        # list/retrieve มีค่านับมาจาก annotate แล้ว (BuildingViewSet.get_queryset)
+        count = getattr(obj, 'active_room_count', None)
+        return count if count is not None else obj.rooms.filter(is_active=True).count()
 
 
 # ============================================================
