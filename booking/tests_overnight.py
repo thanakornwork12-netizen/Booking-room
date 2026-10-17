@@ -435,3 +435,19 @@ class LDAPSwitchTests(QABase):
         with override_settings(AUTH_LDAP_ENABLED=False), mock.patch('booking.ldap_auth.Connection') as conn:
             self.assertIsNone(authenticate_ldap('6611111111', 'pw123456'))
             conn.assert_not_called()
+
+
+class CreateResponseHasIdTests(QABase):
+    def test_booking_and_term_create_return_id(self):
+        day = timezone.localdate() + timedelta(days=8)
+        r = self.client.post('/api/bookings/', {'room': self.room.id, 'title': 'x', 'attendees': 5,
+                                                'start_time': aware(day, 10).isoformat(),
+                                                'end_time': aware(day, 11).isoformat()}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(Booking.objects.get(pk=r.data['id']).title, 'x')
+        r = self.client.post('/api/term-bookings/', {
+            'room': self.room_b.id, 'subject_name': 'วิชา', 'attendees': 5, 'day_of_week': day.weekday(),
+            'start_time': '13:00', 'end_time': '14:00', 'term_start': day.isoformat(),
+            'term_end': (day + timedelta(days=30)).isoformat()}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(TermBooking.objects.filter(pk=r.data['id']).exists())

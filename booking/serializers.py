@@ -441,7 +441,8 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = TermBooking
-        fields = ['room', 'subject_name', 'subject_code', 'attendees',
+        # id ส่งกลับด้วย — เดิม response ตอนสร้างไม่มี id อ้างถึงรายการใหม่ไม่ได้
+        fields = ['id', 'room', 'subject_name', 'subject_code', 'attendees',
                   'day_of_week', 'start_time', 'end_time',
                   'term_start', 'term_end', 'term_name', 'note']
         extra_kwargs = {'note': {'max_length': NOTE_MAX_LENGTH}}
@@ -574,7 +575,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Booking
-        fields = ['room', 'title', 'attendees', 'start_time', 'end_time', 'note']
+        fields = ['id', 'room', 'title', 'attendees', 'start_time', 'end_time', 'note']
         # เดิมไม่จำกัด ส่งหมายเหตุ 2 MB ได้ (ไปอยู่ในอีเมลและไฟล์ export)
         extra_kwargs = {'note': {'max_length': NOTE_MAX_LENGTH}}
 
