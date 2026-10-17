@@ -216,3 +216,62 @@ class ReminderAfterRescheduleTests(QABase):
         self.client.patch(f'/api/bookings/{b.id}/', {'title': 'ประชุมใหม่'}, format='json')
         b.refresh_from_db()
         self.assertTrue(b.reminded)
+
+
+# ══════════════════════════════════════════════════════════════
+# อีเมลทุกแบบต้อง escape ข้อความที่ผู้ใช้พิมพ์เอง
+# ══════════════════════════════════════════════════════════════
+from django.core import mail  # noqa: E402
+from django.test import override_settings  # noqa: E402
+
+from booking import signals  # noqa: E402
+from booking.models import TermBooking  # noqa: E402
+
+EVIL = '<script>alert(1)</script>'
+
+
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class EmailEscapingTests(QABase):
+    def setUp(self):
+        super().setUp()
+        self.bot.first_name = EVIL
+        self.bot.save()
+        day = timezone.localdate() + timedelta(days=3)
+        self.booking = Booking.objects.create(
+            user=self.bot, room=self.room, title=EVIL, note=EVIL, reject_reason=EVIL, attendees=5,
+            start_time=aware(day, 10), end_time=aware(day, 11))
+        self.term = TermBooking.objects.create(
+            user=self.bot, room=self.room, subject_name=EVIL, subject_code='<i>c</i>', term_name='<i>t</i>', note=EVIL,
+            reject_reason=EVIL, attendees=5, day_of_week=day.weekday(), start_time=time_type(13),
+            end_time=time_type(14), term_start=day, term_end=day + timedelta(days=30))
+        mail.outbox.clear()
+
+    def html_parts(self):
+        out = []
+        for m in mail.outbox:
+            out += [c for c, mime in getattr(m, 'alternatives', []) if mime == 'text/html']
+        return out
+
+    def test_no_raw_user_html_in_any_email(self):
+        calls = [
+            (signals.send_welcome_email, self.bot),
+            (signals.send_approval_request_email, self.booking),
+            (signals.send_approval_request_email, self.term),
+            (signals.send_booking_pending_email, self.booking),
+            (signals.send_booking_confirmation_email, self.booking),
+            (signals.send_booking_rejected_email, self.booking),
+            (signals.send_booking_cancelled_email, self.booking),
+            (signals.send_term_booking_pending_email, self.term),
+            (signals.send_term_booking_confirmation_email, self.term),
+            (signals.send_term_booking_rejected_email, self.term),
+            (signals.send_term_booking_cancelled_email, self.term),
+        ]
+        for fn, obj in calls:
+            fn(obj)
+        signals.send_password_reset_email(self.bot, uidb64='x', token='y')
+        html = self.html_parts()
+        self.assertGreaterEqual(len(html), 10, f'ได้อีเมล HTML แค่ {len(html)} ฉบับ')
+        for part in html:
+            self.assertNotIn(EVIL, part)
+            self.assertNotIn('<i>c</i>', part)
+            self.assertNotIn('<i>t</i>', part)
