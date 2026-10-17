@@ -1427,13 +1427,14 @@ function LecturerRequestCard({ req, onApprove, onReject }) {
   return (
     <div className="bg-white border border-blue-100 rounded-2xl px-4 py-3.5 flex items-center gap-3 flex-wrap"
       style={{borderLeftWidth:4, borderLeftColor:'#7c3aed'}}>
-      <div className="flex-1 min-w-0">
+      {/* basis กว้างพอให้ปุ่มตกลงบรรทัดใหม่บนมือถือ แทนที่จะทับอีเมล */}
+      <div className="flex-1 min-w-0 basis-56">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <p className="font-bold text-slate-900 truncate">{req.name || req.email}</p>
           <span className="text-xs bg-violet-50 text-violet-700 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">ขอสิทธิ์อาจารย์</span>
         </div>
         <div className="flex gap-3 text-xs text-slate-400 flex-wrap">
-          <span>✉️ {req.email}</span>
+          <span className="break-all">✉️ {req.email}</span>
           {joined && <span>🗓️ สมัคร {joined}</span>}
         </div>
       </div>
@@ -1457,7 +1458,7 @@ function LecturerRequestsTab({ lecturerRequests, handleLecturerRequest }) {
       <div className="flex items-center gap-2">
         <UserCheck size={14} className="text-violet-600" />
         <p className="text-sm font-bold text-slate-800">คำขอสิทธิ์อาจารย์</p>
-        <span className="text-xs text-slate-400">ยืนยันแล้วบัญชีจะเปลี่ยนเป็นอาจารย์ · ปฏิเสธแล้วยังใช้งานแบบนักศึกษาได้</span>
+        <span className="hidden sm:inline text-xs text-slate-400">ยืนยันแล้วบัญชีจะเปลี่ยนเป็นอาจารย์ · ปฏิเสธแล้วยังใช้งานแบบนักศึกษาได้</span>
       </div>
       {lecturerRequests.length === 0
         ? <div className="bg-white border border-blue-100 rounded-2xl py-12 text-center shadow-sm">
