@@ -705,18 +705,20 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
   ]
 
   if (success) return (
-    <div className="min-h-screen w-full bg-[#F8FAFC] flex items-center justify-center px-4" style={{ fontFamily: "'Inter','Prompt','Sarabun',sans-serif" }}>
+    // มือถือชิดบน — เดิมจัดกลางความสูงจอทั้งจอ การ์ดถูกดันลงจนปุ่ม "กลับหน้าหลัก"
+    // อยู่ใต้แถบเมนูล่าง ต้องเลื่อนจอก่อนถึงจะเห็น
+    <div className="sm:min-h-screen w-full bg-[#F8FAFC] flex items-start sm:items-center justify-center px-4 py-6 sm:py-0" style={{ fontFamily: "'Inter','Prompt','Sarabun',sans-serif" }}>
       <style>{ANIM}</style>
       <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)] overflow-hidden">
-        <div className={`h-36 bg-gradient-to-br ${accentBg} relative overflow-hidden`}>
+        <div className={`h-24 sm:h-36 bg-gradient-to-br ${accentBg} relative overflow-hidden`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.25),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.16),transparent_32%)]" />
           <div className="absolute -right-8 -top-8 w-36 h-36 rounded-full bg-white/10 blur-2xl" />
           <div className="absolute left-6 top-6 w-12 h-12 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white">
             <CheckCircle size={24} />
           </div>
         </div>
-        <div className="p-8 -mt-10">
-          <div className="rounded-[24px] bg-white border border-slate-200 shadow-sm p-6">
+        <div className="p-4 sm:p-8 -mt-10">
+          <div className="rounded-[24px] bg-white border border-slate-200 shadow-sm p-5 sm:p-6">
             <p className="text-xs font-bold uppercase tracking-[0.28em] text-slate-400 mb-2">Request sent</p>
             <h2 className="text-2xl font-bold text-slate-900">ส่งคำขอจองแล้ว รออนุมัติ</h2>
             <p className="mt-1 text-sm text-slate-500">แอดมินจะตรวจสอบคำขอ แล้วแจ้งผลทางอีเมลและแจ้งเตือนในเว็บ</p>
@@ -729,7 +731,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
             )}
             <button
               onClick={() => navigate('/home')}
-              className={`mt-6 w-full rounded-2xl py-3.5 text-sm font-bold text-white bg-gradient-to-r ${accentBg} shadow-lg shadow-blue-200/70 hover:shadow-xl transition-all`}
+              className={`mt-5 sm:mt-6 w-full rounded-2xl py-3.5 text-sm font-bold text-white bg-gradient-to-r ${accentBg} shadow-lg shadow-blue-200/70 hover:shadow-xl transition-all`}
             >
               กลับหน้าหลัก
             </button>
