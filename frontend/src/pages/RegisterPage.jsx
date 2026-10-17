@@ -78,23 +78,35 @@ export default function RegisterPage() {
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setError('') }
 
-  const onSubmit = async () => {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  // กด "สมัครสมาชิก" → ตรวจข้อมูล แล้วเปิดหน้าต่างให้ทวนข้อมูลก่อน (กันพิมพ์อีเมล
+  // ผิด ซึ่งจะทำให้รับลิงก์รีเซ็ตรหัสผ่าน/อีเมลแจ้งการจองไม่ได้)
+  const onSubmit = () => {
     if (isSubmittingRef.current) return
     if (!form.want_lecturer && !form.student_id) return setError('กรุณากรอกรหัสนักศึกษา')
     if (!form.email) return setError('กรุณากรอกอีเมล')
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return setError('รูปแบบอีเมลไม่ถูกต้อง')
     if (!form.faculty) return setError('กรุณาเลือกคณะ/หน่วยงาน')
     if (!form.password) return setError('กรุณากรอกรหัสผ่าน')
     if (form.password !== form.password2) return setError('รหัสผ่านไม่ตรงกัน')
     if (passwordProblem(form.password)) return setError(passwordProblem(form.password))
+    setError('')
+    setConfirmOpen(true)
+  }
 
+  const confirmSubmit = async () => {
+    if (isSubmittingRef.current) return
     isSubmittingRef.current = true
     setLoading(true)
     setError('')
     try {
-      const payload = { ...form, student_id: form.want_lecturer ? '' : form.student_id }
+      const payload = { ...form, email: form.email.trim(), student_id: form.want_lecturer ? '' : form.student_id }
       const { data } = await api.post('/auth/register/', payload)
+      setConfirmOpen(false)
       setDone(data)
     } catch (err) {
+      setConfirmOpen(false)
       setError(extractErrorMessage(err, 'สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่'))
     } finally {
       isSubmittingRef.current = false
@@ -380,6 +392,46 @@ export default function RegisterPage() {
           </p>
         </div>
       </div>
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={e => e.target === e.currentTarget && !loading && setConfirmOpen(false)}>
+          <div className="w-full overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-3xl au">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <p className="text-base font-extrabold text-slate-900">ตรวจสอบข้อมูลก่อนสมัคร</p>
+              <p className="mt-0.5 text-xs text-slate-500">ถ้าข้อมูลผิด กด "แก้ไข" เพื่อกลับไปแก้</p>
+            </div>
+            <div className="divide-y divide-slate-100 px-5">
+              {[
+                ['ประเภทบัญชี', form.want_lecturer ? 'อาจารย์ / บุคลากร (รอแอดมินยืนยัน)' : 'นักศึกษา'],
+                ...(form.want_lecturer ? [] : [['รหัสนักศึกษา', form.student_id]]),
+                ['อีเมล', form.email.trim()],
+                ['คณะ / หน่วยงาน', form.faculty],
+                ['ใช้เข้าสู่ระบบด้วย', form.want_lecturer ? form.email.trim() : form.student_id],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-4 py-3">
+                  <span className="shrink-0 text-xs font-semibold text-slate-500">{label}</span>
+                  <span className={`min-w-0 break-all text-right text-sm font-bold ${label === 'อีเมล' ? 'text-blue-700' : 'text-slate-900'}`}>{value}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mx-5 mb-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ตรวจอีเมลให้ถูกต้อง — ระบบใช้อีเมลนี้ส่งผลการจองและลิงก์รีเซ็ตรหัสผ่าน
+            </p>
+            <div className="flex gap-2.5 p-5">
+              <button type="button" onClick={() => setConfirmOpen(false)} disabled={loading}
+                className="flex-1 rounded-2xl border-2 border-slate-200 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">
+                แก้ไข
+              </button>
+              <button type="button" onClick={confirmSubmit} disabled={loading}
+                className="flex flex-[2] items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+                {loading
+                  ? <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white" style={{ animation: 'rot .7s linear infinite' }} />กำลังสมัคร...</>
+                  : <><Check size={14} />ยืนยันการสมัคร</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
