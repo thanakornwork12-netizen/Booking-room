@@ -7,7 +7,7 @@ django-import-export
 channels
 daphne
 django-apscheduler
-psycopg2-binary
+psycopg[binary,pool]
 dj-database-url
 python-dotenv
 gunicorn

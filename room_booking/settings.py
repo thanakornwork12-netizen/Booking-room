@@ -133,11 +133,18 @@ DATABASES = {
 if os.environ.get('DATABASE_URL'):
     DATABASES['default'] = dj_database_url.config(
         default=os.environ.get('DATABASE_URL'),
-        # ปิด connection ทุกครั้งที่จบ request — production รันด้วย daphne (ASGI) ซึ่ง
-        # รัน view แต่ละ request ในเธรดใหม่ connection แบบคงอยู่ (เดิม 600 วินาที)
-        # จึงค้างไม่ถูกใช้ซ้ำ ทดสอบโหลด 20 คนพร้อมกันแล้ว Postgres เต็ม ("too many
-        # clients") ได้ 500 ราว 9% และ connection ค้างไม่ลดลง (Django แนะนำ 0 สำหรับ ASGI)
+        # ใช้ connection pool แทน connection แบบคงอยู่ — production รันด้วย daphne
+        # (ASGI) ซึ่งรัน view แต่ละ request ในเธรดใหม่ connection แบบคงอยู่ (เดิม 600
+        # วินาที) จึงค้างไม่ถูกใช้ซ้ำ ทดสอบโหลด 20 คนพร้อมกันแล้ว Postgres เต็ม ("too
+        # many clients") ได้ 500 ราว 9% ส่วนการเปิด connection ใหม่ทุก request ช้าลง
+        # ราว 0.5 วินาทีต่อครั้งบน Neon (TLS + ยืนยันตัวตนข้ามภูมิภาค) pool ของ
+        # Django (ต้องใช้ psycopg 3) แชร์ connection ข้ามเธรดได้ จึงไม่ต้องตั้ง
+        # conn_max_age (Django ไม่ให้ใช้คู่กับ pool)
         conn_max_age=0,
+        # Django ใช้ค่านี้เปิดการตรวจ connection ก่อนหยิบจาก pool (check_connection)
+        # — Neon ตัด connection ที่ว่างนาน (พัก compute) ไม่งั้น request แรกหลังพักจะ
+        # ได้ connection ที่ตายแล้ว
+        conn_health_checks=True,
     )
     # บังคับค่า sslmode ให้ชัวร์ ไม่พึ่งพา query string ที่มากับ DATABASE_URL
     # (กัน error "invalid sslmode value" ถ้า env var ถูกวางซ้ำ/เพี้ยนมา)
@@ -145,7 +152,10 @@ if os.environ.get('DATABASE_URL'):
     # เลยเช็คก่อนว่า host เป็น localhost/127.0.0.1 ไหม ถ้าใช่ปิด SSL, ถ้าไม่ใช่ (Render จริง) บังคับ require เหมือนเดิม
     _db_host = DATABASES['default'].get('HOST', '')
     _is_local_db = _db_host in ('', 'localhost', '127.0.0.1')
-    DATABASES['default']['OPTIONS'] = {'sslmode': 'disable' if _is_local_db else 'require'}
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'disable' if _is_local_db else 'require',
+        'pool': {'min_size': 1, 'max_size': 10, 'timeout': 20},
+    }
 
 # ---------------- CORS ----------------
 CORS_ALLOWED_ORIGINS = [
