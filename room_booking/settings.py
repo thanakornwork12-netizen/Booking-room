@@ -133,8 +133,11 @@ DATABASES = {
 if os.environ.get('DATABASE_URL'):
     DATABASES['default'] = dj_database_url.config(
         default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
-        conn_health_checks=True,
+        # ปิด connection ทุกครั้งที่จบ request — production รันด้วย daphne (ASGI) ซึ่ง
+        # รัน view แต่ละ request ในเธรดใหม่ connection แบบคงอยู่ (เดิม 600 วินาที)
+        # จึงค้างไม่ถูกใช้ซ้ำ ทดสอบโหลด 20 คนพร้อมกันแล้ว Postgres เต็ม ("too many
+        # clients") ได้ 500 ราว 9% และ connection ค้างไม่ลดลง (Django แนะนำ 0 สำหรับ ASGI)
+        conn_max_age=0,
     )
     # บังคับค่า sslmode ให้ชัวร์ ไม่พึ่งพา query string ที่มากับ DATABASE_URL
     # (กัน error "invalid sslmode value" ถ้า env var ถูกวางซ้ำ/เพี้ยนมา)
