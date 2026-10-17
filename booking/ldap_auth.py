@@ -13,6 +13,12 @@ def authenticate_ldap(username: str, password: str, extra_principal: str | None 
     ส่งอีเมลเต็มมาลอง bind ตรงๆ เป็นอีกหนึ่ง candidate (บาง AD config รับ
     mail/UPN แบบนี้ได้)
     """
+    # ชื่อผู้ใช้/รหัสผ่านว่างต้องไม่ถึง LDAP เลย — AD ของมหาวิทยาลัยรับ bind ที่ DN
+    # ว่างเป็น anonymous bind ได้สำเร็จทุกรหัสผ่าน เดิมล็อกอินด้วย "@ubu.ac.th" +
+    # รหัสอะไรก็ได้แล้วระบบนับว่าผ่าน สร้างบัญชีชื่อว่างให้เข้าใช้
+    if not (username or '').strip() or not password:
+        return None
+
     # ต่อผ่าน plain LDAP (port 389) + STARTTLS ก่อน bind แทน LDAPS (port 636)
     # ที่ใช้มาแต่แรก — เทียบกับสคริปต์อ้างอิงที่ใช้งานได้จริงแล้วพบว่า
     # server นี้ตอบสนองบน port 389 เร็วมาก (<1s) ในขณะที่ port 636 ตอบช้า/
@@ -37,7 +43,9 @@ def authenticate_ldap(username: str, password: str, extra_principal: str | None 
         f"{domain}\\{username}",
         username,
     ]
-    if extra_principal and extra_principal not in candidate_principals:
+    # อีเมลที่ส่วนหน้า @ ว่าง (เช่น "@ubu.ac.th") ไม่ใช่บัญชีจริง ไม่ลอง bind
+    if (extra_principal and extra_principal.partition('@')[0].strip()
+            and extra_principal not in candidate_principals):
         # ลองอีเมลจริงก่อนเป็นอันดับแรก เพราะถ้า user พิมพ์อีเมลมา โอกาสสูง
         # ว่านี่คือรูปแบบที่ตั้งใจใช้ล็อกอินจริง
         candidate_principals.insert(0, extra_principal)

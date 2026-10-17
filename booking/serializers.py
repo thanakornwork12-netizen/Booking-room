@@ -28,8 +28,13 @@ def _clean_student_id(value, exclude_pk=None):
     """รหัสนักศึกษา: ว่างได้ (เก็บเป็น None), ต้องเป็นตัวเลขล้วน, ห้ามซ้ำคนอื่น"""
     if not value:
         return None
-    if not value.isdigit():
+    # ต้องเป็นเลขอารบิก 0-9 — isdigit() อย่างเดียวรับเลขไทย/เลขเต็มความกว้างด้วย
+    # ("๖๖๑๑...") ได้บัญชีหน้าตาเหมือนรหัสของคนอื่นแต่ไม่ตรงกับบัญชี LDAP
+    if not (value.isascii() and value.isdigit()):
         raise serializers.ValidationError('รหัสนักศึกษาต้องเป็นตัวเลขเท่านั้น')
+    # คอลัมน์ในฐานข้อมูลยาว 20 ตัว — เดิมยาวกว่านี้พังเป็น 500
+    if len(value) > User._meta.get_field('student_id').max_length:
+        raise serializers.ValidationError('รหัสนักศึกษายาวเกินไป')
     taken = User.objects.filter(student_id=value)
     if exclude_pk is not None:
         taken = taken.exclude(pk=exclude_pk)
@@ -158,6 +163,9 @@ class RegisterSerializer(serializers.Serializer):
             # อาจารย์ไม่มีเลข นศ. — ใช้อีเมลเป็นชื่อเข้าสู่ระบบ
             data['student_id'] = None
             username = unicodedata.normalize('NFKC', data['email']).lower()
+            # อีเมลยาวได้ 254 ตัวแต่ username ยาวได้ 150 — เดิมพังเป็น 500
+            if len(username) > User._meta.get_field('username').max_length:
+                raise serializers.ValidationError({'email': 'อีเมลยาวเกินไป กรุณาใช้อีเมลอื่น'})
         else:
             if not (data.get('student_id') or '').strip():
                 raise serializers.ValidationError({'student_id': 'กรุณากรอกรหัสนักศึกษา'})
@@ -440,6 +448,11 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
         return getattr(self.instance, field, None)
 
     def validate(self, data):
+        # ปัดเป็นนาทีเต็มเหมือนจองรายครั้ง — API รับวินาทีได้
+        for field in ('start_time', 'end_time'):
+            if data.get(field) is not None:
+                data[field] = data[field].replace(second=0, microsecond=0)
+
         room        = self._get(data, 'room')
         day_of_week = self._get(data, 'day_of_week')
         start_time  = self._get(data, 'start_time')
@@ -450,6 +463,11 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
 
         if start_time >= end_time:
             raise serializers.ValidationError('เวลาสิ้นสุดต้องหลังเวลาเริ่ม')
+        # ขั้นต่ำเดียวกับจองรายครั้ง — เดิมจองคาบละ 1 นาทีทั้งเทอมได้
+        if ('start_time' in data or 'end_time' in data) and (
+                datetime.combine(term_start, end_time) - datetime.combine(term_start, start_time)
+                < timedelta(minutes=MIN_BOOKING_MINUTES)):
+            raise serializers.ValidationError(f'จองได้สั้นสุด {MIN_BOOKING_MINUTES} นาที')
         if term_start >= term_end:
             raise serializers.ValidationError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม')
         if (term_end - term_start).days > settings.MAX_TERM_BOOKING_DAYS:
@@ -534,9 +552,10 @@ class BookingSerializer(serializers.ModelSerializer):
                   'title', 'attendees', 'start_time', 'end_time',
                   'status', 'note', 'reject_reason', 'created_at', 'updated_at']
 
+        read_only_fields = ['id', 'user', 'status', 'reject_reason', 'created_at', 'updated_at']
+
     def get_room_bookable(self, obj):
         return obj.room_id in AI_FORECAST_ROOM_IDS and obj.room.is_open_for_booking
-        read_only_fields = ['id', 'user', 'status', 'reject_reason', 'created_at', 'updated_at']
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
@@ -797,8 +816,12 @@ class LDAPTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         if '@' in username:
             local_part, _, _domain_part = username.partition('@')
-            pure_username = local_part
-            if not local_part.isdigit():
+            pure_username = local_part.strip()
+            if not pure_username:
+                # "@ubu.ac.th" เหลือชื่อว่าง — LDAP รับ DN ว่างเป็น anonymous bind
+                # สำเร็จทุกรหัสผ่าน (ดู ldap_auth.py)
+                raise serializers.ValidationError({'detail': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'})
+            if not pure_username.isdigit():
                 extra_principal = username
 
         # =====================================================

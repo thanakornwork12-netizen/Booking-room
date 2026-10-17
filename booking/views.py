@@ -1227,9 +1227,13 @@ class RoomViewSet(viewsets.ModelViewSet):
         # คนทั่วไปเห็นแค่ช่วงเวลาที่ไม่ว่าง เหมือน status-feed (เดิมเห็นหัวข้อทุกการจอง)
         can_see_details = is_admin_or_staff(request.user)
         dynamic_bookings = []
+        # ทับซ้อนกับวันนั้น ไม่ใช่แค่เริ่มวันนั้น — เดิมการจองข้ามคืนที่เริ่มเมื่อวาน
+        # ไม่ขึ้นในตารางของวันนี้ ช่วงเช้าดูว่างทั้งที่จองไม่ได้
+        day_start = timezone.make_aware(datetime.combine(target_date, time_type(0, 0)))
         for b in Booking.objects.filter(
-            room=room, status__in=ACTIVE_BOOKING_STATUSES, start_time__date=target_date,
-        ).values('user_id', 'start_time', 'end_time', 'title', 'attendees', 'status'):
+            room=room, status__in=ACTIVE_BOOKING_STATUSES,
+            start_time__lt=day_start + timedelta(days=1), end_time__gt=day_start,
+        ).order_by('start_time').values('user_id', 'start_time', 'end_time', 'title', 'attendees', 'status'):
             mine = b.pop('user_id') == request.user.id
             if not (mine or can_see_details):
                 b['title'] = 'ไม่ว่าง'
@@ -1331,11 +1335,14 @@ class RoomViewSet(viewsets.ModelViewSet):
         if not is_admin_or_staff(request.user):
             return Response({'error': 'สำหรับผู้ดูแลระบบเท่านั้น'}, status=403)
 
-        rooms = Room.objects.select_related('building')
+        # นับด้วย aggregate ครั้งเดียว — เดิม query แยกทีละห้อง (69 ห้อง = 70 query)
+        rooms = Room.objects.select_related('building').annotate(
+            used_count=Count('bookings', filter=Q(bookings__status__in=USED_BOOKING_STATUSES)),
+        ).order_by('id')
         total_bookings = Booking.objects.filter(status__in=USED_BOOKING_STATUSES).count() or 1
         result = []
         for room in rooms:
-            cnt = Booking.objects.filter(room=room, status__in=USED_BOOKING_STATUSES).count()
+            cnt = room.used_count
             result.append({
                 'id':           room.id,
                 'name':         room.name,
