@@ -500,10 +500,15 @@ class TermBookingCreateSerializer(serializers.ModelSerializer):
             )
         # ต้องเหลือคาบอย่างน้อยหนึ่งครั้งตั้งแต่วันนี้ — เดิมจองกลางเทอมโดยวันที่เลือก
         # ตกแค่วันที่ผ่านไปแล้ว ได้คำขอที่ไม่มีผลอะไรให้แอดมินอนุมัติ
-        slot_changed = dates_changed or 'day_of_week' in data
-        first_day = max(term_start, timezone.localdate())
+        slot_changed = dates_changed or 'day_of_week' in data or 'start_time' in data
+        now_local = timezone.localtime()
+        first_day = max(term_start, now_local.date())
+        # คาบของวันนี้ที่เริ่มไปแล้วไม่นับ — เดิมนับเป็นคาบที่เหลือ จองเทอมที่มีแค่คาบ
+        # ที่ผ่านไปแล้วได้ และจองกลางเทอมได้วันเริ่มเป็นวันนี้แทนสัปดาห์หน้า
         upcoming = [first_day + timedelta(days=i) for i in range((term_end - first_day).days + 1)
-                    if (first_day + timedelta(days=i)).weekday() == day_of_week]
+                    if (first_day + timedelta(days=i)).weekday() == day_of_week
+                    and not (first_day + timedelta(days=i) == now_local.date()
+                             and start_time <= now_local.time())]
         if slot_changed and not upcoming:
             raise serializers.ValidationError(
                 'วันที่เลือกในช่วงเทอมนี้ผ่านไปหมดแล้ว ไม่เหลือคาบให้จอง กรุณาเลือกวันหรือช่วงเทอมใหม่'

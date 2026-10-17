@@ -203,8 +203,10 @@ class TokenAttackTests(AdvBase):
 
     def test_avatar_must_be_an_image(self):
         fake = SimpleUploadedFile('evil.png', b'<svg onload=alert(1)>', content_type='image/png')
-        r = self.client.patch('/api/auth/profile/', {'avatar': fake}, format='multipart')
-        self.assertEqual(r.status_code, 400)
+        self.client.patch('/api/auth/profile/', {'avatar': fake}, format='multipart')
+        # avatar อ่านอย่างเดียวแล้ว (UserSerializer) — ไฟล์ปลอมต้องไม่ถูกเก็บ
+        self.bot.refresh_from_db()
+        self.assertFalse(self.bot.avatar)
 
 
 # ── การยกเลิกในสถานะที่ไม่ควรทำได้ ─────────────────────────────────

@@ -363,3 +363,29 @@ class AuthorizationMatrixTests(QABase):
                     '/api/auth/profile/', '/api/dashboard/', '/api/forecasts/', '/api/rooms/today-feed/',
                     '/api/rooms/status-feed/', f'/api/rooms/{self.room.id}/availability/?date=2030-01-01'):
             self.assertEqual(self.client.get(url).status_code, 401, url)
+
+
+class TermTodayAlreadyPassedTests(QABase):
+    """จองทั้งเทอมวันนี้ คาบของวันนี้ที่เลยเวลาไปแล้วต้องไม่นับเป็นคาบที่เหลือ"""
+
+    def _post(self, start, end, term_end):
+        today = timezone.localdate()
+        return self.client.post('/api/term-bookings/', {
+            'room': self.room.id, 'subject_name': 'วิชาวันนี้', 'attendees': 5, 'day_of_week': today.weekday(),
+            'start_time': start, 'end_time': end, 'term_start': (today - timedelta(days=30)).isoformat(),
+            'term_end': term_end.isoformat()}, format='json')
+
+    def test_only_class_is_earlier_today_rejected(self):
+        now = timezone.localtime()
+        if now.hour < 1:
+            self.skipTest('ต้องมีช่วงเวลาที่ผ่านไปแล้วของวันนี้')
+        r = self._post('00:00', '00:30', timezone.localdate())
+        self.assertEqual(r.status_code, 400, r.data)
+
+    def test_mid_term_start_skips_class_already_over_today(self):
+        now = timezone.localtime()
+        if now.hour < 1:
+            self.skipTest('ต้องมีช่วงเวลาที่ผ่านไปแล้วของวันนี้')
+        r = self._post('00:00', '00:30', timezone.localdate() + timedelta(days=21))
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['term_start'], (timezone.localdate() + timedelta(days=7)).isoformat())
