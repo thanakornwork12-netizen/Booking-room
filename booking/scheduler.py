@@ -127,6 +127,22 @@ def send_booking_reminders():
             print(f'❌ ส่งแจ้งเตือนไม่สำเร็จ: {e}')
 
 
+def _with_fresh_connection(job):
+    """งานเบื้องหลังรันในเธรดของ scheduler ไม่ผ่าน request — ไม่มีใครปิด/ตรวจ
+    connection ให้ ถ้าฐานข้อมูลตัด connection ทิ้ง (Neon พัก compute, restart) งาน
+    จะพังทุกรอบไปจนรีสตาร์ทเซิร์ฟเวอร์ ปิดของเก่าก่อนและหลังทุกรอบแทน"""
+    from django.db import close_old_connections, connection
+
+    def run():
+        close_old_connections()
+        try:
+            return job()
+        finally:
+            connection.close()
+    run.__name__ = job.__name__
+    return run
+
+
 def start():
     # Avoid starting background jobs in ad-hoc management commands / scripts.
     # This prevents executor shutdown noise when forecast.py or shell imports Django.
@@ -146,11 +162,11 @@ def start():
     scheduler = BackgroundScheduler()
 
     from booking.config import REMINDER_CHECK_EVERY_MINUTES
-    scheduler.add_job(send_booking_reminders, 'interval', minutes=REMINDER_CHECK_EVERY_MINUTES)
+    scheduler.add_job(_with_fresh_connection(send_booking_reminders), 'interval', minutes=REMINDER_CHECK_EVERY_MINUTES)
     # ปิดช่วงซ่อมที่หมดเวลา และเปลี่ยนสถานะห้องเมื่อช่วงซ่อมเริ่ม/จบ
     from booking.config import MAINTENANCE_SYNC_EVERY_MINUTES
     from booking.maintenance import refresh_maintenance
-    scheduler.add_job(refresh_maintenance, 'interval', minutes=MAINTENANCE_SYNC_EVERY_MINUTES,
+    scheduler.add_job(_with_fresh_connection(refresh_maintenance), 'interval', minutes=MAINTENANCE_SYNC_EVERY_MINUTES,
                       next_run_time=timezone.now())
 
     scheduler.start()

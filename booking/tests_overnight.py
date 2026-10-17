@@ -389,3 +389,14 @@ class TermTodayAlreadyPassedTests(QABase):
         r = self._post('00:00', '00:30', timezone.localdate() + timedelta(days=21))
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data['term_start'], (timezone.localdate() + timedelta(days=7)).isoformat())
+
+
+class SchedulerConnectionTests(QABase):
+    def test_job_wrapper_runs_job_and_closes_connection(self):
+        from booking.scheduler import _with_fresh_connection
+        calls = []
+        with mock.patch('django.db.connection.close') as close:
+            wrapped = _with_fresh_connection(lambda: calls.append(1) or 'done')
+            self.assertEqual(wrapped(), 'done')
+        self.assertEqual(calls, [1])
+        close.assert_called()
