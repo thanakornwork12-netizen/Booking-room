@@ -396,6 +396,7 @@ class RoomListSerializer(serializers.ModelSerializer):
                 'term_demand':      float(f.term_demand),
                 'dynamic_demand':   float(f.dynamic_demand),
                 'confidence':       float(f.confidence),
+                'source':           f.source,
             }
 
         return {
@@ -740,7 +741,7 @@ class DemandForecastSerializer(serializers.ModelSerializer):
         model  = DemandForecast
         fields = ['id', 'room', 'forecast_date', 'hour',
                   'predicted_demand', 'demand_level', 'availability',
-                  'confidence', 'term_demand', 'dynamic_demand']
+                  'confidence', 'term_demand', 'dynamic_demand', 'source']
 
 
 # ============================================================

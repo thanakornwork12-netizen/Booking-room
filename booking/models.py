@@ -284,6 +284,12 @@ class DemandForecast(models.Model):
     demand_level     = models.CharField(max_length=10, choices=DEMAND_LEVEL_CHOICES, default='low')
     availability     = models.CharField(max_length=20, choices=AVAILABILITY_CHOICES, default='likely_available')
     confidence       = models.FloatField(default=0.0)
+    # ที่มาของผล — หน้าเว็บต้องบอกได้ว่าค่านี้มาจากแบบจำลองหรือจากสถิติ (ml/saved/serve_direct.py)
+    SOURCE_CHOICES = [
+        ('model',  'แบบจำลอง C'),
+        ('season', 'สถิติปีก่อน'),
+    ]
+    source           = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='model')
     term_demand      = models.FloatField(default=0.0)
     dynamic_demand   = models.FloatField(default=0.0)
     created_at       = models.DateTimeField(auto_now_add=True)

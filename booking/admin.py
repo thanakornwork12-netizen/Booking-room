@@ -93,8 +93,8 @@ class TermBookingAdmin(ImportExportModelAdmin):
 
 @admin.register(DemandForecast)
 class DemandForecastAdmin(ImportExportModelAdmin):
-    list_display = ['room', 'forecast_date', 'hour', 'demand_level', 'availability']
-    list_filter = ['forecast_date', 'demand_level']
+    list_display = ['room', 'forecast_date', 'hour', 'demand_level', 'availability', 'source']
+    list_filter = ['forecast_date', 'demand_level', 'source']
 
 @admin.register(BookingLog)
 class BookingLogAdmin(admin.ModelAdmin):

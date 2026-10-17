@@ -672,6 +672,8 @@ class RoomViewSet(viewsets.ModelViewSet):
                     'predicted_demand': round(avg_pred, 4), 'term_demand': round(avg_term, 4),
                     'dynamic_demand': round(avg_dyn, 4), 'confidence': round(avg_conf, 1),
                     'has_forecast': True,
+                    # มีชั่วโมงไหนมาจากสถิติปีก่อน — หน้าเว็บบอกผู้ใช้ว่าไม่ใช่ผลแบบจำลองล้วน
+                    'source': 'season' if any(f.source == 'season' for f in forecasts) else 'model',
                 }
             else:
                 room_data['forecast'] = {
