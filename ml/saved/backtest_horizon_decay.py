@@ -97,7 +97,8 @@ def main():
         cls = F.compute_classification_metrics(g['actual'].to_numpy(), g['band'].to_numpy() * r['scale'],
                                                r['thr_high'], r['thr_med'], r['peak'])
         per.append({'room': code, 'week': wk, 'n_days': len(g), 'accuracy': cls['accuracy'],
-                    'mae': float(np.mean(np.abs(g['actual'] - g['hours'])))})
+                    # hours จากแบบจำลองอยู่ในหน่วย /scale เหมือน test_direct_sets.py (p_hours = hours * scale)
+                    'mae': float(np.mean(np.abs(g['actual'] - g['hours'] * r['scale'])))})
     per = pd.DataFrame(per)
     per.to_csv(os.path.join(out_dir, 'by_room_week.csv'), index=False)
 
