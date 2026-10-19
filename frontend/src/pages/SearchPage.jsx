@@ -641,6 +641,87 @@ function SuggestedRoomCard({ room, onSelect, bookingType, attendees, selectedEqu
 }
 
 // ─── Main Layout ─────────────────────────────────────────────────────────────
+// เลือกห้องจากช่องค้นหาด้านบน → ให้เลือกช่วงเวลาที่ห้องนี้ว่างจริงก่อน
+// (เรียงช่วงที่ AI คาดว่าคนจองน้อยขึ้นก่อน) แทนที่จะเด้งไปหน้ายืนยันด้วยเวลา
+// ว่างเปล่าแล้วให้ผู้ใช้เดาเวลาเอง
+function RoomSlotPicker({ roomSlots, onDurationChange, onPick, onManual, accentBg }) {
+  const { room, duration, slots, loading } = roomSlots
+  return (
+    <div className="space-y-3 max-w-4xl">
+      <div className={`rounded-[26px] bg-gradient-to-r ${accentBg} p-4 sm:p-5 text-white shadow-xl shadow-blue-200/60`}>
+        <p className="text-xs font-semibold text-white/75">ช่วงเวลาแนะนำของห้อง</p>
+        <p className="mt-1 text-2xl font-bold break-words">{room.name}</p>
+        <p className="text-sm text-white/75">{room.building_name}{room.capacity ? ` · จุ ${room.capacity} คน` : ''}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-white/80 mr-1">ระยะเวลา</span>
+          {DURATIONS.map(d => (
+            <button
+              key={d.hours}
+              type="button"
+              onClick={() => onDurationChange(d.hours)}
+              className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ${duration === d.hours ? 'bg-white text-blue-700' : 'bg-white/15 hover:bg-white/25'}`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">กำลังหาช่วงเวลาที่ว่าง...</div>
+      ) : slots.length === 0 ? (
+        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center">
+          <p className="font-bold text-slate-900">ไม่มีช่วงว่างใน 7 วันข้างหน้า</p>
+          <p className="mt-1 text-sm text-slate-500">ลองลดระยะเวลา หรือเลือกวันและเวลาเอง</p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {slots.map((slot, index) => {
+            const cfg = FORECAST_CONFIG[slot.demand_level] || FORECAST_CONFIG.none
+            return (
+              <button
+                key={`${slot.date}-${slot.start_time}`}
+                type="button"
+                onClick={() => onPick(slot)}
+                className="group rounded-[22px] border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-blue-300 hover:shadow-md active:scale-[0.99]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-500">{formatDate(slot.date)}</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">{slot.start_time} - {slot.end_time} น.</p>
+                  </div>
+                  {index === 0 && (
+                    <span className="shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">แนะนำ</span>
+                  )}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  {slot.demand_level ? (
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${cfg.badgeCls}`}>
+                      <span className="h-2 w-2 rounded-full" style={{ background: cfg.dotColor }} />
+                      {cfg.badge}
+                    </span>
+                  ) : <span />}
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 group-hover:gap-2 transition-all">
+                    เลือก <ChevronRight size={15} />
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onManual}
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-700 transition-colors"
+      >
+        เลือกวันและเวลาเอง
+      </button>
+    </div>
+  )
+}
+
 function AppLayout({ step, setStep, navigate, location, bookingType, setBookingType, formProps, resultProps, confirmProps, onReset, embedded = false }) {
   const {
     attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration,
@@ -667,7 +748,7 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
     const err = validateCustomDuration(val, startTime)
     if (!err) setDuration(Number(val))
   }
-  const { rooms, setSelectedRoom, setSplitPlan, similarRooms, splitSuggestion } = resultProps
+  const { rooms, setSelectedRoom, setSplitPlan, similarRooms, splitSuggestion, roomSlots, loadRoomSlots, pickRoomSlot, pickSlotManually } = resultProps
   const { selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit } = confirmProps
 
   const isTermMode = bookingType === 'term'
@@ -1089,7 +1170,17 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                 </div>
               )}
 
-              {step === 2 && (
+              {step === 2 && roomSlots && (
+                <RoomSlotPicker
+                  roomSlots={roomSlots}
+                  onDurationChange={hours => loadRoomSlots(roomSlots.room, hours)}
+                  onPick={slot => { setCustomDurationMode(false); pickRoomSlot(slot) }}
+                  onManual={pickSlotManually}
+                  accentBg={accentBg}
+                />
+              )}
+
+              {step === 2 && !roomSlots && (
                 <div className="space-y-3 min-h-0">
                   <div className={`rounded-[26px] bg-gradient-to-r ${accentBg} p-3.5 sm:p-4 text-white shadow-xl shadow-blue-200/60`}>
                     <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
@@ -1402,6 +1493,40 @@ export default function SearchPage({ embedded = false }) {
   // แผนที่ผู้ใช้เลือก (splitPlan) จนกว่าจะกดเลือกเอง ดูคอมเมนต์ใน handleSearch
   const [splitSuggestion, setSplitSuggestion] = useState(null)
   const [equipmentPresets, setEquipmentPresets] = useState(FALLBACK_EQUIPMENT_PRESETS)
+  // ห้องที่เลือกจากช่องค้นหาด้านบน + ช่วงเวลาแนะนำของห้องนั้น (null = ผลค้นหาปกติ)
+  const [roomSlots, setRoomSlots] = useState(null)
+  const roomSlotsRequestRef = useRef(0)
+
+  const loadRoomSlots = async (room, hours) => {
+    const requestId = ++roomSlotsRequestRef.current
+    setRoomSlots({ room, duration: hours, slots: [], loading: true })
+    let slots = []
+    try {
+      const res = await api.get(`/rooms/${room.id}/recommended-slots/`, { params: { duration: hours } })
+      slots = res.data?.slots ?? []
+    } catch {
+      slots = []
+    }
+    // กดเปลี่ยนระยะเวลารัวๆ — ทิ้งผลของ request เก่าที่ตอบกลับมาทีหลัง
+    if (requestId !== roomSlotsRequestRef.current) return
+    setRoomSlots({ room, duration: hours, slots, loading: false })
+  }
+
+  const pickRoomSlot = (slot) => {
+    setBookingType('daily')
+    setSelectedRoom(roomSlots.room)
+    setDate(slot.date)
+    setStartTime(slot.start_time)
+    setDuration(slot.duration)
+    setStep(3)
+  }
+
+  // ไม่เอาช่วงที่แนะนำ — กลับไปฟอร์มค้นหา โดยล็อกอาคารของห้องนี้ไว้ให้
+  const pickSlotManually = () => {
+    if (roomSlots?.room?.building_code !== undefined) setBuilding(roomSlots.room.building_code || '')
+    setRoomSlots(null)
+    setStep(1)
+  }
 
   const onCancelSplit = () => { setSplitPlan(null); setStep(2) }
   const handleReset = () => {
@@ -1420,6 +1545,7 @@ export default function SearchPage({ embedded = false }) {
     setSimilarRooms([])
     setSplitPlan(null)
     setSplitSuggestion(null)
+    setRoomSlots(null)
     setError('')
   }
 
@@ -1486,6 +1612,17 @@ export default function SearchPage({ embedded = false }) {
 
       if (!active || !resolvedRoom) return
 
+      // เลือกห้องจากช่องค้นหาด้านบน (ไม่ได้มาพร้อมเวลาแบบฟีด "ห้องว่างวันนี้")
+      // → ให้เลือกช่วงเวลาที่แนะนำของห้องนี้ก่อน
+      if (!searchState.quickStartTime) {
+        setSelectedRoom(resolvedRoom)
+        setSplitPlan(null)
+        setStep(2)
+        loadRoomSlots(resolvedRoom, 1)
+        return
+      }
+
+      setRoomSlots(null)
       setRooms([resolvedRoom])
       setSimilarRooms([])
       setSplitPlan(null)
@@ -1637,7 +1774,7 @@ export default function SearchPage({ embedded = false }) {
     if (bookingType === 'term' && (!termStart || !termEnd)) { setError('กรุณาเลือกช่วงวันที่ของเทอม'); return }
     if (bookingType === 'term' && termStart >= termEnd) { setError('วันสิ้นสุดเทอมต้องหลังวันเริ่มเทอม'); return }
     if (bookingType === 'daily' && !date) { setError('กรุณาเลือกวันที่'); return }
-    setError(''); setLoading(true)
+    setError(''); setLoading(true); setRoomSlots(null)
     try {
       const payload = {
         attendees, start_time: startTime, end_time: endTime, building_code: building || undefined,
@@ -1722,7 +1859,7 @@ export default function SearchPage({ embedded = false }) {
       step={step} setStep={setStep} navigate={navigate} location={location.pathname}
       bookingType={bookingType} setBookingType={setBookingType}
       formProps={{ attendees, setAttendees, date, setDate, startTime, setStartTime, duration, setDuration, building, setBuilding, buildingQuery, setBuildingQuery, endTime, loading, handleSearch, error, selectedEquipments, setSelectedEquipments, equipmentPresets, buildings, termStart, setTermStart, termEnd, setTermEnd, applyAcademicTerm, academicYearBE, termNumber }}
-      resultProps={{ rooms, setSelectedRoom, setSplitPlan, similarRooms, splitSuggestion, setSplitSuggestion }}
+      resultProps={{ rooms, setSelectedRoom, setSplitPlan, similarRooms, splitSuggestion, setSplitSuggestion, roomSlots, loadRoomSlots, pickRoomSlot, pickSlotManually }}
       confirmProps={{ selectedRoom, title, setTitle, bookingLoading, handleBook, success, splitPlan, onCancelSplit }}
       onReset={handleReset}
       embedded={embedded}

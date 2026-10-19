@@ -112,3 +112,40 @@ class SearchValidationTests(QABase):
         now = timezone.localtime()
         if now.hour < 20:  # ฟีดจบที่เวลาปิดอาคาร
             self.assertIn(self.room.id, ids)
+
+
+class RoomSearchBoxTests(QABase):
+    """ช่องค้นหาห้องด้านบน: พิมพ์เลขห้อง → เลือกห้อง → เลือกช่วงเวลาที่แนะนำ"""
+
+    def test_digits_match_room_number_before_capacity(self):
+        # "209" ต้องเจอ 2C09 ก่อน ไม่ใช่ตีความเป็นจำนวนคนอย่างเดียว
+        r = self.client.get('/api/rooms/suggestions/?q=209')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data[0]['name'], '2C09')
+
+    def test_small_number_still_means_capacity(self):
+        r = self.client.get('/api/rooms/suggestions/?q=50')
+        self.assertEqual(r.data[0]['name'], '2C10-11')
+
+    def test_recommended_slots_skip_booked_and_are_bookable(self):
+        day = timezone.localdate() + timedelta(days=1)
+        Booking.objects.create(user=self.user_b, room=self.room, title='ติดแล้ว', attendees=5,
+                               start_time=aware(day, 8), end_time=aware(day, 12),
+                               status='approved')
+        r = self.client.get(f'/api/rooms/{self.room.id}/recommended-slots/?duration=2')
+        self.assertEqual(r.status_code, 200, r.data)
+        slots = r.data['slots']
+        self.assertTrue(slots)
+        for s in slots:
+            if s['date'] == str(day):
+                self.assertGreaterEqual(s['start_time'], '12:00', f'แนะนำช่วงที่ถูกจองแล้ว: {s}')
+        s = slots[0]
+        booked = self.client.post('/api/bookings/', {
+            'room': self.room.id, 'title': 'จองจากช่วงแนะนำ', 'attendees': 5,
+            'start_time': f"{s['date']}T{s['start_time']}:00", 'end_time': f"{s['date']}T{s['end_time']}:00",
+        }, format='json')
+        self.assertEqual(booked.status_code, 201, booked.data)
+
+    def test_recommended_slots_bad_params(self):
+        r = self.client.get(f'/api/rooms/{self.room.id}/recommended-slots/?duration=abc&limit=x')
+        self.assertEqual(r.status_code, 200)

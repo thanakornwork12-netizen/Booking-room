@@ -37,6 +37,10 @@ TODAY_FEED_DEFAULT_LIMIT = 5                 # ฟีด "ห้องว่า�
 SIMILAR_ROOMS_MAX = 8                        # แนะนำห้องใกล้เคียงได้มากสุดกี่ห้อง
 NEARBY_TIME_OFFSETS_MINUTES = (30, -30, 60, -60)  # ลองเลื่อนเวลาเดิมกี่นาที (ตามลำดับ)
 OTHER_DAY_OFFSETS = (1, 2, 3)                # ลองวันถัดไปกี่วัน เมื่อวันเดิมไม่มีห้อง
+RECOMMENDED_SLOT_HOURS = (8, 9, 10, 11, 13, 14, 15, 16)  # ช่วงเวลาเริ่มที่แนะนำ (ตรง TIME_SLOTS หน้าเว็บ)
+RECOMMENDED_SLOT_DAYS = 7                    # แนะนำช่วงเวลาของห้องเดียวล่วงหน้ากี่วัน
+RECOMMENDED_SLOTS_MAX = 6                    # ส่งช่วงเวลาแนะนำกลับกี่ช่วง
+RECOMMENDED_SLOTS_PER_DAY = 2                # แนะนำวันเดียวกันได้ไม่เกินกี่ช่วง (ไม่ให้กองวันเดียว)
 SPLIT_ROOMS_PER_HALF = 8                     # แผนจองสลับห้อง: ห้องที่พิจารณาต่อครึ่งเทอม
 SPLIT_SUGGESTIONS_MAX = 8                    # แผนจองสลับห้อง: ส่งกลับกี่แผน
 

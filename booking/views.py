@@ -1350,10 +1350,24 @@ class RoomViewSet(viewsets.ModelViewSet):
                     '_rank': level_rank.get(worst['demand_level'], 1) if worst else 1,
                 })
 
+        # ช่วงที่ว่างติดกันทั้งวันจะได้อันดับเท่ากันหมด ถ้าเอาแค่ top-N ตรงๆ จะได้
+        # ช่วงซ้อนกันของวันเดียว (08-10, 09-11, ...) — ไม่ให้ช่วงที่เลือกทับกันเอง
+        # และจำกัดวันละ RECOMMENDED_SLOTS_PER_DAY ให้มีตัวเลือกกระจายหลายวัน
         slots.sort(key=lambda s: (s['_rank'], s['date'], s['start_time']))
+        picked, per_day = [], defaultdict(list)
         for s in slots:
+            same_day = per_day[s['date']]
+            if len(same_day) >= config.RECOMMENDED_SLOTS_PER_DAY:
+                continue
+            if any(o['start_time'] < s['end_time'] and o['end_time'] > s['start_time'] for o in same_day):
+                continue
+            same_day.append(s)
+            picked.append(s)
+            if len(picked) >= limit:
+                break
+        for s in picked:
             del s['_rank']
-        return Response({'room_id': room.id, 'duration': duration, 'slots': slots[:limit]})
+        return Response({'room_id': room.id, 'duration': duration, 'slots': picked})
 
     @action(detail=False, methods=['get'], url_path='equipment-filters')
     def equipment_filters(self, request):
