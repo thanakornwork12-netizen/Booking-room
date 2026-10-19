@@ -1362,6 +1362,8 @@ class RoomViewSet(viewsets.ModelViewSet):
                 'status':       room.status,
                 'util_rate':    round(cnt / total_bookings, 4),
                 'booking_count': cnt,
+                # ห้องที่เปิดให้จองและมีผลพยากรณ์ — รีพอร์ตซ่อมบำรุง AI นับเฉพาะห้องเหล่านี้
+                'ai_forecast':  room.id in AI_FORECAST_ROOM_IDS,
             })
         return Response(result)
 

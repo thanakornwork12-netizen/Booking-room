@@ -1001,8 +1001,13 @@ function MaintenancePanel({ dashboard, adminRooms }) {
       const nextSlots = slotResult.status === 'fulfilled'
         ? (slotResult.value.data.slots || [])
         : []
+      // วิเคราะห์เฉพาะ 8 ห้องที่เปิดให้จองและมีผลพยากรณ์ — ห้องอื่นในฐานข้อมูล
+      // (แท็บสถานะห้องยังแสดงครบ) ไม่มีผลพยากรณ์ จึงไม่ควรนับรวมในรีพอร์ต AI
+      const aiRooms = adminRooms.filter(r => r.ai_forecast)
+      const aiRoomIds = new Set(aiRooms.map(r => String(r.id)))
       const usageStats = statsResult.status === 'fulfilled'
         ? (Array.isArray(statsResult.value.data) ? statsResult.value.data : [])
+            .filter(s => aiRoomIds.has(String(s.room_id)))
         : []
 
       if (statsResult.status === 'fulfilled') {
@@ -1025,7 +1030,7 @@ function MaintenancePanel({ dashboard, adminRooms }) {
 
       setSlots(nextSlots)
       setReport(buildMaintenanceInsights({
-        adminRooms,
+        adminRooms: aiRooms,
         usageStats,
         dashboard,
         slots: nextSlots,
@@ -1038,7 +1043,7 @@ function MaintenancePanel({ dashboard, adminRooms }) {
       }
     } catch {
       setReport(buildMaintenanceInsights({
-        adminRooms,
+        adminRooms: adminRooms.filter(r => r.ai_forecast),
         usageStats: [],
         dashboard,
         slots: [],
