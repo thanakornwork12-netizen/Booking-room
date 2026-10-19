@@ -305,7 +305,12 @@ class BuildingViewSet(viewsets.ModelViewSet):
         # หน้าค้นหาห้องเพื่อจองจริงจะเห็นอาคารที่ไม่มีห้องให้จองเลยสักห้องไปด้วย
         # (แต่ยังต้องเห็นครบ 16 อาคารตอนจัดการ inventory ในหน้าแอดมิน)
         if self.request.query_params.get('bookable_only') == 'true':
-            qs = qs.filter(rooms__id__in=AI_FORECAST_ROOM_IDS, rooms__is_active=True).distinct()
+            # ปุ่มกรองอาคารแสดงเฉพาะอาคารที่มีห้องให้จองตั้งแต่ 2 ห้อง — อาคารที่มีห้องเดียว
+            # (ตึกอธิการบดีหลังใหม่ มีแค่ 1C-MEETING) กรองแล้วได้ห้องเดียวซึ่งไม่ช่วยเลือก
+            # ห้องนั้นยังขึ้นในผลค้นหาเมื่อเลือก "ทั้งหมด"
+            qs = qs.annotate(bookable_room_count=Count(
+                'rooms', filter=Q(rooms__id__in=AI_FORECAST_ROOM_IDS, rooms__is_active=True), distinct=True,
+            )).filter(bookable_room_count__gte=2)
         return qs
 
     def get_permissions(self):
@@ -505,15 +510,25 @@ class RoomViewSet(viewsets.ModelViewSet):
         if not q:
             picked = rooms[:limit]
         elif q.isdigit():
-            # พิมพ์ตัวเลขล้วนๆ (เช่น "40") หมายถึงจำนวนคน ไม่ใช่ชื่อห้อง — แนะนำ
-            # ห้องที่จุพอ เรียงจากพอดีที่สุดไปหาใหญ่กว่า ถ้าไม่มีห้องไหนจุพอเลย
-            # ก็แนะนำห้องที่จุได้มากที่สุดแทน ดีกว่าไม่ขึ้นอะไรเลย
+            # ตัวเลขล้วนๆ อาจเป็นเลขห้องที่พิมพ์แบบไม่ใส่ตัวอักษร ("405" → 4C05)
+            # หรือจำนวนคน ("40") — ห้องที่เลขในชื่อตรงกันขึ้นก่อน (ขึ้นต้นด้วยเลข
+            # ที่พิมพ์ชนะแค่มีอยู่ในชื่อ) แล้วต่อด้วยห้องที่จุพอ เรียงจากพอดีที่สุด
+            # ไปหาใหญ่กว่า ถ้าไม่มีห้องไหนจุพอเลยก็แนะนำห้องที่จุได้มากที่สุดแทน
+            def name_digits(room):
+                return re.sub(r'\D', '', room.name or '')
+
+            name_hits = sorted(
+                (r for r in rooms if q in name_digits(r)),
+                key=lambda r: (not name_digits(r).startswith(q), len(name_digits(r)), r.name),
+            )
             target_capacity = int(q)
             fitting = sorted(
                 (r for r in rooms if r.capacity >= target_capacity),
                 key=lambda r: (r.capacity - target_capacity, r.name),
             )
-            picked = fitting[:limit] if fitting else sorted(rooms, key=lambda r: -r.capacity)[:limit]
+            by_capacity = fitting or sorted(rooms, key=lambda r: -r.capacity)
+            hit_ids = {r.id for r in name_hits}
+            picked = (name_hits + [r for r in by_capacity if r.id not in hit_ids])[:limit]
         else:
             scored = []
             for room in rooms:
@@ -1259,6 +1274,86 @@ class RoomViewSet(viewsets.ModelViewSet):
                 'hour', 'demand_level', 'availability', 'predicted_demand', 'term_demand', 'dynamic_demand'
             )),
         })
+
+    @action(detail=True, methods=['get'], url_path='recommended-slots')
+    def recommended_slots(self, request, pk=None):
+        """ช่วงเวลาที่แนะนำให้จองของห้องเดียว — ใช้ตอนเลือกห้องจากช่องค้นหาด้านบน
+        ให้ผู้ใช้เลือกเวลาที่ห้องนี้ว่างจริงได้เลย แทนที่จะต้องเดาวัน/เวลาเอง
+
+        ไล่ดูช่วงเวลามาตรฐาน (config.RECOMMENDED_SLOT_HOURS) ของ
+        config.RECOMMENDED_SLOT_DAYS วันข้างหน้า ตัดช่วงที่ผ่านไปแล้ว/ชนการจอง/
+        ซ่อมบำรุง/คาบเรียนออก แล้วเรียงช่วงที่ AI คาดว่าคนจองน้อยก่อน (ใช้ระดับ
+        ที่แย่ที่สุดในทุกชั่วโมงของช่วงนั้น) เสมอกันค่อยเอาวันที่เร็วกว่าขึ้นก่อน
+
+        ?duration=ชั่วโมง (1-3, default 1) ?limit=N (default 6, สูงสุด 20)"""
+        room = self.get_object()
+        try:
+            duration = max(1, min(int(request.query_params.get('duration', 1)), 3))
+        except (TypeError, ValueError):
+            duration = 1
+        try:
+            limit = max(1, min(int(request.query_params.get('limit', config.RECOMMENDED_SLOTS_MAX)), 20))
+        except (TypeError, ValueError):
+            limit = config.RECOMMENDED_SLOTS_MAX
+
+        now = timezone.localtime()
+        first_day = now.date()
+        days = [first_day + timedelta(days=i) for i in range(config.RECOMMENDED_SLOT_DAYS)]
+        range_start = timezone.make_aware(datetime.combine(first_day, time_type(0, 0)))
+        range_end = range_start + timedelta(days=config.RECOMMENDED_SLOT_DAYS)
+
+        busy = list(Booking.objects.filter(
+            room=room, status__in=ACTIVE_BOOKING_STATUSES,
+            start_time__lt=range_end, end_time__gt=range_start,
+        ).values_list('start_time', 'end_time'))
+        busy += list(MaintenanceBlock.objects.filter(
+            room=room, status__in=['scheduled', 'active'],
+            start_time__lt=range_end, end_time__gt=range_start,
+        ).values_list('start_time', 'end_time'))
+        terms = list(TermBooking.objects.filter(
+            room=room, status__in=TERM_BLOCKING_STATUSES,
+            term_start__lte=days[-1], term_end__gte=first_day,
+        ).values_list('day_of_week', 'term_start', 'term_end', 'start_time', 'end_time'))
+        for d in days:
+            for dow, t_start, t_end, s, e in terms:
+                if dow == d.weekday() and t_start <= d <= t_end:
+                    busy.append((timezone.make_aware(datetime.combine(d, s)),
+                                 timezone.make_aware(datetime.combine(d, e))))
+
+        forecasts = {
+            (f['forecast_date'], f['hour']): f
+            for f in room.forecasts.filter(forecast_date__in=days).values(
+                'forecast_date', 'hour', 'demand_level', 'availability', 'predicted_demand')
+        }
+        level_rank = {'low': 0, 'medium': 2, 'urgent': 3}  # ไม่มีพยากรณ์ = 1 อยู่กลางๆ
+
+        closing_hour = config.BUILDING_CLOSING_TIME.hour
+        slots = []
+        for d in days:
+            for hour in config.RECOMMENDED_SLOT_HOURS:
+                if hour + duration > closing_hour:
+                    continue
+                start_dt = timezone.make_aware(datetime.combine(d, time_type(hour, 0)))
+                end_dt = start_dt + timedelta(hours=duration)
+                if start_dt <= now or any(s < end_dt and e > start_dt for s, e in busy):
+                    continue
+                hour_forecasts = [forecasts.get((d, h)) for h in range(hour, hour + duration)]
+                worst = max(hour_forecasts, key=lambda f: level_rank.get(f['demand_level'], 1) if f else 1)
+                slots.append({
+                    'date': d.isoformat(),
+                    'start_time': f'{hour:02d}:00',
+                    'end_time': f'{hour + duration:02d}:00',
+                    'duration': duration,
+                    'demand_level': worst['demand_level'] if worst else None,
+                    'availability': worst['availability'] if worst else None,
+                    'predicted_demand': worst['predicted_demand'] if worst else None,
+                    '_rank': level_rank.get(worst['demand_level'], 1) if worst else 1,
+                })
+
+        slots.sort(key=lambda s: (s['_rank'], s['date'], s['start_time']))
+        for s in slots:
+            del s['_rank']
+        return Response({'room_id': room.id, 'duration': duration, 'slots': slots[:limit]})
 
     @action(detail=False, methods=['get'], url_path='equipment-filters')
     def equipment_filters(self, request):
