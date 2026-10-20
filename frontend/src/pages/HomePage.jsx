@@ -20,6 +20,23 @@ const supportInfo = {
   copyright: 'สงวนลิขสิทธิ์ พ.ศ. 2556 ตามพระราชบัญญัติลิขสิทธิ์ 2537',
 }
 
+// ฟีด "ห้องว่างวันนี้" ต้องให้เวลาพอสำหรับผู้ใช้กดเข้าหน้ายืนยัน ไม่เสนอ
+// นาทีปัจจุบันที่อาจกลายเป็นอดีตระหว่างเปลี่ยนหน้า เช่น 14:32 → 15:00
+const nextBookableHour = (now = new Date()) => {
+  if (now.getHours() >= 23) return null
+  return `${String(now.getHours() + 1).padStart(2, '0')}:00`
+}
+
+const prepareTodayFeedRoom = (room) => {
+  const earliestStart = nextBookableHour()
+  const start = earliestStart && room.available_from < earliestStart
+    ? earliestStart
+    : room.available_from
+  const pickedHours = pickRandomFittingDuration(start, room.available_until)
+  // ถ้าการปัดไปต้นชั่วโมงทำให้เหลือไม่ครบ 1 ชม. ห้ามแสดงการ์ดที่จองไม่ได้
+  return pickedHours ? { ...room, available_from: start, pickedHours } : null
+}
+
 const normalizeDisplayName = (values) => {
   const candidates = Array.isArray(values) ? values : [values]
   const titlePattern = /^(นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ว่าที่ร\.ต\.|ดร\.|ผศ\.|รศ\.|ศ\.)\s*/i
@@ -554,10 +571,11 @@ export default function HomePage() {
       setTermBookings((Array.isArray(t.data) ? t.data : (t.data.results || [])).filter(tb => tb.status !== 'cancelled'))
       // สุ่มระยะเวลาแนะนำต่อห้องแค่ครั้งเดียวตอนโหลด ไม่ใช่ตอน render การ์ด —
       // ดู pickRandomFittingDuration ใน utils/booking.js ว่าทำไมต้องสุ่มตรงนี้
-      const feedRooms = (Array.isArray(feed.data) ? feed.data : []).map(room => ({
-        ...room,
-        pickedHours: pickRandomFittingDuration(room.available_from, room.available_until),
-      }))
+      // ป้องกัน API ที่ยัง deploy ไม่ทันและส่ง 14:32 มา: หน้าเว็บปัดเป็น 15:00
+      // เองด้วย เพื่อไม่ให้ปุ่มจองส่งเวลาอดีตไปยัง backend
+      const feedRooms = (Array.isArray(feed.data) ? feed.data : [])
+        .map(prepareTodayFeedRoom)
+        .filter(Boolean)
       setTodayFeed(feedRooms)
       // คู่มือเด้งแค่ครั้งแรกที่เข้าเว็บ — จำไว้ทันทีที่แสดง ไม่ใช่ตอนกด "ข้าม"/
       // "เริ่มใช้งาน" เดิมรีเฟรชหรือกดเมนูออกไประหว่างที่คู่มือเปิดอยู่ คู่มือเด้งซ้ำ
@@ -591,17 +609,17 @@ export default function HomePage() {
         setQuickBookingError('ห้องนี้ไม่มีช่วงเวลาที่จองได้อย่างน้อย 1 ชั่วโมงในวันนี้แล้ว กรุณาเลือกห้องอื่น')
         return
       }
-      const duration = pickRandomFittingDuration(currentRoom.available_from, currentRoom.available_until)
-      if (!duration) {
+      const bookableRoom = prepareTodayFeedRoom(currentRoom)
+      if (!bookableRoom) {
         setQuickBookingError('ห้องนี้ไม่มีช่วงเวลาว่างครบ 1 ชั่วโมงในวันนี้แล้ว กรุณาเลือกห้องอื่น')
         return
       }
       navigate('/search', {
         state: {
-          quickRoom: currentRoom,
-          quickStartTime: currentRoom.available_from,
-          quickAvailableUntil: currentRoom.available_until,
-          quickDuration: duration,
+          quickRoom: bookableRoom,
+          quickStartTime: bookableRoom.available_from,
+          quickAvailableUntil: bookableRoom.available_until,
+          quickDuration: bookableRoom.pickedHours,
         },
       })
     } catch {
