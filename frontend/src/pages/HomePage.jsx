@@ -534,6 +534,7 @@ export default function HomePage() {
   const [showTutorial, setShowTutorial] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [todayFeed, setTodayFeed] = useState([])
+  const [quickBookingError, setQuickBookingError] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -577,6 +578,35 @@ export default function HomePage() {
       // login ให้งงว่า "ยืนยันสิทธิ์ผ่านแล้วแต่เข้าไม่ได้"
       setLoadError(true)
     } finally { setLoading(false) }
+  }
+
+  // ฟีดอาจเปิดทิ้งไว้จนเวลาที่การ์ดเคยแสดงผ่านไปแล้ว จึงอ่านช่วงว่างล่าสุด
+  // ก่อนพาไปยืนยันทุกครั้ง ไม่ส่งเวลาเก่าที่ backend จะปฏิเสธว่าเป็นอดีต
+  const bookTodayFeedRoom = async (room) => {
+    setQuickBookingError('')
+    try {
+      const res = await api.get('/rooms/today-feed/', { params: { limit: 0 } })
+      const currentRoom = (Array.isArray(res.data) ? res.data : []).find(item => item.id === room.id)
+      if (!currentRoom) {
+        setQuickBookingError('ห้องนี้ไม่มีช่วงเวลาที่จองได้อย่างน้อย 1 ชั่วโมงในวันนี้แล้ว กรุณาเลือกห้องอื่น')
+        return
+      }
+      const duration = pickRandomFittingDuration(currentRoom.available_from, currentRoom.available_until)
+      if (!duration) {
+        setQuickBookingError('ห้องนี้ไม่มีช่วงเวลาว่างครบ 1 ชั่วโมงในวันนี้แล้ว กรุณาเลือกห้องอื่น')
+        return
+      }
+      navigate('/search', {
+        state: {
+          quickRoom: currentRoom,
+          quickStartTime: currentRoom.available_from,
+          quickAvailableUntil: currentRoom.available_until,
+          quickDuration: duration,
+        },
+      })
+    } catch {
+      setQuickBookingError('ตรวจสอบเวลาว่างล่าสุดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -769,25 +799,7 @@ export default function HomePage() {
                 return (
                 <button
                   key={room.id}
-                  onClick={() => navigate('/search', {
-                    state: {
-                      quickRoom: room,
-                      // ห้องอาจว่างช่วงบ่ายไม่ใช่ตอนนี้ — ต้องส่งเวลาที่ห้องจะ
-                      // ว่างจริง (available_from) ไม่ใช่นาฬิกา ณ ขณะกดเสมอไป
-                      // ไม่งั้นฟอร์มจะตั้งเวลาเริ่มเป็น "ตอนนี้" ทั้งที่ห้องยังไม่
-                      // ว่าง กดจองแล้วชนกับที่กำลังใช้อยู่ตอนนี้แน่ๆ
-                      quickStartTime: room.available_from,
-                      // การ์ดนี้โฆษณาว่าห้องว่างถึง room.available_until — ฟอร์ม
-                      // จองต้องตั้ง default duration ให้สอดคล้องกับที่โฆษณาไว้ด้วย
-                      // ไม่งั้นจะเห็นเวลาอีกค่าที่ไม่เกี่ยวกันเลย (ค่า default เดิม
-                      // ตายตัว 1 ชม. ไม่ได้อิงกับ available_until เลย)
-                      quickAvailableUntil: room.available_until,
-                      // ส่ง duration ที่สุ่มไว้แล้วไปด้วย ไม่งั้นหน้าค้นหาจะคำนวณ
-                      // ยาวสุดที่พอดีใหม่เอง (pickFittingDuration) ทำให้ตัวเลขที่
-                      // โฆษณาไว้ในการ์ดกับที่ได้จริงหลังกดไม่ตรงกัน
-                      quickDuration: room.pickedHours,
-                    },
-                  })}
+                  onClick={() => bookTodayFeedRoom(room)}
                   className="w-48 shrink-0 rounded-2xl border border-slate-100 bg-white p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
                 >
                   <div className={`flex items-center gap-1.5 text-[10px] font-bold ${isAvailableNow ? 'text-emerald-600' : 'text-blue-600'}`}>
@@ -799,7 +811,7 @@ export default function HomePage() {
                   {room.available_from && bookUntil && (
                     <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600">
                       <Clock size={11} />
-                      {isAvailableNow ? `กดจองได้ถึง ${bookUntil} น.` : `จอง ${room.available_from}–${bookUntil} น.`}
+                      {`จอง ${room.available_from}–${bookUntil} น.`}
                     </p>
                   )}
                   {minutesLeft != null && minutesLeft > 0 && (
@@ -815,6 +827,9 @@ export default function HomePage() {
                 )
               })}
             </div>
+            )}
+            {quickBookingError && (
+              <p className="mt-2 text-xs font-medium text-rose-600">{quickBookingError}</p>
             )}
         </section>
 

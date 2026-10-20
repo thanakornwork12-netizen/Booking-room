@@ -939,6 +939,11 @@ class RoomViewSet(viewsets.ModelViewSet):
         คำนวณทีเดียวหลายห้อง (3 query รวม แทนที่จะเป็น 3 query ต่อห้อง — กัน N+1
         ตอนฟีดมีหลายห้อง) คืนค่าเป็น dict {room_id: (from_time, until_time) | None}"""
         now_dt = timezone.localtime()
+        # ฟีดนี้เป็นปุ่ม "จองด่วน" ไม่ใช่แค่สถานะห้องว่าง จึงอย่าเสนอให้เริ่ม
+        # ทันทีที่นาทีปัจจุบัน เช่น 14:27–15:27 เพราะกว่าจะกดถึงหน้ายืนยันเวลา
+        # อาจผ่านไปแล้วและ serializer จะปฏิเสธการจอง ให้เริ่มต้นชั่วโมงถัดไป
+        # เสมอ: ณ 14:27 จะได้ 15:00 เป็นช่วงแรกที่เสนอจองได้
+        bookable_from_dt = (now_dt + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         day_start_dt = timezone.make_aware(datetime.combine(target_date, time_type(0, 0)))
         day_end_dt = timezone.make_aware(datetime.combine(target_date, max(config.BUILDING_CLOSING_TIME, now_time)))
         next_day_start_dt = day_start_dt + timedelta(days=1)
@@ -984,8 +989,9 @@ class RoomViewSet(viewsets.ModelViewSet):
                 else:
                     merged.append((s, e))
 
-            # เดินไล่จาก "ตอนนี้" ผ่านช่วงที่ถูกจองแต่ละช่วง จนเจอช่องว่างแรก
-            cursor = now_dt
+            # เดินไล่จากต้นชั่วโมงถัดไปผ่านช่วงที่ถูกจองแต่ละช่วง จนเจอช่องว่าง
+            # แรก จึงไม่มีทางคืนเวลาเริ่มที่อยู่ในอดีตหรือใกล้เกินกว่าจะกดยืนยัน
+            cursor = bookable_from_dt
             window = None
             for s, e in merged:
                 if e <= cursor:
