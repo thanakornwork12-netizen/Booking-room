@@ -91,21 +91,51 @@ ACC_TOLERANCE = 0.003
 # result for A could not be attributed to either one. Holding the distance fixed
 # leaves step size as the single variable.
 #
-# 'lr' overrides the learning_rate in the grid entry and is applied to BOTH
-# engines. The grid itself is left alone so it stays a record of the sweep that
-# was actually measured (see the comments in train_direct.LGB_GRID).
+# ══════════════════════════════════════════════════════════════════════════════
+# ที่เดียวสำหรับแก้ hyperparameter ของชุด A–D (ค่าในสไลด์/เล่ม)
+#   rounds = จำนวนรอบ, lr = learning rate (ใช้กับทั้งสองโมเดล)
+#   lgb    = LightGBM (num_leaves = Leaves, reg_lambda = Reg Lambda)
+#   xgb    = XGBoost  (max_depth = Depth,   reg_lambda = Reg Lambda)
+# grid_key บอกแค่ว่าค่าชุดนี้คัดลอกมาจากแถวไหนของ train_direct.LGB_GRID /
+# XGB_GRID (บันทึกการ sweep เดิม) — แก้ที่นั่นไม่มีผลกับชุด A–D แล้ว
+# แก้ค่าแล้วต้องเทรนใหม่ และอัปเดตตาราง/กราฟที่อ้างค่าเหล่านี้ทุกที่
+# ══════════════════════════════════════════════════════════════════════════════
 SETS = {
-    'A': {'name': 'A - Fast', 'grid_key': 'A_fast', 'rounds': 300, 'lr': 0.08},
-    'B': {'name': 'B - Balanced', 'grid_key': 'C_highqual', 'rounds': 600, 'lr': 0.04},
-    'C': {'name': 'C - Wide', 'grid_key': 'E_reg_wide', 'rounds': 1200, 'lr': 0.02},
+    'A': {'name': 'A - Fast', 'grid_key': 'A_fast', 'rounds': 300, 'lr': 0.08,
+          'lgb': dict(num_leaves=15, min_child_samples=35, subsample=0.85, subsample_freq=1,
+                      colsample_bytree=0.80, reg_alpha=0.3, reg_lambda=0.6),
+          'xgb': dict(max_depth=3, min_child_weight=5, subsample=0.85,
+                      colsample_bytree=0.80, reg_alpha=0.3, reg_lambda=0.6)},
+    'B': {'name': 'B - Balanced', 'grid_key': 'C_highqual', 'rounds': 600, 'lr': 0.04,
+          'lgb': dict(num_leaves=31, min_child_samples=45, subsample=0.85, subsample_freq=1,
+                      colsample_bytree=0.75, reg_alpha=0.7, reg_lambda=1.2),
+          'xgb': dict(max_depth=5, min_child_weight=10, subsample=0.85,
+                      colsample_bytree=0.75, reg_alpha=0.7, reg_lambda=1.2)},
+    'C': {'name': 'C - Wide', 'grid_key': 'E_reg_wide', 'rounds': 1200, 'lr': 0.02,
+          'lgb': dict(num_leaves=47, min_child_samples=70, subsample=0.75, subsample_freq=1,
+                      colsample_bytree=0.65, reg_alpha=2.0, reg_lambda=3.5),
+          'xgb': dict(max_depth=6, min_child_weight=20, subsample=0.75,
+                      colsample_bytree=0.65, reg_alpha=2.0, reg_lambda=3.5)},
     # A-C never overfit: their calibration curves rise then go flat, so the
     # A/B/C comparison stops because the grid stopped, not because the models
     # saturated -- which is not a result anything can be concluded from. D is
     # the probe for the ceiling: loose regularisers, far more capacity, finer
     # steps (see the H_lowreg note in train_direct.LGB_GRID). A calibration
     # curve that turns DOWN here is the citable stopping point.
-    'D': {'name': 'D - Overfit probe', 'grid_key': 'H_lowreg', 'rounds': 2400, 'lr': 0.01},
+    'D': {'name': 'D - Overfit probe', 'grid_key': 'H_lowreg', 'rounds': 2400, 'lr': 0.01,
+          'lgb': dict(num_leaves=127, min_child_samples=20, subsample=0.85, subsample_freq=1,
+                      colsample_bytree=0.85, reg_alpha=0.5, reg_lambda=0.5),
+          'xgb': dict(max_depth=9, min_child_weight=3, subsample=0.85,
+                      colsample_bytree=0.85, reg_alpha=0.5, reg_lambda=0.5)},
 }
+_ENGINE_KEY = {'lightgbm': 'lgb', 'xgboost': 'xgb'}
+
+
+def set_params(spec, engine):
+    """พารามิเตอร์ของชุดนี้สำหรับ engine ที่ระบุ พร้อม learning rate ของชุด"""
+    params = dict(spec[_ENGINE_KEY[engine]])
+    params['learning_rate'] = spec['lr']
+    return params
 
 SAVED_DIR = os.path.join(TD.BASE_DIR, 'ml', 'saved')
 MODEL_ROOT = os.path.join(SAVED_DIR, 'saved_direct_sets')
@@ -350,9 +380,7 @@ def main():
               f"\n{'=' * 78}", flush=True)
         results = {}
         for engine in engines:
-            params = dict(TD.ENGINES[engine]['grid'][spec['grid_key']])
-            if spec.get('lr'):
-                params['learning_rate'] = spec['lr']
+            params = set_params(spec, engine)
             print(f"\n   [{engine}]", flush=True)
             models = TD.fit_config(engine, params, train[0], train[1], rounds_budget)
             res = scan(engine, models, train, calib, data, rounds_budget)

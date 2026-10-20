@@ -147,8 +147,7 @@ def train_main():
               f"({budget} rounds x lr {spec['lr']})\n{'=' * 78}", flush=True)
         results = {}
         for engine in TD.ENGINES:
-            params = dict(TD.ENGINES[engine]['grid'][spec['grid_key']])
-            params['learning_rate'] = spec['lr']
+            params = TS.set_params(spec, engine)
             print(f"\n   [{engine}]", flush=True)
             models = TD.fit_config(engine, params, train[0], train[1], budget)
             res = TS.scan(engine, models, train, calib, data, budget)

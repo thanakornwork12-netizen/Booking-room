@@ -114,8 +114,7 @@ def main():
             print(f"\n  SET {spec['name']}  ({budget} rounds x lr {spec['lr']})", flush=True)
             res = {}
             for engine in TD.ENGINES:
-                params = dict(TD.ENGINES[engine]['grid'][spec['grid_key']])
-                params['learning_rate'] = spec['lr']
+                params = TS.set_params(spec, engine)
                 print(f'   [{engine}] fitting...', flush=True)
                 models = TD.fit_config(engine, params, train[0], train[1], budget)
                 res[engine] = scan_calib(engine, models, calib, data, budget)

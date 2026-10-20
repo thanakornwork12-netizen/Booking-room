@@ -145,8 +145,8 @@ python manage.py test booking --noinput
 | `QUANTILES` | [ml/saved/direct_forecast.py:62](ml/saved/direct_forecast.py#L62) | `(0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95)` | quantile ที่โมเดลทำนาย |  |
 | `CALIB_FRACTION` | [ml/saved/direct_forecast.py:63](ml/saved/direct_forecast.py#L63) | `0.125` | สัดส่วนข้อมูล calibration |  |
 | `ROOM_IDS` | [ml/saved/direct_forecast.py:65](ml/saved/direct_forecast.py#L65) | `{...8 ห้อง}` | ห้องที่โมเดล direct เทรน (ชื่อ → id) | ต้องตรงกับ `AI_FORECAST_ROOM_IDS` ใน booking/config.py |
-| `SETS` | [ml/saved/train_direct_sets.py:97](ml/saved/train_direct_sets.py#L97) | `{...}` | ชุด A–D ของโมเดล direct (rounds × lr = 24 เท่ากันทุกชุด) | แก้ rounds ต้องแก้ lr ให้คูณได้เท่าเดิม |
-| `LGB_GRID / XGB_GRID` | [ml/saved/train_direct.py:85](ml/saved/train_direct.py#L85) | `{...}` | รายละเอียดต้นไม้ของแต่ละ grid_key ที่ SETS อ้างถึง | XGB_GRID อยู่ต่อจากนี้ |
+| `SETS` | [ml/saved/train_direct_sets.py:103](ml/saved/train_direct_sets.py#L103) | `{...}` | **hyperparameter ชุด A–D ครบในที่เดียว** (ตามสไลด์/เล่ม): rounds, lr และค่าต้นไม้ `lgb` / `xgb` ของแต่ละชุด (rounds × lr = 24 เท่ากันทุกชุด) | แก้ rounds ต้องแก้ lr ให้คูณได้เท่าเดิม แล้วเทรนใหม่ + สร้างตาราง/กราฟใหม่ |
+| `LGB_GRID / XGB_GRID` | [ml/saved/train_direct.py:85](ml/saved/train_direct.py#L85) | `{...}` | grid ที่ใช้ sweep ใน train_direct.py เท่านั้น — ชุด A–D คัดลอกค่าไปไว้ใน `SETS` แล้ว แก้ที่นี่ไม่มีผลกับ A–D | XGB_GRID อยู่ต่อจากนี้ |
 | `N_ESTIMATORS` | [ml/saved/train_direct.py:72](ml/saved/train_direct.py#L72) | `1200` | จำนวนต้นไม้สูงสุดของ train_direct.py |  |
 
 ## ค่าที่ต้องแก้คู่กัน
