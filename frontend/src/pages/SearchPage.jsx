@@ -152,21 +152,6 @@ const termDowFromStart = (startStr) => {
   return (js + 6) % 7
 }
 
-// จำนวนคาบจริงในช่วงที่เลือก — คาบแรกคือวันเริ่มเทอม แล้วซ้ำทุก 7 วัน
-const countTermSessions = (startStr, endStr) => {
-  if (!startStr || !endStr) return 0
-  const s = new Date(`${startStr}T00:00:00`)
-  const e = new Date(`${endStr}T00:00:00`)
-  // ต้องเช็คผ่าน getTime() — Number.isNaN(dateObject) เป็น false เสมอ
-  // (ไม่มีการ coerce) การเช็คตรงๆ จึงไม่เคยจับ invalid date ได้เลย
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0
-  // ต้องมากกว่า ไม่ใช่ >= : ทั้ง handleSearch และ serializer ฝั่ง backend
-  // ปฏิเสธ term_start >= term_end ถ้านับ 1 คาบตรงนี้ กล่องสรุปจะโฆษณา
-  // "รวม 1 คาบ" ทั้งที่กดค้นหาแล้วจะโดน error
-  if (e <= s) return 0
-  return Math.floor((e - s) / (7 * 24 * 60 * 60 * 1000)) + 1
-}
-
 // คาบแรกที่จะจองได้จริง — จองกลางเทอม backend เลื่อนวันเริ่มมาเป็นคาบแรกที่ยัง
 // ไม่ผ่าน (TermBookingCreateSerializer) เดิมหน้าเว็บยังโชว์วันเปิดเทอม (1 มิ.ย.)
 // และนับคาบที่ผ่านไปแล้วรวมด้วย ผู้ใช้เข้าใจว่าจองไว้ตั้งแต่ต้นเทอม
@@ -182,17 +167,6 @@ const firstUpcomingSession = (startStr, endStr) => {
 }
 // วันเริ่มที่ใช้แสดงผล: คาบแรกที่ยังไม่ผ่าน ถ้าไม่มีก็ใช้วันที่เลือกไว้
 const displayTermStart = (startStr, endStr) => firstUpcomingSession(startStr, endStr) || startStr
-
-// วันที่ของคาบสุดท้ายที่เกิดขึ้นจริง (อาจก่อนวันสิ้นสุดเทอมที่เลือกไว้)
-// ประกอบสตริงจากค่า local เอง ห้ามใช้ toISOString() เพราะมันแปลงเป็น UTC
-// ก่อน (ไทย UTC+7) แล้ววันที่จะร่นไป 1 วัน
-const lastTermSessionDate = (startStr, endStr) => {
-  const n = countTermSessions(startStr, endStr)
-  if (!n) return null
-  const d = new Date(`${startStr}T00:00:00`)
-  d.setDate(d.getDate() + (n - 1) * 7)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 const ACADEMIC_TERM_META = {
   1: { label: 'ภาคเรียนที่ 1', short: 'เทอม 1', period: 'มิ.ย. – ต.ค.' },
@@ -732,12 +706,6 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
 
   // วันในสัปดาห์/จำนวนคาบ ล้วนคำนวณจากช่วงวันที่ที่เลือก ไม่มี state แยกอีกแล้ว
   const termDow = termDowFromStart(termStart)
-  const termLastSession = lastTermSessionDate(termStart, termEnd)
-  // นับเฉพาะคาบที่ยังไม่ผ่าน — คาบที่ผ่านไปแล้วจองไม่ได้อยู่ดี
-  const termFirstSession = firstUpcomingSession(termStart, termEnd)
-  const termSessionCount = termFirstSession && termLastSession
-    ? Math.round((new Date(`${termLastSession}T00:00:00`) - new Date(`${termFirstSession}T00:00:00`)) / (7 * 24 * 60 * 60 * 1000)) + 1
-    : 0
 
   const [customDurationMode, setCustomDurationMode] = useState(!DURATIONS.some(d => d.hours === duration))
   const [customDurationInput, setCustomDurationInput] = useState(String(duration))
@@ -957,26 +925,6 @@ function AppLayout({ step, setStep, navigate, location, bookingType, setBookingT
                                 />
                               </div>
                             </div>
-                            {/* สรุปให้เห็นก่อนกดค้นหาว่าจะได้คาบวันไหน กี่คาบจริงๆ
-                                — ไม่ต้องเดาว่ากรอกช่วงวันที่ถูกไหม */}
-                            {termSessionCount > 0 ? (
-                              <div className="mb-2 rounded-xl border border-indigo-100 bg-indigo-50/70 px-2.5 py-2">
-                                <p className="text-[11px] font-bold text-indigo-700">
-                                  ทุก{getDayLabel(termDow)} · รวม {termSessionCount} คาบ
-                                </p>
-                                <p className="mt-0.5 text-[10px] text-indigo-500">
-                                  คาบแรก {formatDateShort(termFirstSession)} · คาบสุดท้าย {formatDateShort(termLastSession)}
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="mb-2 rounded-xl border border-amber-100 bg-amber-50/70 px-2.5 py-2">
-                                <p className="text-[11px] font-semibold text-amber-700">
-                                  {termStart && termEnd && termLastSession
-                                    ? 'คาบในช่วงที่เลือกผ่านไปหมดแล้ว กรุณาเลือกช่วงวันที่ใหม่'
-                                    : 'เลือกช่วงวันที่ให้ครบก่อน จึงจะสรุปจำนวนคาบได้'}
-                                </p>
-                              </div>
-                            )}
                             <div className="flex flex-wrap gap-1">
                               {ACADEMIC_TERM_IDS.map(t => (
                                 <button
