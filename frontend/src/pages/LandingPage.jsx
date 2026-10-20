@@ -53,9 +53,6 @@ const STEPS = [
   { emoji: '✅', title: 'ใช้งานห้องได้เลย', desc: 'เมื่อได้รับอนุมัติแล้ว มาใช้งานตามเวลาที่จองไว้ได้เลย ยกเลิกได้ทันทีทางอีเมลหากมีเหตุขัดข้อง' },
 ]
 
-const TOTAL_BOOKINGS = '7,252'
-const AI_ACCURACY_PCT = 81
-
 // เอฟเฟกต์เบามาก — floating dot 2 จุดในฉากหลัง Hero เท่านั้น ไม่ใช้ที่อื่น
 const FLOAT_ANIM = `
 @keyframes float-soft { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
@@ -112,28 +109,6 @@ function HeroBackdrop() {
       <div className="float-soft absolute left-[12%] top-[22%] h-2.5 w-2.5 rounded-full bg-blue-400/50" />
       <div className="float-soft-delay absolute right-[15%] top-[65%] h-2 w-2 rounded-full bg-purple-400/50" />
       <div className="float-soft absolute right-[28%] top-[18%] h-1.5 w-1.5 rounded-full bg-indigo-400/50" />
-    </div>
-  )
-}
-
-// วงแหวนแสดงเปอร์เซ็นต์ — ใช้แทนตัวเลขเฉยๆ ให้ "ความแม่นยำ AI" ดูมีข้อมูลรองรับ
-// จริง ไม่ใช่แค่คำกล่าวอ้างลอยๆ (เติมเต็มตามสัดส่วนจริงของ pct)
-function AccuracyMeter({ pct }) {
-  const r = 52
-  const c = 2 * Math.PI * r
-  const offset = c * (1 - pct / 100)
-  return (
-    <div className="relative h-28 w-28 shrink-0">
-      <svg viewBox="0 0 120 120" className="h-28 w-28 -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#dbeafe" strokeWidth="10" />
-        <circle
-          cx="60" cy="60" r={r} fill="none" stroke="#2563eb" strokeWidth="10"
-          strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-extrabold text-slate-900">{pct}%</span>
-      </div>
     </div>
   )
 }
@@ -261,37 +236,6 @@ export default function LandingPage() {
                 </div>
               </Reveal>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Stats ──────────────────────────────────────── */}
-      {/* ไม่มีพื้นหลังของตัวเอง — ใช้สีพื้นหลังเดียวกับหน้า (bg-slate-50 ที่ root)
-          ต่อเนื่องมาจาก section "วิธีใช้งาน" ด้านบน ให้ดูเป็นเนื้อเดียวกัน */}
-      <section className="relative py-14">
-        <div className="mx-auto max-w-6xl px-5 sm:px-8">
-          <h2 className="text-center text-2xl font-extrabold text-slate-900">ตัวเลขที่น่าเชื่อถือ</h2>
-          <div className="mx-auto mt-8 grid max-w-2xl gap-5 sm:grid-cols-2">
-            <Reveal delay={0}>
-              <div className="flex h-full items-center gap-5 rounded-2xl border border-slate-100 bg-white p-7 shadow-sm">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-sm">
-                  <CalendarDays size={28} />
-                </div>
-                <div>
-                  <p className="text-4xl font-extrabold leading-none text-slate-900">{TOTAL_BOOKINGS}</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-500">ประวัติการจองทั้งหมด</p>
-                </div>
-              </div>
-            </Reveal>
-            <Reveal delay={100}>
-              <div className="flex h-full items-center gap-5 rounded-2xl border border-slate-100 bg-white p-7 shadow-sm">
-                <AccuracyMeter pct={AI_ACCURACY_PCT} />
-                <p className="text-sm font-semibold leading-relaxed text-slate-700">
-                  ความแม่นยำ AI<br />
-                  <span className="text-slate-400">(ห้องที่มีข้อมูลเพียงพอ)</span>
-                </p>
-              </div>
-            </Reveal>
           </div>
         </div>
       </section>
