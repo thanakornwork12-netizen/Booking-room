@@ -1452,16 +1452,21 @@ export default function SearchPage({ embedded = false }) {
   const navigate = useNavigate()
   const location = useLocation()
   const searchState = location.state || {}
-  const [step, setStep] = useState(1)
+  // การ์ด "ห้องว่างวันนี้" ส่งทั้งห้องและเวลาเริ่มมาครบแล้ว จึงต้องเปิดหน้า
+  // รายละเอียดห้องตั้งแต่ render แรกเลย ไม่ใช่ render step 1 ก่อนแล้วค่อยให้
+  // effect เปลี่ยนเป็น step 3 เพราะผู้ใช้จะเห็นหน้าค้นหาแว่บหนึ่งก่อนทุกครั้ง
+  // ระหว่างรอ API ดึงข้อมูลห้องฉบับเต็ม เรายังแสดงข้อมูลจากการ์ดได้ทันที
+  const opensRoomDetails = Boolean(searchState.quickRoom && searchState.quickStartTime)
+  const [step, setStep] = useState(() => opensRoomDetails ? 3 : 1)
   const [bookingType, setBookingType] = useState('daily')
   const [attendees, setAttendees] = useState(DEFAULT_ATTENDEES)
   const [date, setDate] = useState(localDateStr())
-  const [startTime, setStartTime] = useState('')
-  const [duration, setDuration] = useState(1)
-  const [building, setBuilding] = useState('')
+  const [startTime, setStartTime] = useState(() => opensRoomDetails ? searchState.quickStartTime : '')
+  const [duration, setDuration] = useState(() => opensRoomDetails ? (searchState.quickDuration ?? 1) : 1)
+  const [building, setBuilding] = useState(() => opensRoomDetails ? (searchState.quickRoom.building_code || '') : '')
   const [buildingQuery, setBuildingQuery] = useState('')
-  const [rooms, setRooms] = useState([])
-  const [selectedRoom, setSelectedRoom] = useState(null)
+  const [rooms, setRooms] = useState(() => opensRoomDetails ? [searchState.quickRoom] : [])
+  const [selectedRoom, setSelectedRoom] = useState(() => opensRoomDetails ? searchState.quickRoom : null)
   const [title, setTitle] = useState('')
   const [loading, setLoading] = useState(false)
   const [buildings, setBuildings] = useState(DEFAULT_BUILDINGS)
