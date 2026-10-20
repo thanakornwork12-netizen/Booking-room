@@ -1460,7 +1460,7 @@ export default function SearchPage({ embedded = false }) {
   const [step, setStep] = useState(() => opensRoomDetails ? 3 : 1)
   const [bookingType, setBookingType] = useState('daily')
   const [attendees, setAttendees] = useState(DEFAULT_ATTENDEES)
-  const [date, setDate] = useState(localDateStr())
+  const [date, setDate] = useState(() => opensRoomDetails ? (searchState.quickDate || localDateStr()) : localDateStr())
   const [startTime, setStartTime] = useState(() => opensRoomDetails ? searchState.quickStartTime : '')
   const [duration, setDuration] = useState(() => opensRoomDetails ? (searchState.quickDuration ?? 1) : 1)
   const [building, setBuilding] = useState(() => opensRoomDetails ? (searchState.quickRoom.building_code || '') : '')
@@ -1633,6 +1633,7 @@ export default function SearchPage({ embedded = false }) {
       setSplitPlan(null)
       setSelectedRoom(resolvedRoom)
       setStep(3)
+      if (searchState.quickDate) setDate(searchState.quickDate)
       if (resolvedRoom.building_code !== undefined) {
         setBuilding(resolvedRoom.building_code || '')
       }
@@ -1648,7 +1649,7 @@ export default function SearchPage({ embedded = false }) {
 
     applyQuickRoom()
     return () => { active = false }
-  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickStartTime, searchState.quickAvailableUntil, searchState.quickDuration])
+  }, [searchState.quickRoom, searchState.quickSearch, searchState.quickDate, searchState.quickStartTime, searchState.quickAvailableUntil, searchState.quickDuration])
 
   // "ดูทั้งหมด" จากฟีด "ห้องว่างตอนนี้" ในหน้าแรก — ฟีดนั้นจำกัดแค่ 5 ห้องเป็น
   // ค่า default (today-feed backend) ส่วนนี้เรียก endpoint เดียวกันแบบไม่จำกัด

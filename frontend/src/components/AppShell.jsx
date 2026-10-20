@@ -916,20 +916,42 @@ function AppShell({ children }) {
 
   const sidebarWidthClass = 'lg:w-[300px]'
 
+  // ช่องค้นหาด้านบนเลือก "ห้อง" ได้แล้ว จึงเลือกช่วงเวลาแนะนำแรกให้ครบก่อน
+  // แล้วส่งต่อไปหน้ายืนยันการจองเลย แทนการพาผู้ใช้ไปหน้ารายการช่วงเวลาที่ต้อง
+  // กดเลือกซ้ำอีกครั้ง
+  const openRoomDetails = async (room, query) => {
+    try {
+      const res = await api.get(`/rooms/${room.id}/recommended-slots/`, { params: { duration: 1 } })
+      const slot = res.data?.slots?.[0]
+      if (slot) {
+        navigate('/search', {
+          state: {
+            quickRoom: room,
+            quickSearch: query,
+            quickDate: slot.date,
+            quickStartTime: slot.start_time,
+            quickDuration: slot.duration,
+          },
+        })
+        return
+      }
+    } catch {
+      // ถ้าดึงช่วงเวลาแนะนำไม่ได้ ให้ flow เดิมเลือกช่วงเวลาเองแทน
+    }
+    navigate('/search', { state: { quickRoom: room, quickSearch: query } })
+  }
+
   const runGlobalSearch = (payload) => {
     const query = (payload || searchText || '').trim()
     if (!query) return
     const top = searchSuggestions[0]
-    navigate('/search', {
-      state: top
-        ? { quickRoom: top, quickSearch: query }
-        : { quickSearch: query },
-    })
+    if (top) openRoomDetails(top, query)
+    else navigate('/search', { state: { quickSearch: query } })
     setShowSuggestions(false)
   }
 
   const selectSuggestion = (room) => {
-    navigate('/search', { state: { quickRoom: room, quickSearch: searchText.trim() } })
+    openRoomDetails(room, searchText.trim())
     setShowSuggestions(false)
   }
 
